@@ -88,9 +88,95 @@ create policy "Public profiles read" on public.profiles for select
 
 회원가입 성공 시 Superbase Auth와 동시에 `SUPERBASE_PROFILE_TABLE`에 사용자 레코드가 upsert되므로 Superbase 대시보드에서도 곧바로 확인할 수 있습니다.
 
+## Render 배포 가이드
+
+이 프로젝트는 Render 무료 플랜에서 Docker를 사용하여 배포할 수 있도록 설정되어 있습니다.
+
+### 1. GitHub Repository 준비
+```bash
+git add .
+git commit -m "Setup CI/CD and Render deployment"
+git push origin main
+```
+
+### 2. Render.com에서 웹 서비스 생성
+
+1. [Render.com](https://render.com)에 회원가입/로그인
+2. 새 Web Service 생성
+3. GitHub Repository 연결
+4. 다음 설정 사용:
+   - **Runtime**: Docker
+   - **Branch**: main
+   - **Root Directory**: (비워둠)
+   - **Dockerfile Path**: ./Dockerfile
+
+### 3. 환경 변수 설정
+
+Render 대시보드에서 다음 환경 변수들을 설정:
+
+**필수 환경 변수:**
+```
+JWT_SECRET=your-secret-jwt-key-here
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-supabase-anon-key
+SUPERBASE_URL=https://your-project.supabase.co
+SUPERBASE_ANON_KEY=your-supabase-anon-key
+SUPERBASE_PROFILE_TABLE=profiles
+LOG_LEVEL=info
+ENVIRONMENT=production
+```
+
+### 4. GitHub Actions Secrets 설정 (CI/CD용)
+
+Repository Settings > Secrets and variables > Actions에서 설정:
+
+```
+SUPABASE_URL=your-supabase-url
+SUPABASE_ANON_KEY=your-supabase-anon-key
+RENDER_SERVICE_ID=your-render-service-id
+RENDER_API_KEY=your-render-api-key
+```
+
+### 5. 자동 배포
+
+- `main` 브랜치에 푸시할 때마다 GitHub Actions가 자동으로:
+  1. 테스트 실행
+  2. Docker 이미지 빌드
+  3. Render에 배포
+  4. 보안 스캔 수행
+
+### 6. HTTPS 접속
+
+Render는 자동으로 HTTPS를 제공합니다:
+- `https://your-service-name.onrender.com`
+
+### 주요 특징
+
+✅ **무료 호스팅**: Render 무료 플랜 사용
+✅ **자동 HTTPS**: SSL 인증서 자동 관리
+✅ **Docker 지원**: 컨테이너 기반 배포
+✅ **CI/CD 파이프라인**: GitHub Actions 자동 빌드/배포
+✅ **Supabase 연동**: 무료 PostgreSQL 데이터베이스
+✅ **보안 스캔**: Trivy 취약점 검사
+
+### 트러블슈팅
+
+**배포 실패 시:**
+1. Render 로그 확인
+2. 환경 변수 설정 점검
+3. Supabase 연결 상태 확인
+4. GitHub Actions 로그 검토
+
+**무료 플랜 제한:**
+- 15분간 비활성 시 서비스 슬립 (첫 요청 시 웨이크업)
+- 월 750시간 무료 사용 시간
+- 외부 데이터베이스 연결 권장 (Supabase 사용)
+
 ### See more
 
 - [Vapor Website](https://vapor.codes)
 - [Vapor Documentation](https://docs.vapor.codes)
 - [Vapor GitHub](https://github.com/vapor)
 - [Vapor Community](https://github.com/vapor-community)
+- [Render Documentation](https://render.com/docs)
+- [Supabase Documentation](https://supabase.com/docs)

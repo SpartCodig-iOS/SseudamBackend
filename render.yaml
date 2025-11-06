@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: vapor-app
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon # 또는 singapore (한국과 가까운 서버)
+    branch: main
+    buildCommand: ""
+    startCommand: ""
+    envVars:
+      - key: LOG_LEVEL
+        value: info
+      - key: ENVIRONMENT
+        value: production
+      - key: JWT_SECRET
+        sync: false # 시크릿으로 별도 설정
+      - key: SUPABASE_URL
+        sync: false # 시크릿으로 별도 설정
+      - key: SUPABASE_ANON_KEY
+        sync: false # 시크릿으로 별도 설정
+      - key: SUPERBASE_URL
+        sync: false # Legacy fallback
+      - key: SUPERBASE_ANON_KEY
+        sync: false # Legacy fallback
+      - key: SUPERBASE_PROFILE_TABLE
+        value: profiles
+    # Render는 Postgres 외부 서비스나 Supabase 연결을 권장
+    # 무료 플랜에서는 managed database를 제공하지 않음
