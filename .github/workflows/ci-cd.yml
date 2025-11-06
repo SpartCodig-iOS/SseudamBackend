@@ -49,6 +49,7 @@ jobs:
         SWIFT_VERSION: swift-6.0.1-RELEASE
         SWIFT_PLATFORM: ubuntu22.04
       run: |
+        set -euo pipefail
         sudo apt-get update
         sudo apt-get install -y \
           libsqlite3-dev \
@@ -59,8 +60,9 @@ jobs:
           tzdata \
           zip \
           unzip
-        curl -L https://download.swift.org/${SWIFT_BRANCH}/${SWIFT_PLATFORM}/${SWIFT_VERSION}/${SWIFT_VERSION}-${SWIFT_PLATFORM}.tar.gz \
-          -o swift.tar.gz
+        SWIFT_TAR="${SWIFT_VERSION}-${SWIFT_PLATFORM}.tar.gz"
+        SWIFT_URL="https://download.swift.org/releases/${SWIFT_BRANCH}/${SWIFT_PLATFORM}/${SWIFT_VERSION}/${SWIFT_TAR}"
+        curl -fL "$SWIFT_URL" -o swift.tar.gz
         tar -xzf swift.tar.gz
         sudo mv ${SWIFT_VERSION}-${SWIFT_PLATFORM} /opt/${SWIFT_VERSION}
         echo "/opt/${SWIFT_VERSION}/usr/bin" >> $GITHUB_PATH
