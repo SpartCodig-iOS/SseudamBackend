@@ -77,14 +77,14 @@ jobs:
 
     - name: Generate Cloud Run env file
       run: |
-        cat <<'EOF' > env.yaml
-        SUPABASE_DB_URL=${SUPABASE_DB_URL}
-        SUPERBASE_DB_URL=${SUPERBASE_DB_URL}
-        DATABASE_URL=${DATABASE_URL}
-        JWT_SECRET=${JWT_SECRET}
-        SUPERBASE_URL=${SUPERBASE_URL}
-        SUPERBASE_ANON_KEY=${SUPERBASE_ANON_KEY}
-        SUPERBASE_PROFILE_TABLE=${SUPERBASE_PROFILE_TABLE}
+        cat <<EOF > env.yaml
+        SUPABASE_DB_URL: "${SUPABASE_DB_URL}"
+        SUPERBASE_DB_URL: "${SUPERBASE_DB_URL}"
+        DATABASE_URL: "${DATABASE_URL}"
+        JWT_SECRET: "${JWT_SECRET}"
+        SUPERBASE_URL: "${SUPERBASE_URL}"
+        SUPERBASE_ANON_KEY: "${SUPERBASE_ANON_KEY}"
+        SUPERBASE_PROFILE_TABLE: "${SUPERBASE_PROFILE_TABLE}"
         EOF
       env:
         SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -98,11 +98,14 @@ jobs:
     - name: Deploy to Cloud Run
       env:
         IMAGE_SHA: gcr.io/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        SERVICE_NAME: ${{ env.SERVICE_NAME }}
+        PROJECT_ID: ${{ env.PROJECT_ID }}
+        REGION: ${{ env.REGION }}
       run: |
-        gcloud run deploy $SERVICE_NAME \
+        gcloud run deploy "$SERVICE_NAME" \
           --image "$IMAGE_SHA" \
-          --project $PROJECT_ID \
-          --region $REGION \
+          --project "$PROJECT_ID" \
+          --region "$REGION" \
           --platform managed \
           --allow-unauthenticated \
           --env-vars-file=env.yaml
