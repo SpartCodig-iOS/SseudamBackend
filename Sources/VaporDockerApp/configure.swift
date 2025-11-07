@@ -78,15 +78,22 @@ private func needsTLS(for host: String, environment: Environment) -> Bool {
   return environment == .production
 }
 
-private func makeTLSContext() throws -> NIOSSLContext {
+private func makeTLSContext(for host: String) throws -> NIOSSLContext {
   var tls = TLSConfiguration.makeClientConfiguration()
   tls.applicationProtocols = ["postgres"]
+
+  // Supabase의 managed Postgres는 AWS RDS 인증서를 사용하며 체인이 자주 갱신된다.
+  // Cloud Run의 ca-certificates에 아직 포함되지 않은 경우가 있어 인증서 검증을 건너뛰지 않으면 TLS가 실패한다.
+  if host.contains("supabase.com") {
+    tls.certificateVerification = .none
+  }
+
   return try NIOSSLContext(configuration: tls)
 }
 
 private func tlsMode(for host: String, environment: Environment) throws -> PostgresConnection.Configuration.TLS {
   if needsTLS(for: host, environment: environment) {
-    return .require(try makeTLSContext())
+    return .require(try makeTLSContext(for: host))
   }
   return .disable
 }

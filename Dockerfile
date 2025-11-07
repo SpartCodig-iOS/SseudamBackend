@@ -1,7 +1,8 @@
 # ================================
 # Build image
 # ================================
-FROM swift:6.1-noble AS build
+# Always build on linux/amd64 so the binary matches Cloud Run's architecture even when the image is built on Apple Silicon hosts.
+FROM --platform=linux/amd64 swift:6.1-noble AS build
 
 # Install OS updates
 RUN export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
@@ -51,7 +52,7 @@ RUN [ -d /build/Resources ] && { mv /build/Resources ./Resources && chmod -R a-w
 # ================================
 # Run image
 # ================================
-FROM ubuntu:noble
+FROM --platform=linux/amd64 ubuntu:noble
 
 # Make sure all system packages are up to date, and install only essential packages.
 RUN export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
