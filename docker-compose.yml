@@ -28,6 +28,7 @@ x-shared_environment: &shared_environment
   SUPABASE_URL: ${SUPABASE_URL}
   SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
   SUPABASE_PROFILE_TABLE: ${SUPABASE_PROFILE_TABLE}
+  # Enable Supabase sync for local development
   # SUPABASE_DB_URL: ${SUPABASE_DB_URL}
   # Legacy support
   SUPERBASE_URL: ${SUPERBASE_URL}

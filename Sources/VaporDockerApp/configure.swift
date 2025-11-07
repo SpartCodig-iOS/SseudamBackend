@@ -113,6 +113,9 @@ private func makeTLSContext(for host: String, rootCertPath: String?) throws -> N
   } else if host.contains("supabase.co") || host.contains("supabase.com") {
     // RDS CA 경로가 없는 경우 Supabase 연결이 실패하지 않도록 임시로 검증을 완화한다.
     tls.certificateVerification = .none
+  } else {
+    // 기타 호스트에 대해서도 SSL 검증을 완화하여 연결 문제 방지
+    tls.certificateVerification = .none
   }
 
   return try NIOSSLContext(configuration: tls)

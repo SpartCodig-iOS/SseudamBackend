@@ -23,13 +23,28 @@ curl -X GET https://finalprojectsever.onrender.com/api/v1/auth/me \
 ```
 
 ## 🛠 **Local Development**
-```bash
-# Docker (권장)
-docker compose up db -d
-docker compose run migrate
-docker compose up app
 
-# Swift 직접 실행
+### 🔄 **Hybrid Development Mode** (로컬 ↔ Supabase 동기화)
+로컬 개발 환경에서 새로 생성된 사용자가 자동으로 Supabase Auth와 Profiles에 동기화됩니다.
+
+```bash
+# 1. 로컬 데이터베이스 시작
+docker compose up db -d
+
+# 2. 마이그레이션 실행
+docker compose run migrate
+
+# 3. 앱 시작 (Supabase 동기화 활성화)
+docker compose up app
+```
+
+**동기화 흐름:**
+- 로컬 회원가입 → Local PostgreSQL + Supabase Auth + Supabase Profiles
+- 로컬에서 생성한 계정으로 프로덕션 환경에서도 로그인 가능
+- 개발/테스트 시 데이터 일관성 보장
+
+### 📦 **Swift 직접 실행**
+```bash
 swift build && swift run
 ```
 
