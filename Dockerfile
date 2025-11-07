@@ -1,14 +1,18 @@
 # ================================
 # Build image
 # ================================
-# Always build on linux/amd64 so the binary matches Cloud Run's architecture even when the image is built on Apple Silicon hosts.
-FROM --platform=linux/amd64 swift:6.1-noble AS build
+# Allow overriding the platform at build time (defaults keep Cloud Run-compatible linux/amd64 artifacts).
+ARG SWIFT_PLATFORM=linux/amd64
+ARG RUNTIME_PLATFORM=${SWIFT_PLATFORM}
+FROM --platform=${SWIFT_PLATFORM} swift:6.1-noble AS build
 
 # Install OS updates
 RUN export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
     && apt-get -q update \
-    && apt-get -q dist-upgrade -y \
-    && apt-get install -y libjemalloc-dev
+    && apt-get -q upgrade -y \
+    && apt-get install -y libjemalloc-dev \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set up a build area
 WORKDIR /build
@@ -23,14 +27,13 @@ RUN swift package resolve \
 
 # Copy entire repo into container
 COPY . .
+RUN rm -rf ./.build # Clean up any existing build artifacts
 
 RUN mkdir /staging
 
-# Build the application, with optimizations, with static linking, and using jemalloc
-# N.B.: The static version of jemalloc is incompatible with the static Swift runtime.
+# Build the application with optimizations and link against jemalloc
 RUN swift build -c release \
         --product VaporDockerApp \
-        --static-swift-stdlib \
         -Xlinker -ljemalloc && \
     # Copy main executable to staging area
     cp "$(swift build -c release --show-bin-path)/VaporDockerApp" /staging && \
@@ -52,19 +55,25 @@ RUN [ -d /build/Resources ] && { mv /build/Resources ./Resources && chmod -R a-w
 # ================================
 # Run image
 # ================================
-FROM --platform=linux/amd64 ubuntu:noble
+FROM --platform=${RUNTIME_PLATFORM} ubuntu:noble
+ARG RDS_CERT_URL=https://truststore.pki.rds.amazonaws.com/ap-southeast-1/ap-southeast-1-bundle.pem
+ENV PGSSLROOTCERT=/usr/local/share/ca-certificates/rds-ca.pem
 
 # Make sure all system packages are up to date, and install only essential packages.
 RUN export DEBIAN_FRONTEND=noninteractive DEBCONF_NONINTERACTIVE_SEEN=true \
     && apt-get -q update \
     && apt-get -q dist-upgrade -y \
     && apt-get -q install -y \
+      ca-certificates \
+      curl \
       libjemalloc2 \
       libcurl4 \
-      ca-certificates \
       tzdata \
+    && curl -sSL "$RDS_CERT_URL" -o "$PGSSLROOTCERT" \
+    && chmod 0644 "$PGSSLROOTCERT" \
     && update-ca-certificates \
-    && rm -r /var/lib/apt/lists/*
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create a vapor user and group with /app as its home directory
 RUN useradd --user-group --create-home --system --skel /dev/null --home-dir /app vapor
@@ -74,6 +83,9 @@ WORKDIR /app
 
 # Copy built executable and any staged resources from builder
 COPY --from=build --chown=vapor:vapor /staging /app
+
+# Copy Swift runtime libraries that are required because we no longer statically link them
+COPY --from=build /usr/lib/swift /usr/lib/swift
 
 # Provide configuration needed by the built-in crash reporter and some sensible default behaviors.
 ENV SWIFT_BACKTRACE=enable=yes,sanitize=yes,threads=all,images=all,interactive=no,swift-backtrace=./swift-backtrace-static

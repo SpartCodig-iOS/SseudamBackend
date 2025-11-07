@@ -41,7 +41,13 @@ public func configure(_ app: Application) async throws {
     databaseConfig = parsed
   } else {
     let manualHost = Environment.get("DATABASE_HOST") ?? "localhost"
-    let manualTLS = try tlsMode(for: manualHost, environment: app.environment)
+    let manualRequireTLS = overrideTLSRequirement() ?? needsTLS(for: manualHost, environment: app.environment)
+    let manualTLS = try tlsMode(
+      for: manualHost,
+      environment: app.environment,
+      requireTLS: manualRequireTLS,
+      rootCertPath: Environment.get("PGSSLROOTCERT")
+    )
     databaseConfig = SQLPostgresConfiguration(
       hostname: manualHost,
       port: Environment.get("DATABASE_PORT").flatMap(Int.init(_:)) ?? SQLPostgresConfiguration.ianaPortNumber,
@@ -71,29 +77,55 @@ public func configure(_ app: Application) async throws {
   try routes(app)
 }
 
+private func overrideTLSRequirement() -> Bool? {
+  guard let raw = Environment.get("DATABASE_REQUIRE_TLS")?.lowercased() else { return nil }
+  if ["1", "true", "yes", "y", "on"].contains(raw) { return true }
+  if ["0", "false", "no", "n", "off"].contains(raw) { return false }
+  return nil
+}
+
 private func needsTLS(for host: String, environment: Environment) -> Bool {
-  if host.contains("supabase.co") || host.contains("render.com") {
+  if let override = overrideTLSRequirement() {
+    return override
+  }
+
+  let localHosts = ["localhost", "127.0.0.1", "::1", "db"]
+  if localHosts.contains(host.lowercased()) {
+    return false
+  }
+
+  if host.contains("supabase.co") || host.contains("supabase.com") || host.contains("render.com") {
     return true
   }
+
   return environment == .production
 }
 
-private func makeTLSContext(for host: String) throws -> NIOSSLContext {
+private func makeTLSContext(for host: String, rootCertPath: String?) throws -> NIOSSLContext {
   var tls = TLSConfiguration.makeClientConfiguration()
   tls.applicationProtocols = ["postgres"]
 
-  // Supabase의 managed Postgres는 AWS RDS 인증서를 사용하며 체인이 자주 갱신된다.
-  // Cloud Run의 ca-certificates에 아직 포함되지 않은 경우가 있어 인증서 검증을 건너뛰지 않으면 TLS가 실패한다.
-  if host.contains("supabase.com") {
+  if let rootCertPath,
+     FileManager.default.fileExists(atPath: rootCertPath) {
+    let certificates = try NIOSSLCertificate.fromPEMFile(rootCertPath)
+    tls.trustRoots = .certificates(certificates)
+    tls.certificateVerification = .fullVerification
+  } else if host.contains("supabase.co") || host.contains("supabase.com") {
+    // RDS CA 경로가 없는 경우 Supabase 연결이 실패하지 않도록 임시로 검증을 완화한다.
     tls.certificateVerification = .none
   }
 
   return try NIOSSLContext(configuration: tls)
 }
 
-private func tlsMode(for host: String, environment: Environment) throws -> PostgresConnection.Configuration.TLS {
-  if needsTLS(for: host, environment: environment) {
-    return .require(try makeTLSContext(for: host))
+private func tlsMode(
+  for host: String,
+  environment: Environment,
+  requireTLS: Bool,
+  rootCertPath: String?
+) throws -> PostgresConnection.Configuration.TLS {
+  if requireTLS {
+    return .require(try makeTLSContext(for: host, rootCertPath: rootCertPath))
   }
   return .disable
 }
@@ -111,7 +143,30 @@ private func parseDatabaseURL(_ urlString: String, environment: Environment) thr
     ? (Environment.get("DATABASE_NAME") ?? "postgres")
     : databaseName
 
-  let tls = try tlsMode(for: host, environment: environment)
+  let queryItems = components.queryItems ?? []
+  let sslMode = queryItems.first { $0.name.lowercased() == "sslmode" }?.value?.lowercased()
+  let rootCertQuery = queryItems.first { $0.name.lowercased() == "sslrootcert" }?.value
+    ?? Environment.get("PGSSLROOTCERT")
+
+  let defaultRequireTLS = needsTLS(for: host, environment: environment)
+  let requireTLS: Bool
+  switch sslMode {
+  case "disable":
+    requireTLS = false
+  case "allow", "prefer":
+    requireTLS = defaultRequireTLS
+  case "require", "verify-full", "verify-ca":
+    requireTLS = true
+  default:
+    requireTLS = defaultRequireTLS
+  }
+
+  let tls = try tlsMode(
+    for: host,
+    environment: environment,
+    requireTLS: requireTLS,
+    rootCertPath: rootCertQuery
+  )
 
   return SQLPostgresConfiguration(
     hostname: host,

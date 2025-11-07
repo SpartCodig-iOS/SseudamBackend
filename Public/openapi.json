@@ -6,7 +6,7 @@
     "version": "1.0.0"
   },
   "servers": [
-    { "url": "https://finalprojectsever-gj4bnbz7uq-ew.a.run.app" },
+    { "url": "https://finalprojectsever.onrender.com" },
     { "url": "http://localhost:8080" }
   ],
   "tags": [

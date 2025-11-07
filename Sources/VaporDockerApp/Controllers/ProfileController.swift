@@ -1,5 +1,6 @@
 import Vapor
 import Fluent
+import Supabase
 
 struct ProfileController: RouteCollection {
     func boot(routes: any RoutesBuilder) throws {
@@ -40,9 +41,32 @@ struct ProfileController: RouteCollection {
 
         do {
             try await req.superbase.deleteUser(id: userID)
+        } catch let authError as AuthError {
+            if authError.isUserMissingError {
+                req.logger.warning(
+                    "Supabase user already missing, deleting local user only",
+                    metadata: ["user_id": .string(userID.uuidString)]
+                )
+            } else {
+                req.logger.error("Failed to delete Supabase user: \(authError.localizedDescription)")
+                throw Abort(.internalServerError, reason: "Failed to delete user account")
+            }
+        } catch {
+            if error.isSupabaseUserMissing {
+                req.logger.warning(
+                    "Supabase user deletion returned not found, deleting local user only",
+                    metadata: ["user_id": .string(userID.uuidString)]
+                )
+            } else {
+                req.logger.error("Failed to delete Supabase user: \(error.localizedDescription)")
+                throw Abort(.internalServerError, reason: "Failed to delete user account")
+            }
+        }
+
+        do {
             try await user.delete(on: req.db)
         } catch {
-            req.logger.error("Failed to delete user account: \(error.localizedDescription)")
+            req.logger.error("Failed to delete local user: \(error.localizedDescription)")
             throw Abort(.internalServerError, reason: "Failed to delete user account")
         }
 
@@ -63,4 +87,27 @@ struct UserProfileResponse: Content {
 
 struct AccountDeletionResponse: Content {
     let userID: UUID
+}
+
+private extension AuthError {
+    var isUserMissingError: Bool {
+        if errorCode == .userNotFound { return true }
+        let candidates = [
+            message.lowercased(),
+            localizedDescription.lowercased(),
+            String(describing: self).lowercased()
+        ]
+        return candidates.contains { value in
+            value.contains("user not found") || value.contains("user_not_found")
+        }
+    }
+}
+
+private extension Error {
+    var isSupabaseUserMissing: Bool {
+        if let authError = self as? AuthError {
+            return authError.isUserMissingError
+        }
+        return localizedDescription.lowercased().contains("user not found")
+    }
 }
