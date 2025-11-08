@@ -1,8 +1,9 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+// src/routes/health.ts
 const express_1 = require("express");
-const userRepository_1 = require("../utils/userRepository");
 const api_1 = require("../types/api");
+const supabaseClient_1 = require("../utils/supabaseClient");
 const router = (0, express_1.Router)();
 /**
  * @swagger
@@ -30,16 +31,32 @@ const router = (0, express_1.Router)();
  *                 status: "ok"
  *                 database: "ok"
  */
-router.get('/health', async (_req, res, next) => {
+router.get('/health', async (_req, res, _next) => {
     // #swagger.tags = ['Health']
     // #swagger.description = '서버 상태 체크'
+    let dbStatus = 'ok';
     try {
-        await (0, userRepository_1.countUsers)();
-        res.json((0, api_1.success)({ status: 'ok', database: 'ok' }));
+        if (!supabaseClient_1.supabase) {
+            dbStatus = 'not_configured';
+        }
+        else {
+            const table = process.env.SUPABASE_PROFILE_TABLE || 'profiles';
+            const { error } = await supabaseClient_1.supabase
+                .from(table)
+                .select('id', { head: true, count: 'exact' });
+            if (error) {
+                console.error('[health] Supabase health check error', error);
+                dbStatus = 'unavailable';
+            }
+        }
     }
     catch (error) {
         console.error('Database health check failed', error);
-        res.json((0, api_1.success)({ status: 'ok', database: 'unavailable' }));
+        dbStatus = 'unavailable';
     }
+    return res.json((0, api_1.success)({
+        status: 'ok',
+        database: dbStatus,
+    }));
 });
 exports.default = router;
