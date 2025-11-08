@@ -7,19 +7,21 @@ exports.verifyRefreshToken = exports.verifyAccessToken = exports.generateTokenPa
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const env_1 = require("../config/env");
 const secondsToMs = (value) => value * 1000;
-const createAccessPayload = (user) => ({
+const createAccessPayload = (user, loginType) => ({
     sub: user.id,
     email: user.email,
     name: user.name ?? undefined,
+    loginType,
+    lastLoginAt: new Date().toISOString(),
 });
 const createRefreshPayload = (user) => ({
     sub: user.id,
     typ: 'refresh',
 });
-const generateTokenPair = (user) => {
+const generateTokenPair = (user, loginType) => {
     const accessExpiresAt = new Date(Date.now() + secondsToMs(env_1.env.accessTokenTTL));
     const refreshExpiresAt = new Date(Date.now() + secondsToMs(env_1.env.refreshTokenTTL));
-    const accessToken = jsonwebtoken_1.default.sign(createAccessPayload(user), env_1.env.jwtSecret, {
+    const accessToken = jsonwebtoken_1.default.sign(createAccessPayload(user, loginType), env_1.env.jwtSecret, {
         expiresIn: env_1.env.accessTokenTTL,
     });
     const refreshToken = jsonwebtoken_1.default.sign(createRefreshPayload(user), env_1.env.jwtSecret, {

@@ -44,12 +44,32 @@ router.get('/me', authenticate, (req, res) => {
   // #swagger.security = [{ "bearerAuth": [] }]
   /* #swagger.responses[200] = {
         description: '사용자 정보 조회 성공',
-        schema: { $ref: '#/definitions/UserResponse' }
+        schema: {
+          type: 'object',
+          example: {
+            "code": 200,
+            "data": {
+              "id": "60be2b70-65cf-4a90-a188-c8f967e1cbe7",
+              "email": "test@example.com",
+              "name": "테스트 사용자",
+              "avatarURL": null,
+              "createdAt": "2025-11-07T20:43:21.842Z",
+              "userId": "test"
+            },
+            "message": "OK"
+          }
+        }
       }
   */
   /* #swagger.responses[401] = {
         description: '인증 토큰이 유효하지 않음',
-        schema: { $ref: '#/definitions/UnauthorizedResponse' }
+        schema: {
+          type: 'object',
+          properties: {
+            code: { type: 'integer', example: 401 },
+            message: { type: 'string', example: 'Unauthorized' }
+          }
+        }
       }
   */
   res.json(success(toUserResponse(req.currentUser!)));
@@ -89,6 +109,36 @@ router.get('/profile', authenticate, (req, res) => {
   // #swagger.tags = ['Profile']
   // #swagger.description = '사용자 프로필 조회'
   // #swagger.security = [{ "bearerAuth": [] }]
+  /* #swagger.responses[200] = {
+        description: '프로필 정보 조회 성공',
+        schema: {
+          type: 'object',
+          example: {
+            "code": 200,
+            "data": {
+              "id": "60be2b70-65cf-4a90-a188-c8f967e1cbe7",
+              "email": "test@example.com",
+              "name": "테스트 사용자",
+              "avatarURL": null,
+              "createdAt": "2025-11-07T20:43:21.842Z",
+              "userId": "test"
+            },
+            "message": "OK"
+          }
+        }
+      }
+  */
+  /* #swagger.responses[401] = {
+        description: '인증 토큰이 유효하지 않음',
+        schema: {
+          type: 'object',
+          properties: {
+            code: { type: 'integer', example: 401 },
+            message: { type: 'string', example: 'Unauthorized' }
+          }
+        }
+      }
+  */
   res.json(success(toProfileResponse(req.currentUser!)));
 });
 
@@ -154,24 +204,57 @@ router.get('/profile', authenticate, (req, res) => {
  */
 router.delete('/profile', authenticate, async (req, res, next) => {
   // #swagger.tags = ['Profile']
-  // #swagger.description = '사용자 계정 삭제'
+  // #swagger.description = '사용자 계정 삭제 (Supabase Auth 자동 삭제 포함)'
   // #swagger.security = [{ "bearerAuth": [] }]
+  /* #swagger.responses[200] = {
+        description: '계정 삭제 성공',
+        schema: {
+          type: 'object',
+          example: {
+            "code": 200,
+            "data": {
+              "userID": "60be2b70-65cf-4a90-a188-c8f967e1cbe7",
+              "supabaseDeleted": true
+            },
+            "message": "Account deleted successfully"
+          }
+        }
+      }
+  */
+  /* #swagger.responses[401] = {
+        description: '인증 토큰이 유효하지 않음',
+        schema: {
+          type: 'object',
+          properties: {
+            code: { type: 'integer', example: 401 },
+            message: { type: 'string', example: 'Unauthorized' }
+          }
+        }
+      }
+  */
+  /* #swagger.responses[500] = {
+        description: '서버 오류',
+        schema: {
+          type: 'object',
+          properties: {
+            code: { type: 'integer', example: 500 },
+            message: { type: 'string', example: 'Internal Server Error' }
+          }
+        }
+      }
+  */
   try {
     const user = req.currentUser!;
 
-    // 옵션: 쿼리스트링으로 Supabase까지 삭제할지 제어 (?purge=supabase)
-    const purgeSupabase = String(req.query.purge ?? '').toLowerCase() === 'supabase';
-
+    // 자동으로 Supabase까지 삭제 (purge 파라미터 불필요)
     let supabaseDeleted = false;
-    if (purgeSupabase) {
-      try {
-        await supabaseService.deleteUser(user.id); // Supabase Auth 관리자 삭제
-        supabaseDeleted = true;
-      } catch (error: any) {
-        const message = (error?.message as string)?.toLowerCase() ?? '';
-        if (!message.includes('not found')) {
-          throw error;
-        }
+    try {
+      await supabaseService.deleteUser(user.id); // Supabase Auth 관리자 삭제
+      supabaseDeleted = true;
+    } catch (error: any) {
+      const message = (error?.message as string)?.toLowerCase() ?? '';
+      if (!message.includes('not found')) {
+        throw error;
       }
     }
 

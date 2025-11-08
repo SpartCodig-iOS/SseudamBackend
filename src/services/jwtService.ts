@@ -2,6 +2,8 @@ import jwt, { JwtPayload } from 'jsonwebtoken';
 import { env } from '../config/env';
 import { UserRecord } from '../types/user';
 
+export type LoginType = 'email' | 'username' | 'signup';
+
 export interface TokenPair {
   accessToken: string;
   accessTokenExpiresAt: Date;
@@ -18,14 +20,18 @@ interface AccessPayload extends JwtPayload {
   sub: string;
   email: string;
   name?: string | null;
+  loginType?: LoginType;
+  lastLoginAt?: string;
 }
 
 const secondsToMs = (value: number): number => value * 1000;
 
-const createAccessPayload = (user: UserRecord): AccessPayload => ({
+const createAccessPayload = (user: UserRecord, loginType?: LoginType): AccessPayload => ({
   sub: user.id,
   email: user.email,
   name: user.name ?? undefined,
+  loginType,
+  lastLoginAt: new Date().toISOString(),
 });
 
 const createRefreshPayload = (user: UserRecord): RefreshPayload => ({
@@ -33,11 +39,11 @@ const createRefreshPayload = (user: UserRecord): RefreshPayload => ({
   typ: 'refresh',
 });
 
-export const generateTokenPair = (user: UserRecord): TokenPair => {
+export const generateTokenPair = (user: UserRecord, loginType?: LoginType): TokenPair => {
   const accessExpiresAt = new Date(Date.now() + secondsToMs(env.accessTokenTTL));
   const refreshExpiresAt = new Date(Date.now() + secondsToMs(env.refreshTokenTTL));
 
-  const accessToken = jwt.sign(createAccessPayload(user), env.jwtSecret, {
+  const accessToken = jwt.sign(createAccessPayload(user, loginType), env.jwtSecret, {
     expiresIn: env.accessTokenTTL,
   });
   const refreshToken = jwt.sign(createRefreshPayload(user), env.jwtSecret, {

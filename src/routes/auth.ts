@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { createClient } from '@supabase/supabase-js';
-import { generateTokenPair, verifyRefreshToken } from '../services/jwtService';
+import { generateTokenPair, verifyRefreshToken, LoginType } from '../services/jwtService';
 
 const router = Router();
 
@@ -143,7 +143,7 @@ router.post('/signup', async (req, res) => {
       password_hash: passwordHash, // 이미 해싱된 비밀번호 사용
     };
 
-    const tokenPair = generateTokenPair(newUser);
+    const tokenPair = generateTokenPair(newUser, 'signup');
 
     return res.json(
       ok(
@@ -255,9 +255,11 @@ router.post('/login', async (req, res) => {
 
     const identRaw = email.trim().toLowerCase();
     let emailToUse = identRaw;
+    let loginType: LoginType = 'email';
 
     // @ 없으면 아이디로 간주 → profiles에서 실제 이메일 찾기
     if (!identRaw.includes('@')) {
+      loginType = 'username';
       const { data: profile, error: profileErr } = await supabase
         .from('profiles')
         .select('email, username')
@@ -308,7 +310,7 @@ router.post('/login', async (req, res) => {
     };
 
     // JWT 토큰 생성 (기존에 쓰던 함수)
-    const tokenPair = generateTokenPair(user);
+    const tokenPair = generateTokenPair(user, loginType);
 
     return res.json(
       ok(
@@ -485,6 +487,125 @@ router.post('/refresh', async (req, res) => {
     console.error('[auth] /refresh error', e);
     if (e.name === 'TokenExpiredError' || e.name === 'JsonWebTokenError') {
       return res.status(401).json(err(401, 'Invalid or expired refresh token'));
+    }
+    return res.status(500).json(err(500, e?.message || 'Internal Server Error'));
+  }
+});
+
+/**
+ * @swagger
+ * /api/v1/auth/session:
+ *   get:
+ *     summary: 현재 세션 로그인 정보 조회
+ *     description: 현재 세션의 로그인 타입, 최근 로그인 시간 등을 조회합니다
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 세션 정보 조회 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 200
+ *                 message:
+ *                   type: string
+ *                   example: "Session info retrieved successfully"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     loginType:
+ *                       type: string
+ *                       example: "email"
+ *                       description: "로그인 방식 (email, username, signup)"
+ *                     lastLoginAt:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2025-11-09T05:58:33.452Z"
+ *                       description: "최근 로그인 시간"
+ *                     userId:
+ *                       type: string
+ *                       example: "60be2b70-65cf-4a90-a188-c8f967e1cbe7"
+ *                     email:
+ *                       type: string
+ *                       example: "test@example.com"
+ *       401:
+ *         description: 인증 토큰이 유효하지 않음
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 401
+ *                 message:
+ *                   type: string
+ *                   example: "Unauthorized"
+ */
+router.get('/session', (req, res) => {
+  // #swagger.tags = ['Auth']
+  // #swagger.summary = '현재 세션 로그인 정보 조회'
+  // #swagger.description = '현재 세션의 로그인 타입, 최근 로그인 시간 등을 조회합니다'
+  // #swagger.security = [{ "bearerAuth": [] }]
+  /* #swagger.responses[200] = {
+        description: '세션 정보 조회 성공',
+        schema: {
+          type: 'object',
+          example: {
+            "code": 200,
+            "data": {
+              "loginType": "email",
+              "lastLoginAt": "2025-11-09T05:58:33.452Z",
+              "userId": "60be2b70-65cf-4a90-a188-c8f967e1cbe7",
+              "email": "test@example.com"
+            },
+            "message": "Session info retrieved successfully"
+          }
+        }
+      }
+  */
+  /* #swagger.responses[401] = {
+        description: '인증 토큰이 유효하지 않음',
+        schema: {
+          type: 'object',
+          properties: {
+            code: { type: 'integer', example: 401 },
+            message: { type: 'string', example: 'Unauthorized' }
+          }
+        }
+      }
+  */
+
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json(err(401, 'Authorization header required'));
+    }
+
+    const token = authHeader.substring(7);
+    const { verifyAccessToken } = require('../services/jwtService');
+    const payload = verifyAccessToken(token);
+
+    return res.json(
+      ok(
+        {
+          loginType: payload.loginType || 'unknown',
+          lastLoginAt: payload.lastLoginAt || null,
+          userId: payload.sub,
+          email: payload.email,
+        },
+        'Session info retrieved successfully'
+      )
+    );
+  } catch (e: any) {
+    console.error('[auth] /session error', e);
+    if (e.name === 'TokenExpiredError' || e.name === 'JsonWebTokenError') {
+      return res.status(401).json(err(401, 'Invalid or expired token'));
     }
     return res.status(500).json(err(500, e?.message || 'Internal Server Error'));
   }
