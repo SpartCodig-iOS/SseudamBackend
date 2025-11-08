@@ -39,8 +39,19 @@ const router = Router();
  */
 router.get('/me', authenticate, (req, res) => {
   // #swagger.tags = ['Auth']
-  // #swagger.description = '현재 사용자 정보 조회'
+  // #swagger.summary = '현재 사용자 정보 조회'
+  // #swagger.description = '인증된 사용자의 기본 정보를 조회합니다'
   // #swagger.security = [{ "bearerAuth": [] }]
+  /* #swagger.responses[200] = {
+        description: '사용자 정보 조회 성공',
+        schema: { $ref: '#/definitions/UserResponse' }
+      }
+  */
+  /* #swagger.responses[401] = {
+        description: '인증 토큰이 유효하지 않음',
+        schema: { $ref: '#/definitions/UnauthorizedResponse' }
+      }
+  */
   res.json(success(toUserResponse(req.currentUser!)));
 });
 
@@ -90,14 +101,6 @@ router.get('/profile', authenticate, (req, res) => {
  *     tags: [Profile]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: purge
- *         schema:
- *           type: string
- *           enum: [supabase]
- *         description: Supabase Auth 계정도 함께 삭제할지 여부
- *         example: supabase
  *     responses:
  *       200:
  *         description: 계정 삭제 성공
@@ -174,12 +177,12 @@ router.delete('/profile', authenticate, async (req, res, next) => {
 
     // PostgreSQL 제거로 인해 로컬 DB 삭제는 생략
     // await deleteUser(user.id); // 로컬 DB 삭제
-    console.log(`[profile] User deletion requested: ${user.id}, supabaseDeleted: ${supabaseDeleted}`);
+    console.log(`[profile] User deletion completed: ${user.id}, supabaseDeleted: ${supabaseDeleted}`);
 
     res.json(
       success(
         { userID: user.id, supabaseDeleted },
-        purgeSupabase ? 'Account deleted (supabase only)' : 'Account deletion logged (local DB not configured)'
+        'Account deleted successfully'
       )
     );
   } catch (error) {

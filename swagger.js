@@ -1,8 +1,8 @@
 const swaggerAutogen = require('swagger-autogen')({
   disableLogs: false,
-  autoHeaders: false,  // authorization 헤더 자동 감지 비활성화
-  autoQuery: true,     // 쿼리 파라미터 자동 감지 활성화
-  autoBody: true       // request body 자동 감지 활성화
+  autoHeaders: false,
+  autoQuery: true,
+  autoBody: true
 });
 
 const doc = {
@@ -11,8 +11,8 @@ const doc = {
     description: 'Supabase 연동 인증 API',
     version: '1.0.0'
   },
-  host: 'localhost:8080',
-  schemes: ['http'],
+  host: process.env.NODE_ENV === 'production' ? 'finalprojectsever.onrender.com' : 'localhost:8080',
+  schemes: process.env.NODE_ENV === 'production' ? ['https'] : ['http'],
   consumes: ['application/json'],
   produces: ['application/json'],
   tags: [

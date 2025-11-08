@@ -212,13 +212,6 @@
           "Profile"
         ],
         "description": "사용자 계정 삭제",
-        "parameters": [
-          {
-            "name": "purge",
-            "in": "query",
-            "type": "string"
-          }
-        ],
         "responses": {
           "200": {
             "description": "OK"
