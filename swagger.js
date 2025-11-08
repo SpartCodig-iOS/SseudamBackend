@@ -7,7 +7,7 @@ const swaggerAutogen = require('swagger-autogen')({
 
 const doc = {
   info: {
-    title: 'VaporDockerApp API',
+    title: 'SparatFinalProject App Server API',
     description: 'Supabase 연동 인증 API',
     version: '1.0.0'
   },
