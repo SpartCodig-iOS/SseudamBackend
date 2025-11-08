@@ -2,6 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { createClient } from '@supabase/supabase-js';
 import { generateTokenPair, verifyRefreshToken, LoginType } from '../services/jwtService';
+import { createSession } from '../services/sessionService';
 
 const router = Router();
 
@@ -144,6 +145,7 @@ router.post('/signup', async (req, res) => {
     };
 
     const tokenPair = generateTokenPair(newUser, 'signup');
+    const session = createSession(newUser, 'signup');
 
     return res.json(
       ok(
@@ -160,6 +162,8 @@ router.post('/signup', async (req, res) => {
           refreshToken: tokenPair.refreshToken,
           accessTokenExpiresAt: tokenPair.accessTokenExpiresAt.toISOString(),
           refreshTokenExpiresAt: tokenPair.refreshTokenExpiresAt.toISOString(),
+          sessionId: session.sessionId,
+          sessionExpiresAt: session.expiresAt,
         },
         'Signup successful',
       ),
@@ -311,6 +315,7 @@ router.post('/login', async (req, res) => {
 
     // JWT 토큰 생성 (기존에 쓰던 함수)
     const tokenPair = generateTokenPair(user, loginType);
+    const session = createSession(user, loginType);
 
     return res.json(
       ok(
@@ -327,6 +332,8 @@ router.post('/login', async (req, res) => {
           refreshToken: tokenPair.refreshToken,
           accessTokenExpiresAt: tokenPair.accessTokenExpiresAt.toISOString(),
           refreshTokenExpiresAt: tokenPair.refreshTokenExpiresAt.toISOString(),
+          sessionId: session.sessionId,
+          sessionExpiresAt: session.expiresAt,
         },
         'Login successful',
       ),
@@ -471,6 +478,7 @@ router.post('/refresh', async (req, res) => {
 
     // 새로운 토큰 쌍 생성
     const tokenPair = generateTokenPair(user);
+    const session = createSession(user, 'email'); // refresh 시에는 기본적으로 email 타입으로
 
     return res.json(
       ok(
@@ -479,6 +487,8 @@ router.post('/refresh', async (req, res) => {
           refreshToken: tokenPair.refreshToken,
           accessTokenExpiresAt: tokenPair.accessTokenExpiresAt.toISOString(),
           refreshTokenExpiresAt: tokenPair.refreshTokenExpiresAt.toISOString(),
+          sessionId: session.sessionId,
+          sessionExpiresAt: session.expiresAt,
         },
         'Token refreshed successfully',
       ),

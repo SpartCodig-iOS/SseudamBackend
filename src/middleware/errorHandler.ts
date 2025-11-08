@@ -29,5 +29,5 @@ export const errorHandler = (err: any, _req: Request, res: Response<ApiResponse<
   } else {
     logger.info('Handled error response', { status, message });
   }
-  res.status(status).json({ code: status, message });
+  res.status(status).json({ code: status, data: [], message });
 };

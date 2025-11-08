@@ -9,6 +9,7 @@ const success = (data, message = 'Success', code = 200) => ({
 exports.success = success;
 const failure = (message, code = 400) => ({
     code,
+    data: [],
     message,
 });
 exports.failure = failure;

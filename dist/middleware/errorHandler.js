@@ -28,6 +28,6 @@ const errorHandler = (err, _req, res, _next) => {
     else {
         logger_1.logger.info('Handled error response', { status, message });
     }
-    res.status(status).json({ code: status, message });
+    res.status(status).json({ code: status, data: [], message });
 };
 exports.errorHandler = errorHandler;

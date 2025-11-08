@@ -10,7 +10,8 @@ export const success = <T>(data: T, message = 'Success', code = 200): ApiRespons
   message,
 });
 
-export const failure = (message: string, code = 400): ApiResponse<null> => ({
+export const failure = (message: string, code = 400): ApiResponse<[]> => ({
   code,
+  data: [],
   message,
 });

@@ -7,6 +7,7 @@ const express_1 = require("express");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const supabase_js_1 = require("@supabase/supabase-js");
 const jwtService_1 = require("../services/jwtService");
+const sessionService_1 = require("../services/sessionService");
 const router = (0, express_1.Router)();
 /**
  * Supabase Admin 클라이언트
@@ -123,6 +124,7 @@ router.post('/signup', async (req, res) => {
             password_hash: passwordHash, // 이미 해싱된 비밀번호 사용
         };
         const tokenPair = (0, jwtService_1.generateTokenPair)(newUser, 'signup');
+        const session = (0, sessionService_1.createSession)(newUser, 'signup');
         return res.json(ok({
             user: {
                 id: authId,
@@ -136,6 +138,8 @@ router.post('/signup', async (req, res) => {
             refreshToken: tokenPair.refreshToken,
             accessTokenExpiresAt: tokenPair.accessTokenExpiresAt.toISOString(),
             refreshTokenExpiresAt: tokenPair.refreshTokenExpiresAt.toISOString(),
+            sessionId: session.sessionId,
+            sessionExpiresAt: session.expiresAt,
         }, 'Signup successful'));
     }
     catch (e) {
@@ -267,6 +271,7 @@ router.post('/login', async (req, res) => {
         };
         // JWT 토큰 생성 (기존에 쓰던 함수)
         const tokenPair = (0, jwtService_1.generateTokenPair)(user, loginType);
+        const session = (0, sessionService_1.createSession)(user, loginType);
         return res.json(ok({
             user: {
                 id: user.id,
@@ -280,6 +285,8 @@ router.post('/login', async (req, res) => {
             refreshToken: tokenPair.refreshToken,
             accessTokenExpiresAt: tokenPair.accessTokenExpiresAt.toISOString(),
             refreshTokenExpiresAt: tokenPair.refreshTokenExpiresAt.toISOString(),
+            sessionId: session.sessionId,
+            sessionExpiresAt: session.expiresAt,
         }, 'Login successful'));
     }
     catch (e) {
@@ -415,11 +422,14 @@ router.post('/refresh', async (req, res) => {
         }
         // 새로운 토큰 쌍 생성
         const tokenPair = (0, jwtService_1.generateTokenPair)(user);
+        const session = (0, sessionService_1.createSession)(user, 'email'); // refresh 시에는 기본적으로 email 타입으로
         return res.json(ok({
             accessToken: tokenPair.accessToken,
             refreshToken: tokenPair.refreshToken,
             accessTokenExpiresAt: tokenPair.accessTokenExpiresAt.toISOString(),
             refreshTokenExpiresAt: tokenPair.refreshTokenExpiresAt.toISOString(),
+            sessionId: session.sessionId,
+            sessionExpiresAt: session.expiresAt,
         }, 'Token refreshed successfully'));
     }
     catch (e) {
