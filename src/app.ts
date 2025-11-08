@@ -7,7 +7,9 @@ import routes from './routes';
 import healthRouter from './routes/health';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
-const swaggerFile = require('../swagger-output.json');
+
+// ✅ 원본 swagger JSON 불러오기
+const rawSwaggerFile = require('../swagger-output.json');
 
 const app = express();
 
@@ -22,6 +24,19 @@ app.use(express.urlencoded({ extended: true }));
 app.use(requestLogger);
 app.use('/public', express.static(path.join(process.cwd(), 'public')));
 
+// ✅ env 에 따라 host / schemes 덮어쓰기
+const swaggerFile = {
+  ...rawSwaggerFile,
+  host:
+    process.env.NODE_ENV === 'production'
+      ? 'finalprojectsever.onrender.com' // Render 배포 도메인
+      : 'localhost:8080',
+  schemes:
+    process.env.NODE_ENV === 'production'
+      ? ['https']
+      : ['http'],
+};
+
 // Setup Swagger documentation
 const swaggerOptions = {
   explorer: true,
@@ -33,8 +48,8 @@ const swaggerOptions = {
     filter: true,
     showExtensions: true,
     showCommonExtensions: true,
-    tryItOutEnabled: true
-  }
+    tryItOutEnabled: true,
+  },
 };
 
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerFile, swaggerOptions));
