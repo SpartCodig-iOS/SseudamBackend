@@ -211,31 +211,48 @@ router.post('/login', async (req, res) => {
     // #swagger.description = '사용자 로그인 - Supabase Auth를 통한 로그인 및 JWT 토큰 발급'
     try {
         const { email, password } = req.body;
+        // email 필드에 "이메일 또는 아이디"가 들어온다고 가정
         if (!email || !password) {
             return res.status(400).json(err(400, 'email and password are required'));
         }
-        const ident = email.toLowerCase();
-        // email 필드든 identifier 필드든 관계없이, 이메일 형식이 아니면 @example.com 을 붙여서 이메일로 변환
-        // 이렇게 하면 email 필드에도 "test" 같은 아이디만 넣어도 작동함
-        let emailToUse = ident;
-        if (!ident.includes('@')) {
-            emailToUse = `${ident}@example.com`;
-        }
-        // Supabase Auth로 직접 로그인 검증
         if (!supabase) {
             return res
                 .status(500)
                 .json(err(500, 'Supabase admin client is not configured (missing env vars)'));
         }
+        const identRaw = email.trim().toLowerCase();
+        let emailToUse = identRaw;
+        // @ 없으면 아이디로 간주 → profiles에서 실제 이메일 찾기
+        if (!identRaw.includes('@')) {
+            const { data: profile, error: profileErr } = await supabase
+                .from('profiles')
+                .select('email, username')
+                .or(`username.eq.${identRaw},email.ilike.${identRaw}@%`)
+                .maybeSingle();
+            console.log('[auth] login identRaw =', identRaw);
+            console.log('[auth] login profile =', profile);
+            console.log('[auth] login profileErr =', profileErr);
+            if (profileErr) {
+                console.error('[auth] login profiles query error', profileErr);
+            }
+            if (!profile?.email) {
+                console.warn('[auth] login: no profile found for identRaw =', identRaw);
+                return res.status(401).json(err(401, 'Invalid credentials'));
+            }
+            emailToUse = profile.email.toLowerCase();
+        }
+        console.log('[auth] login emailToUse for SupabaseAuth =', emailToUse);
+        // Supabase Auth로 실제 로그인 시도
         const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
             email: emailToUse,
             password,
         });
-        if (signInErr || !signInData.user) {
+        if (signInErr || !signInData?.user) {
+            console.error('[auth] signInWithPassword error', signInErr);
             return res.status(401).json(err(401, 'Invalid credentials'));
         }
         const supabaseUser = signInData.user;
-        // Supabase user를 UserRecord 형식으로 변환
+        // Supabase user를 UserRecord 비슷한 형식으로 변환
         const user = {
             id: supabaseUser.id,
             email: supabaseUser.email,
@@ -246,7 +263,7 @@ router.post('/login', async (req, res) => {
             created_at: new Date(supabaseUser.created_at),
             updated_at: new Date(supabaseUser.updated_at || supabaseUser.created_at),
         };
-        // JWT 토큰 생성
+        // JWT 토큰 생성 (기존에 쓰던 함수)
         const tokenPair = (0, jwtService_1.generateTokenPair)(user);
         return res.json(ok({
             user: {
