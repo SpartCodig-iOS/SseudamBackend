@@ -27,5 +27,7 @@ services:
         sync: false
       - key: SUPERBASE_DB_URL
         sync: false
+      - key: DATABASE_FORCE_IPV4
+        value: "1"
     # Render는 Postgres 외부 서비스나 Supabase 연결을 권장
     # 무료 플랜에서는 managed database를 제공하지 않음

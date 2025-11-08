@@ -1,75 +1,10 @@
-# Docker Compose file for Vapor
-#
-# Install Docker on your system to run and test
-# your Vapor app in a production-like environment.
-#
-# Note: This file is intended for testing and does not
-# implement best practices for a production deployment.
-#
-# Learn more: https://docs.docker.com/compose/reference/
-#
-#   Build images: docker compose build
-#      Start app: docker compose up app
-# Start database: docker compose up db
-# Run migrations: docker compose run migrate
-#       Stop all: docker compose down (add -v to wipe db)
-#
-
-volumes:
-  db_data:
-
-x-shared_environment: &shared_environment
-  LOG_LEVEL: ${LOG_LEVEL:-debug}
-  DATABASE_HOST: db
-  DATABASE_NAME: vapor_database
-  DATABASE_USERNAME: vapor_username
-  DATABASE_PASSWORD: vapor_password
-  JWT_SECRET: ${JWT_SECRET}
-  SUPABASE_URL: ${SUPABASE_URL}
-  SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
-  SUPABASE_PROFILE_TABLE: ${SUPABASE_PROFILE_TABLE}
-  # Enable Supabase sync for local development
-  # SUPABASE_DB_URL: ${SUPABASE_DB_URL}
-  # Legacy support
-  SUPERBASE_URL: ${SUPERBASE_URL}
-  SUPERBASE_ANON_KEY: ${SUPERBASE_ANON_KEY}
-  
 services:
-  app:
-    image: vapordockerapp:latest
-    build:
-      context: .
-    environment:
-      <<: *shared_environment
+  api:
+    build: .
     ports:
-      - '8080:8080'
-    # user: '0' # uncomment to run as root for testing purposes even though Dockerfile defines 'vapor' user.
-    command: ["serve", "--env", "production", "--hostname", "0.0.0.0", "--port", "8080"]
-  migrate:
-    image: vapordockerapp:latest
-    build:
-      context: .
+      - "8080:8080"
+    env_file:
+      - .env
     environment:
-      <<: *shared_environment
-    command: ["migrate", "--yes"]
-    deploy:
-      replicas: 0
-  revert:
-    image: vapordockerapp:latest
-    build:
-      context: .
-    environment:
-      <<: *shared_environment
-    command: ["migrate", "--revert", "--yes"]
-    deploy:
-      replicas: 0
-  db:
-    image: postgres:18-alpine
-    volumes:
-      - db_data:/var/lib/postgresql
-    environment:
-      POSTGRES_USER: vapor_username
-      POSTGRES_PASSWORD: vapor_password
-      POSTGRES_DB: vapor_database
-    ports:
-      - '5432:5432'
+      NODE_ENV: production
+      PORT: 8080
