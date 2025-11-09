@@ -9,6 +9,6 @@ const profile_1 = __importDefault(require("./profile"));
 const session_1 = __importDefault(require("./session"));
 const router = (0, express_1.Router)();
 router.use('/api/v1/auth', auth_1.default);
-router.use('/api/v1/auth', profile_1.default);
+router.use('/api/v1/profile', profile_1.default);
 router.use('/api/v1/session', session_1.default);
 exports.default = router;

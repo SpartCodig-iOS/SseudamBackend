@@ -34,12 +34,6 @@
       "in": "header",
       "name": "Authorization",
       "description": "Bearer token을 사용한 인증. 형식: Bearer {token}"
-    },
-    "sessionAuth": {
-      "type": "apiKey",
-      "in": "header",
-      "name": "X-Session-ID",
-      "description": "세션 ID를 사용한 인증. 로그인/회원가입 시 반환되는 sessionId 값 입력"
     }
   },
   "consumes": [
@@ -176,239 +170,10 @@
         }
       }
     },
-    "/api/v1/auth/me": {
-      "get": {
-        "tags": [
-          "Auth"
-        ],
-        "summary": "현재 사용자 정보 조회",
-        "description": "인증된 사용자의 기본 정보를 조회합니다",
-        "responses": {
-          "200": {
-            "description": "사용자 정보 조회 성공",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "type": {
-                  "type": "string",
-                  "example": "object"
-                },
-                "example": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "number",
-                      "example": 200
-                    },
-                    "data": {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "example": "60be2b70-65cf-4a90-a188-c8f967e1cbe7"
-                        },
-                        "email": {
-                          "type": "string",
-                          "example": "test@example.com"
-                        },
-                        "name": {
-                          "type": "string",
-                          "example": "테스트 사용자"
-                        },
-                        "avatarURL": {},
-                        "createdAt": {
-                          "type": "string",
-                          "example": "2025-11-07T20:43:21.842Z"
-                        },
-                        "userId": {
-                          "type": "string",
-                          "example": "test"
-                        }
-                      }
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "OK"
-                    }
-                  }
-                }
-              },
-              "xml": {
-                "name": "main"
-              }
-            }
-          },
-          "401": {
-            "description": "인증 토큰이 유효하지 않음",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "type": {
-                  "type": "string",
-                  "example": "object"
-                },
-                "properties": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "object",
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "example": "integer"
-                        },
-                        "example": {
-                          "type": "number",
-                          "example": 401
-                        }
-                      }
-                    },
-                    "message": {
-                      "type": "object",
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "example": "string"
-                        },
-                        "example": {
-                          "type": "string",
-                          "example": "Unauthorized"
-                        }
-                      }
-                    }
-                  }
-                }
-              },
-              "xml": {
-                "name": "main"
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/v1/auth/profile": {
-      "get": {
-        "tags": [
-          "Profile"
-        ],
-        "description": "사용자 프로필 조회",
-        "responses": {
-          "200": {
-            "description": "프로필 정보 조회 성공",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "type": {
-                  "type": "string",
-                  "example": "object"
-                },
-                "example": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "number",
-                      "example": 200
-                    },
-                    "data": {
-                      "type": "object",
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                          "example": "60be2b70-65cf-4a90-a188-c8f967e1cbe7"
-                        },
-                        "email": {
-                          "type": "string",
-                          "example": "test@example.com"
-                        },
-                        "name": {
-                          "type": "string",
-                          "example": "테스트 사용자"
-                        },
-                        "avatarURL": {},
-                        "createdAt": {
-                          "type": "string",
-                          "example": "2025-11-07T20:43:21.842Z"
-                        },
-                        "userId": {
-                          "type": "string",
-                          "example": "test"
-                        }
-                      }
-                    },
-                    "message": {
-                      "type": "string",
-                      "example": "OK"
-                    }
-                  }
-                }
-              },
-              "xml": {
-                "name": "main"
-              }
-            }
-          },
-          "401": {
-            "description": "인증 토큰이 유효하지 않음",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "type": {
-                  "type": "string",
-                  "example": "object"
-                },
-                "properties": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "object",
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "example": "integer"
-                        },
-                        "example": {
-                          "type": "number",
-                          "example": 401
-                        }
-                      }
-                    },
-                    "message": {
-                      "type": "object",
-                      "properties": {
-                        "type": {
-                          "type": "string",
-                          "example": "string"
-                        },
-                        "example": {
-                          "type": "string",
-                          "example": "Unauthorized"
-                        }
-                      }
-                    }
-                  }
-                }
-              },
-              "xml": {
-                "name": "main"
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ]
-      },
+    "/api/v1/auth/account": {
       "delete": {
         "tags": [
-          "Profile"
+          "Auth"
         ],
         "description": "사용자 계정 삭제 (Supabase Auth 자동 삭제 포함)",
         "responses": {
@@ -534,6 +299,125 @@
                         "example": {
                           "type": "string",
                           "example": "Internal Server Error"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "xml": {
+                "name": "main"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/v1/profile/me": {
+      "get": {
+        "tags": [
+          "Profile"
+        ],
+        "description": "사용자 프로필 조회",
+        "responses": {
+          "200": {
+            "description": "프로필 정보 조회 성공",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "example": "object"
+                },
+                "example": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "number",
+                      "example": 200
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "example": "60be2b70-65cf-4a90-a188-c8f967e1cbe7"
+                        },
+                        "email": {
+                          "type": "string",
+                          "example": "test@example.com"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "테스트 사용자"
+                        },
+                        "avatarURL": {},
+                        "createdAt": {
+                          "type": "string",
+                          "example": "2025-11-07T20:43:21.842Z"
+                        },
+                        "userId": {
+                          "type": "string",
+                          "example": "test"
+                        },
+                        "loginType": {
+                          "type": "string",
+                          "example": "email"
+                        }
+                      }
+                    },
+                    "message": {
+                      "type": "string",
+                      "example": "OK"
+                    }
+                  }
+                }
+              },
+              "xml": {
+                "name": "main"
+              }
+            }
+          },
+          "401": {
+            "description": "인증 토큰이 유효하지 않음",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "example": "object"
+                },
+                "properties": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "example": "integer"
+                        },
+                        "example": {
+                          "type": "number",
+                          "example": 401
+                        }
+                      }
+                    },
+                    "message": {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "example": "string"
+                        },
+                        "example": {
+                          "type": "string",
+                          "example": "Unauthorized"
                         }
                       }
                     }

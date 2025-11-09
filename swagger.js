@@ -312,12 +312,6 @@ const doc = {
       in: 'header',
       name: 'Authorization',
       description: 'Bearer token을 사용한 인증. 형식: Bearer {token}'
-    },
-    sessionAuth: {
-      type: 'apiKey',
-      in: 'header',
-      name: 'X-Session-ID',
-      description: '세션 ID를 사용한 인증. 로그인/회원가입 시 반환되는 sessionId 값 입력'
     }
   }
 };

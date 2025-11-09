@@ -8,6 +8,9 @@ const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const supabase_js_1 = require("@supabase/supabase-js");
 const jwtService_1 = require("../services/jwtService");
 const sessionService_1 = require("../services/sessionService");
+const authenticate_1 = require("../middleware/authenticate");
+const api_1 = require("../types/api");
+const supabaseService_1 = require("../services/supabaseService");
 const router = (0, express_1.Router)();
 /**
  * Supabase Admin 클라이언트
@@ -227,9 +230,9 @@ router.post('/login', async (req, res) => {
         const identRaw = email.trim().toLowerCase();
         let emailToUse = identRaw;
         let loginType = 'email';
-        // @ 없으면 아이디로 간주 → profiles에서 실제 이메일 찾기
+        // @ 없으면 아이디로 간주하지만 loginType은 'email'로 유지 → profiles에서 실제 이메일 찾기
         if (!identRaw.includes('@')) {
-            loginType = 'username';
+            // loginType은 'email'로 유지
             const { data: profile, error: profileErr } = await supabase
                 .from('profiles')
                 .select('email, username')
@@ -287,6 +290,7 @@ router.post('/login', async (req, res) => {
             refreshTokenExpiresAt: tokenPair.refreshTokenExpiresAt.toISOString(),
             sessionId: session.sessionId,
             sessionExpiresAt: session.expiresAt,
+            lastLoginAt: session.lastLoginAt,
         }, 'Login successful'));
     }
     catch (e) {
@@ -438,6 +442,130 @@ router.post('/refresh', async (req, res) => {
             return res.status(401).json(err(401, 'Invalid or expired refresh token'));
         }
         return res.status(500).json(err(500, e?.message || 'Internal Server Error'));
+    }
+});
+/**
+ * @swagger
+ * /api/v1/auth/account:
+ *   delete:
+ *     summary: 사용자 계정 삭제
+ *     description: 인증된 사용자의 계정을 삭제합니다. purge=supabase 쿼리 파라미터로 Supabase Auth 계정도 함께 삭제할 수 있습니다
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: 계정 삭제 성공
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DeleteEnvelope'
+ *             examples:
+ *               withSupabase:
+ *                 summary: Supabase 포함 삭제
+ *                 value:
+ *                   code: 200
+ *                   message: "Account deleted (supabase only)"
+ *                   data:
+ *                     userID: "123e4567-e89b-12d3-a456-426614174000"
+ *                     supabaseDeleted: true
+ *               localOnly:
+ *                 summary: 로컬만 삭제
+ *                 value:
+ *                   code: 200
+ *                   message: "Account deletion logged (local DB not configured)"
+ *                   data:
+ *                     userID: "123e4567-e89b-12d3-a456-426614174000"
+ *                     supabaseDeleted: false
+ *       401:
+ *         description: 인증 토큰이 유효하지 않음
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 401
+ *                 message:
+ *                   type: string
+ *                   example: "Unauthorized"
+ *       500:
+ *         description: 서버 오류
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 code:
+ *                   type: integer
+ *                   example: 500
+ *                 message:
+ *                   type: string
+ *                   example: "Internal Server Error"
+ */
+router.delete('/account', authenticate_1.authenticate, async (req, res, next) => {
+    // #swagger.tags = ['Auth']
+    // #swagger.description = '사용자 계정 삭제 (Supabase Auth 자동 삭제 포함)'
+    // #swagger.security = [{ "bearerAuth": [] }]
+    /* #swagger.responses[200] = {
+          description: '계정 삭제 성공',
+          schema: {
+            type: 'object',
+            example: {
+              "code": 200,
+              "data": {
+                "userID": "60be2b70-65cf-4a90-a188-c8f967e1cbe7",
+                "supabaseDeleted": true
+              },
+              "message": "Account deleted successfully"
+            }
+          }
+        }
+    */
+    /* #swagger.responses[401] = {
+          description: '인증 토큰이 유효하지 않음',
+          schema: {
+            type: 'object',
+            properties: {
+              code: { type: 'integer', example: 401 },
+              message: { type: 'string', example: 'Unauthorized' }
+            }
+          }
+        }
+    */
+    /* #swagger.responses[500] = {
+          description: '서버 오류',
+          schema: {
+            type: 'object',
+            properties: {
+              code: { type: 'integer', example: 500 },
+              message: { type: 'string', example: 'Internal Server Error' }
+            }
+          }
+        }
+    */
+    try {
+        const user = req.currentUser;
+        // 자동으로 Supabase까지 삭제 (purge 파라미터 불필요)
+        let supabaseDeleted = false;
+        try {
+            await supabaseService_1.supabaseService.deleteUser(user.id); // Supabase Auth 관리자 삭제
+            supabaseDeleted = true;
+        }
+        catch (error) {
+            const message = error?.message?.toLowerCase() ?? '';
+            if (!message.includes('not found')) {
+                throw error;
+            }
+        }
+        // PostgreSQL 제거로 인해 로컬 DB 삭제는 생략
+        // await deleteUser(user.id); // 로컬 DB 삭제
+        console.log(`[auth] User deletion completed: ${user.id}, supabaseDeleted: ${supabaseDeleted}`);
+        res.json((0, api_1.success)({ userID: user.id, supabaseDeleted }, 'Account deleted successfully'));
+    }
+    catch (error) {
+        next(error);
     }
 });
 exports.default = router;

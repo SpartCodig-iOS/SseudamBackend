@@ -192,7 +192,7 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"code\": 200,\n  \"data\": {\n    \"user\": {\n      \"id\": \"f22fc114-8dc4-4b0a-a77a-559e2abbad80\",\n      \"email\": \"testuser@example.com\",\n      \"name\": \"테스트 사용자\",\n      \"avatarURL\": null,\n      \"createdAt\": \"2025-11-08T16:45:41.037Z\",\n      \"userId\": \"testuser\"\n    },\n    \"accessToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmMjJmYzExNC04ZGM0LTRiMGEtYTc3YS01NTllMmFiYmFkODAiLCJlbWFpbCI6InRlc3R1c2VyQGV4YW1wbGUuY29tIiwibmFtZSI6Iu2FjOyKpO2KuCDsgqzsmqnsnpAiLCJsb2dpblR5cGUiOiJlbWFpbCIsImxhc3RMb2dpbkF0IjoiMjAyNS0xMS0wOFQyMDozOTowNS4wODRaIiwiaWF0IjoxNzYyNjM0MzQ1LCJleHAiOjE3NjI3MjA3NDV9.R6aQRi8jwqZ5RqmnfriyaiENou-rqy1l_yfjrbSn9pE\",\n    \"refreshToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n    \"accessTokenExpiresAt\": \"2025-11-09T20:39:05.084Z\",\n    \"refreshTokenExpiresAt\": \"2025-11-15T20:39:05.084Z\"\n  },\n  \"message\": \"Login successful\"\n}",
+              "body": "{\n  \"code\": 200,\n  \"data\": {\n    \"user\": {\n      \"id\": \"60be2b70-65cf-4a90-a188-c8f967e1cbe7\",\n      \"email\": \"test@example.com\",\n      \"name\": \"테스트 사용자\",\n      \"avatarURL\": null,\n      \"createdAt\": \"2025-11-07T20:43:21.842Z\",\n      \"userId\": \"test\"\n    },\n    \"accessToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n    \"refreshToken\": \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...\",\n    \"accessTokenExpiresAt\": \"2025-11-10T10:30:41.311Z\",\n    \"refreshTokenExpiresAt\": \"2025-11-16T10:30:41.311Z\",\n    \"sessionId\": \"fab3b77ff09c2ef9df43fc00f8284ca91e54429c6d6bd9659b052bc8cd9e99fb\",\n    \"sessionExpiresAt\": \"2025-11-10T10:30:41.314Z\",\n    \"lastLoginAt\": \"2025-11-09T10:30:41.314Z\"\n  },\n  \"message\": \"Login successful\"\n}",
               "postman_preRequestScript": "// 토큰 자동 저장\nif (pm.response.code === 200) {\n  const responseJson = pm.response.json();\n  if (responseJson.data && responseJson.data.accessToken) {\n    pm.collectionVariables.set('accessToken', responseJson.data.accessToken);\n    pm.collectionVariables.set('refreshToken', responseJson.data.refreshToken);\n    pm.collectionVariables.set('userId', responseJson.data.user.id);\n    console.log('토큰이 자동으로 저장되었습니다');\n  }\n}"
             }
           ],
@@ -298,57 +298,6 @@
           ]
         },
         {
-          "name": "현재 사용자 정보 조회",
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{accessToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/v1/auth/me",
-              "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "auth", "me"]
-            },
-            "description": "인증된 사용자의 기본 정보를 조회합니다"
-          },
-          "response": [
-            {
-              "name": "사용자 정보 조회 성공",
-              "originalRequest": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Authorization",
-                    "value": "Bearer {{accessToken}}"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/auth/me",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["api", "v1", "auth", "me"]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"code\": 200,\n  \"data\": {\n    \"id\": \"60be2b70-65cf-4a90-a188-c8f967e1cbe7\",\n    \"email\": \"test@example.com\",\n    \"name\": \"테스트 사용자\",\n    \"avatarURL\": null,\n    \"createdAt\": \"2025-11-07T20:43:21.842Z\",\n    \"userId\": \"test\"\n  },\n  \"message\": \"OK\"\n}"
-            }
-          ]
-        },
-        {
           "name": "토큰 갱신",
           "request": {
             "method": "POST",
@@ -442,9 +391,9 @@
             "method": "GET",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/auth/profile",
+              "raw": "{{baseUrl}}/api/v1/profile/me",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "auth", "profile"]
+              "path": ["api", "v1", "profile", "me"]
             },
             "description": "인증된 사용자의 상세 프로필 정보를 조회합니다"
           },
@@ -460,9 +409,9 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/v1/profile",
+                  "raw": "{{baseUrl}}/api/v1/profile/me",
                   "host": ["{{baseUrl}}"],
-                  "path": ["api", "v1", "profile"]
+                  "path": ["api", "v1", "profile", "me"]
                 }
               },
               "status": "OK",
@@ -473,12 +422,12 @@
                   "value": "application/json"
                 }
               ],
-              "body": "{\n  \"code\": 200,\n  \"data\": {\n    \"id\": \"60be2b70-65cf-4a90-a188-c8f967e1cbe7\",\n    \"email\": \"test@example.com\",\n    \"name\": \"테스트 사용자\",\n    \"avatarURL\": null,\n    \"createdAt\": \"2025-11-07T20:43:21.842Z\",\n    \"userId\": \"test\"\n  },\n  \"message\": \"OK\"\n}"
+              "body": "{\n  \"code\": 200,\n  \"data\": {\n    \"id\": \"60be2b70-65cf-4a90-a188-c8f967e1cbe7\",\n    \"userId\": \"test\",\n    \"email\": \"test@example.com\",\n    \"name\": \"테스트 사용자\",\n    \"avatarURL\": null,\n    \"createdAt\": \"2025-11-09T10:30:41.000Z\",\n    \"updatedAt\": \"2025-11-09T10:30:41.000Z\",\n    \"loginType\": \"email\"\n  },\n  \"message\": \"Success\"\n}"
             }
           ]
         },
         {
-          "name": "계정 삭제",
+          "name": "계정 삭제 (Account Deletion)",
           "request": {
             "auth": {
               "type": "bearer",
@@ -493,9 +442,9 @@
             "method": "DELETE",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/api/v1/auth/profile",
+              "raw": "{{baseUrl}}/api/v1/auth/account",
               "host": ["{{baseUrl}}"],
-              "path": ["api", "v1", "auth", "profile"]
+              "path": ["api", "v1", "auth", "account"]
             },
             "description": "인증된 사용자의 계정을 삭제합니다. Supabase Auth 계정도 함께 삭제됩니다."
           },
@@ -511,9 +460,9 @@
                   }
                 ],
                 "url": {
-                  "raw": "{{baseUrl}}/api/v1/profile",
+                  "raw": "{{baseUrl}}/api/v1/auth/account",
                   "host": ["{{baseUrl}}"],
-                  "path": ["api", "v1", "profile"]
+                  "path": ["api", "v1", "auth", "account"]
                 }
               },
               "status": "OK",
@@ -605,29 +554,7 @@
               ]
             },
             {
-              "name": "3. 내 정보 확인",
-              "request": {
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{accessToken}}",
-                      "type": "string"
-                    }
-                  ]
-                },
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/api/v1/auth/me",
-                  "host": ["{{baseUrl}}"],
-                  "path": ["api", "v1", "auth", "me"]
-                }
-              }
-            },
-            {
-              "name": "4. 세션 정보 확인 (파라미터 방식)",
+              "name": "3. 세션 정보 확인 (파라미터 방식)",
               "request": {
                 "method": "GET",
                 "header": [],
@@ -645,7 +572,7 @@
               }
             },
             {
-              "name": "5. 프로필 조회",
+              "name": "4. 프로필 조회",
               "request": {
                 "auth": {
                   "type": "bearer",
@@ -660,14 +587,14 @@
                 "method": "GET",
                 "header": [],
                 "url": {
-                  "raw": "{{baseUrl}}/api/v1/profile",
+                  "raw": "{{baseUrl}}/api/v1/profile/me",
                   "host": ["{{baseUrl}}"],
-                  "path": ["api", "v1", "profile"]
+                  "path": ["api", "v1", "profile", "me"]
                 }
               }
             },
             {
-              "name": "6. 토큰 갱신",
+              "name": "5. 토큰 갱신",
               "request": {
                 "method": "POST",
                 "header": [
