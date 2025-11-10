@@ -29,7 +29,7 @@ const swaggerFile = {
   ...rawSwaggerFile,
   host:
     process.env.NODE_ENV === 'production'
-      ? 'finalprojectsever.onrender.com' // Render 배포 도메인
+      ? 'sparatafinalapp.up.railway.app' // Render 배포 도메인
       : 'localhost:8080',
   schemes:
     process.env.NODE_ENV === 'production'
