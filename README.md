@@ -22,11 +22,10 @@ cp .env.example .env
 npm install
 npm run dev
 ```
-
 서버는 기본적으로 `.env`에 정의된 **PORT (기본값 8080)** 에서 실행됩니다.  
 Swagger UI 문서는 다음 경로에서 접근 가능합니다:
 
-👉 **https://finalprojectsever.onrender.com/api-docs/**
+- [SwaggerApiDocs](https://sparatafinalapp.up.railway.app/api-docs/)
 
 ---
 

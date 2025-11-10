@@ -11,7 +11,7 @@ const doc = {
     description: 'Supabase 연동 인증 API',
     version: '1.0.0'
   },
-  host: process.env.NODE_ENV === 'production' ? 'finalprojectsever.onrender.com' : 'localhost:8080',
+  host: process.env.NODE_ENV === 'production' ? 'https://sparatafinalapp.up.railway.app' : 'localhost:8080',
   schemes: process.env.NODE_ENV === 'production' ? ['https'] : ['http'],
   consumes: ['application/json'],
   produces: ['application/json'],

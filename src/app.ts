@@ -3,8 +3,8 @@ import express from 'express';
 import cors from 'cors';
 import helmet, { HelmetOptions } from 'helmet';
 import swaggerUi from 'swagger-ui-express';
-import routes from './routes';
-import healthRouter from './routes/health';
+import routes from './controller';
+import healthRouter from './controller/health';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/requestLogger';
 
