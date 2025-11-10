@@ -1,5 +1,5 @@
 {
-  "swagger": "3.1.0",
+  "swagger": "2.0",
   "info": {
     "title": "SparatFinalProject App Server API",
     "description": "Supabase 연동 인증 API",
