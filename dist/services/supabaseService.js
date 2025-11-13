@@ -134,6 +134,31 @@ let SupabaseService = class SupabaseService {
             loginType,
         });
     }
+    async saveAppleRefreshToken(userId, refreshToken) {
+        const client = this.getClient();
+        const { error } = await client
+            .from(env_1.env.supabaseProfileTable)
+            .update({
+            apple_refresh_token: refreshToken,
+            updated_at: new Date().toISOString(),
+        })
+            .eq('id', userId);
+        if (error) {
+            throw new Error(`[saveAppleRefreshToken] update failed: ${error.message}`);
+        }
+    }
+    async getAppleRefreshToken(userId) {
+        const client = this.getClient();
+        const { data, error } = await client
+            .from(env_1.env.supabaseProfileTable)
+            .select('apple_refresh_token')
+            .eq('id', userId)
+            .maybeSingle();
+        if (error) {
+            throw new Error(`[getAppleRefreshToken] select failed: ${error.message}`);
+        }
+        return data?.apple_refresh_token ?? null;
+    }
     async deleteUser(id) {
         const client = this.getClient();
         const { data: userLookup, error: lookupError } = await client.auth.admin.getUserById(id);

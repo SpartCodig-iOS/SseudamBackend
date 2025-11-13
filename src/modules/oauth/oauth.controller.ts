@@ -1,17 +1,20 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards, Req, UnauthorizedException } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBearerAuth,
   ApiBody,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
 import { SocialAuthService } from './social-auth.service';
-import { oauthTokenSchema } from '../../validators/authSchemas';
+import { appleRevokeSchema, oauthTokenSchema } from '../../validators/authSchemas';
 import { success } from '../../types/api';
 import { LoginResponseDto } from '../auth/dto/auth-response.dto';
 import { SocialLookupResponseDto } from './dto/oauth-response.dto';
 import { buildAuthSessionResponse } from '../auth/auth-response.util';
+import { AuthGuard } from '../../common/guards/auth.guard';
+import { RequestWithUser } from '../../types/request';
 
 @ApiTags('OAuth')
 @Controller('api/v1/oauth')
@@ -20,7 +23,12 @@ export class OAuthController {
 
   private async handleOAuthLogin(body: unknown, message: string) {
     const payload = oauthTokenSchema.parse(body);
-    const result = await this.socialAuthService.loginWithOAuthToken(payload.accessToken, payload.loginType);
+    const result = await this.socialAuthService.loginWithOAuthToken(
+      payload.accessToken,
+      payload.loginType,
+      payload.appleRefreshToken,
+      payload.authorizationCode,
+    );
     return success(buildAuthSessionResponse(result), message);
   }
 
@@ -37,6 +45,16 @@ export class OAuthController {
           type: 'string',
           description: '로그인 타입 (기본값 email)',
           example: 'apple',
+          nullable: true,
+        },
+        appleRefreshToken: {
+          type: 'string',
+          description: '애플 최초 가입 시 전달되는 refresh token',
+          nullable: true,
+        },
+        authorizationCode: {
+          type: 'string',
+          description: '애플 authorization_code (refresh token 교환용)',
           nullable: true,
         },
       },
@@ -70,6 +88,16 @@ export class OAuthController {
           type: 'string',
           description: '로그인 타입 (기본값 email)',
           example: 'apple',
+          nullable: true,
+        },
+        appleRefreshToken: {
+          type: 'string',
+          description: '애플 최초 가입 시 전달되는 refresh token',
+          nullable: true,
+        },
+        authorizationCode: {
+          type: 'string',
+          description: '애플 authorization_code (refresh token 교환용)',
           nullable: true,
         },
       },
@@ -123,5 +151,38 @@ export class OAuthController {
     const payload = oauthTokenSchema.parse(body);
     const result = await this.socialAuthService.checkOAuthAccount(payload.accessToken, payload.loginType);
     return success(result, 'Lookup successful');
+  }
+
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @Post('apple/revoke')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '애플 OAuth 연결 해제' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['refreshToken'],
+      properties: {
+        refreshToken: { type: 'string', description: 'Apple refresh token (user-specific)' },
+      },
+    },
+  })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        code: { type: 'integer', example: 200 },
+        message: { type: 'string', example: 'Apple connection revoked' },
+        data: { type: 'object', example: {} },
+      },
+    },
+  })
+  async revokeApple(@Body() body: unknown, @Req() req: RequestWithUser) {
+    if (!req.currentUser) {
+      throw new UnauthorizedException('Unauthorized');
+    }
+    const payload = appleRevokeSchema.parse(body);
+    await this.socialAuthService.revokeAppleConnection(req.currentUser.id, payload.refreshToken);
+    return success({}, 'Apple connection revoked');
   }
 }

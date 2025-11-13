@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, UnauthorizedException, Inject, forwardRef } from '@nestjs/common';
 import bcrypt from 'bcryptjs';
 import { LoginType } from '../../types/auth';
 import { UserRecord } from '../../types/user';
@@ -7,6 +7,7 @@ import { SessionData, SessionService } from '../../services/sessionService';
 import { JwtTokenService, TokenPair } from '../../services/jwtService';
 import { SupabaseService } from '../../services/supabaseService';
 import { fromSupabaseUser } from '../../utils/mappers';
+import { SocialAuthService } from '../oauth/social-auth.service';
 
 export interface AuthSessionPayload {
   user: UserRecord;
@@ -26,6 +27,8 @@ export class AuthService {
     private readonly supabaseService: SupabaseService,
     private readonly jwtTokenService: JwtTokenService,
     private readonly sessionService: SessionService,
+    @Inject(forwardRef(() => SocialAuthService))
+    private readonly socialAuthService: SocialAuthService,
   ) {}
 
   createAuthSession(user: UserRecord, loginType: LoginType): AuthSessionPayload {
@@ -117,6 +120,21 @@ export class AuthService {
   }
 
   async deleteAccount(user: UserRecord): Promise<{ supabaseDeleted: boolean }> {
+    let profileLoginType: LoginType | null = null;
+    try {
+      const profile = await this.supabaseService.findProfileById(user.id);
+      profileLoginType = (profile?.login_type as LoginType | null) ?? null;
+    } catch (error) {
+      console.warn('[deleteAccount] Failed to fetch profile for login type', error);
+    }
+
+    if (profileLoginType === 'apple') {
+      try {
+        await this.socialAuthService.revokeAppleConnection(user.id);
+      } catch (error) {
+        console.warn('[deleteAccount] Apple revoke failed', error);
+      }
+    }
     let supabaseDeleted = false;
     try {
       await this.supabaseService.deleteUser(user.id);

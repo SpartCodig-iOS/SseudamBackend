@@ -8,6 +8,9 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -19,13 +22,15 @@ const sessionService_1 = require("../../services/sessionService");
 const jwtService_1 = require("../../services/jwtService");
 const supabaseService_1 = require("../../services/supabaseService");
 const mappers_1 = require("../../utils/mappers");
+const social_auth_service_1 = require("../oauth/social-auth.service");
 let AuthService = class AuthService {
-    constructor(supabaseService, jwtTokenService, sessionService) {
+    constructor(supabaseService, jwtTokenService, sessionService, socialAuthService) {
         this.supabaseService = supabaseService;
         this.jwtTokenService = jwtTokenService;
         this.sessionService = sessionService;
+        this.socialAuthService = socialAuthService;
     }
-    buildAuthSession(user, loginType) {
+    createAuthSession(user, loginType) {
         const tokenPair = this.jwtTokenService.generateTokenPair(user, loginType);
         const session = this.sessionService.createSession(user, loginType);
         return { user, tokenPair, session, loginType };
@@ -50,7 +55,7 @@ let AuthService = class AuthService {
             username,
             password_hash: passwordHash,
         };
-        return this.buildAuthSession(newUser, 'signup');
+        return this.createAuthSession(newUser, 'signup');
     }
     async login(input) {
         const identifier = input.identifier.trim().toLowerCase();
@@ -81,7 +86,7 @@ let AuthService = class AuthService {
             throw new common_1.UnauthorizedException('Invalid credentials');
         }
         const user = (0, mappers_1.fromSupabaseUser)(supabaseUser);
-        return this.buildAuthSession(user, loginType);
+        return this.createAuthSession(user, loginType);
     }
     async refresh(refreshToken) {
         const payload = this.jwtTokenService.verifyRefreshToken(refreshToken);
@@ -99,11 +104,26 @@ let AuthService = class AuthService {
         catch (error) {
             throw new common_1.UnauthorizedException('User verification failed');
         }
-        const tokenPair = this.jwtTokenService.generateTokenPair(user, 'email');
-        const session = this.sessionService.createSession(user, 'email');
-        return { tokenPair, session };
+        const sessionPayload = this.createAuthSession(user, 'email');
+        return { tokenPair: sessionPayload.tokenPair, session: sessionPayload.session };
     }
     async deleteAccount(user) {
+        let profileLoginType = null;
+        try {
+            const profile = await this.supabaseService.findProfileById(user.id);
+            profileLoginType = profile?.login_type ?? null;
+        }
+        catch (error) {
+            console.warn('[deleteAccount] Failed to fetch profile for login type', error);
+        }
+        if (profileLoginType === 'apple') {
+            try {
+                await this.socialAuthService.revokeAppleConnection(user.id);
+            }
+            catch (error) {
+                console.warn('[deleteAccount] Apple revoke failed', error);
+            }
+        }
         let supabaseDeleted = false;
         try {
             await this.supabaseService.deleteUser(user.id);
@@ -117,49 +137,13 @@ let AuthService = class AuthService {
         }
         return { supabaseDeleted };
     }
-    async loginWithOAuthToken(accessToken, loginType = 'email') {
-        if (!accessToken) {
-            throw new common_1.UnauthorizedException('Missing Supabase access token');
-        }
-        const supabaseUser = await this.supabaseService.getUserFromToken(accessToken);
-        if (!supabaseUser) {
-            throw new common_1.UnauthorizedException('Invalid Supabase access token');
-        }
-        await this.supabaseService.ensureProfileFromSupabaseUser(supabaseUser, loginType);
-        const preferDisplayName = loginType !== 'email' && loginType !== 'username';
-        const user = (0, mappers_1.fromSupabaseUser)(supabaseUser, { preferDisplayName });
-        return this.buildAuthSession(user, loginType);
-    }
-    async checkOAuthAccount(accessToken, loginType = 'email') {
-        if (!accessToken) {
-            throw new common_1.UnauthorizedException('Missing Supabase access token');
-        }
-        const supabaseUser = await this.supabaseService.getUserFromToken(accessToken);
-        if (!supabaseUser || !supabaseUser.id || !supabaseUser.email) {
-            throw new common_1.UnauthorizedException('Invalid Supabase access token');
-        }
-        const profile = await this.supabaseService.findProfileById(supabaseUser.id);
-        const usernameFromUser = (supabaseUser.user_metadata?.username ?? null) ||
-            (supabaseUser.email ? supabaseUser.email.split('@')[0] : null);
-        return {
-            exists: Boolean(profile),
-            userId: supabaseUser.id,
-            email: supabaseUser.email,
-            loginType,
-            profile: profile
-                ? {
-                    username: usernameFromUser,
-                    name: profile.name ?? null,
-                    loginType: profile.login_type ?? null,
-                }
-                : null,
-        };
-    }
 };
 exports.AuthService = AuthService;
 exports.AuthService = AuthService = __decorate([
     (0, common_1.Injectable)(),
+    __param(3, (0, common_1.Inject)((0, common_1.forwardRef)(() => social_auth_service_1.SocialAuthService))),
     __metadata("design:paramtypes", [supabaseService_1.SupabaseService,
         jwtService_1.JwtTokenService,
-        sessionService_1.SessionService])
+        sessionService_1.SessionService,
+        social_auth_service_1.SocialAuthService])
 ], AuthService);

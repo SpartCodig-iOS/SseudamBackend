@@ -18,34 +18,22 @@ const swagger_1 = require("@nestjs/swagger");
 const auth_service_1 = require("./auth.service");
 const api_1 = require("../../types/api");
 const authSchemas_1 = require("../../validators/authSchemas");
-const mappers_1 = require("../../utils/mappers");
 const auth_guard_1 = require("../../common/guards/auth.guard");
 const auth_response_dto_1 = require("./dto/auth-response.dto");
+const auth_response_util_1 = require("./auth-response.util");
 let AuthController = class AuthController {
     constructor(authService) {
         this.authService = authService;
     }
-    buildAuthSuccessResponse(result, message) {
-        return (0, api_1.success)({
-            user: (0, mappers_1.toUserResponse)(result.user),
-            accessToken: result.tokenPair.accessToken,
-            refreshToken: result.tokenPair.refreshToken,
-            accessTokenExpiresAt: result.tokenPair.accessTokenExpiresAt.toISOString(),
-            refreshTokenExpiresAt: result.tokenPair.refreshTokenExpiresAt.toISOString(),
-            sessionId: result.session.sessionId,
-            sessionExpiresAt: result.session.expiresAt,
-            lastLoginAt: result.session.lastLoginAt,
-        }, message);
-    }
     async signup(body) {
         const payload = authSchemas_1.signupSchema.parse(body);
         const result = await this.authService.signup(payload);
-        return this.buildAuthSuccessResponse(result, 'Signup successful');
+        return (0, api_1.success)((0, auth_response_util_1.buildAuthSessionResponse)(result), 'Signup successful');
     }
     async login(body) {
         const payload = authSchemas_1.loginSchema.parse(body);
         const result = await this.authService.login(payload);
-        return this.buildAuthSuccessResponse(result, 'Login successful');
+        return (0, api_1.success)((0, auth_response_util_1.buildAuthSessionResponse)(result), 'Login successful');
     }
     async refresh(body) {
         const payload = authSchemas_1.refreshSchema.parse(body);

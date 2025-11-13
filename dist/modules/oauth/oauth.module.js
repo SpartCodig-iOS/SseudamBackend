@@ -10,12 +10,15 @@ exports.OAuthModule = void 0;
 const common_1 = require("@nestjs/common");
 const oauth_controller_1 = require("./oauth.controller");
 const auth_module_1 = require("../auth/auth.module");
+const social_auth_service_1 = require("./social-auth.service");
 let OAuthModule = class OAuthModule {
 };
 exports.OAuthModule = OAuthModule;
 exports.OAuthModule = OAuthModule = __decorate([
     (0, common_1.Module)({
-        imports: [auth_module_1.AuthModule],
+        imports: [(0, common_1.forwardRef)(() => auth_module_1.AuthModule)],
         controllers: [oauth_controller_1.OAuthController],
+        providers: [social_auth_service_1.SocialAuthService],
+        exports: [social_auth_service_1.SocialAuthService],
     })
 ], OAuthModule);

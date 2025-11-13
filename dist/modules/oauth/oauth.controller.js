@@ -15,31 +15,21 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.OAuthController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
-const auth_service_1 = require("../auth/auth.service");
+const social_auth_service_1 = require("./social-auth.service");
 const authSchemas_1 = require("../../validators/authSchemas");
 const api_1 = require("../../types/api");
-const mappers_1 = require("../../utils/mappers");
 const auth_response_dto_1 = require("../auth/dto/auth-response.dto");
+const oauth_response_dto_1 = require("./dto/oauth-response.dto");
+const auth_response_util_1 = require("../auth/auth-response.util");
+const auth_guard_1 = require("../../common/guards/auth.guard");
 let OAuthController = class OAuthController {
-    constructor(authService) {
-        this.authService = authService;
-    }
-    buildAuthSuccessResponse(result, message) {
-        return (0, api_1.success)({
-            user: (0, mappers_1.toUserResponse)(result.user),
-            accessToken: result.tokenPair.accessToken,
-            refreshToken: result.tokenPair.refreshToken,
-            accessTokenExpiresAt: result.tokenPair.accessTokenExpiresAt.toISOString(),
-            refreshTokenExpiresAt: result.tokenPair.refreshTokenExpiresAt.toISOString(),
-            sessionId: result.session.sessionId,
-            sessionExpiresAt: result.session.expiresAt,
-            lastLoginAt: result.session.lastLoginAt,
-        }, message);
+    constructor(socialAuthService) {
+        this.socialAuthService = socialAuthService;
     }
     async handleOAuthLogin(body, message) {
         const payload = authSchemas_1.oauthTokenSchema.parse(body);
-        const result = await this.authService.loginWithOAuthToken(payload.accessToken, payload.loginType);
-        return this.buildAuthSuccessResponse(result, message);
+        const result = await this.socialAuthService.loginWithOAuthToken(payload.accessToken, payload.loginType, payload.appleRefreshToken, payload.authorizationCode);
+        return (0, api_1.success)((0, auth_response_util_1.buildAuthSessionResponse)(result), message);
     }
     async issueToken(body) {
         return this.handleOAuthLogin(body, 'Login successful');
@@ -49,8 +39,16 @@ let OAuthController = class OAuthController {
     }
     async lookupOAuthAccount(body) {
         const payload = authSchemas_1.oauthTokenSchema.parse(body);
-        const result = await this.authService.checkOAuthAccount(payload.accessToken, payload.loginType);
-        return (0, api_1.success)({ registered: result.exists }, 'Lookup successful');
+        const result = await this.socialAuthService.checkOAuthAccount(payload.accessToken, payload.loginType);
+        return (0, api_1.success)(result, 'Lookup successful');
+    }
+    async revokeApple(body, req) {
+        if (!req.currentUser) {
+            throw new common_1.UnauthorizedException('Unauthorized');
+        }
+        const payload = authSchemas_1.appleRevokeSchema.parse(body);
+        await this.socialAuthService.revokeAppleConnection(req.currentUser.id, payload.refreshToken);
+        return (0, api_1.success)({}, 'Apple connection revoked');
     }
 };
 exports.OAuthController = OAuthController;
@@ -68,6 +66,16 @@ __decorate([
                     type: 'string',
                     description: '로그인 타입 (기본값 email)',
                     example: 'apple',
+                    nullable: true,
+                },
+                appleRefreshToken: {
+                    type: 'string',
+                    description: '애플 최초 가입 시 전달되는 refresh token',
+                    nullable: true,
+                },
+                authorizationCode: {
+                    type: 'string',
+                    description: '애플 authorization_code (refresh token 교환용)',
                     nullable: true,
                 },
             },
@@ -103,6 +111,16 @@ __decorate([
                     type: 'string',
                     description: '로그인 타입 (기본값 email)',
                     example: 'apple',
+                    nullable: true,
+                },
+                appleRefreshToken: {
+                    type: 'string',
+                    description: '애플 최초 가입 시 전달되는 refresh token',
+                    nullable: true,
+                },
+                authorizationCode: {
+                    type: 'string',
+                    description: '애플 authorization_code (refresh token 교환용)',
                     nullable: true,
                 },
             },
@@ -143,7 +161,7 @@ __decorate([
             },
         },
     }),
-    (0, swagger_1.ApiOkResponse)({ type: auth_response_dto_1.SocialLookupResponseDto }),
+    (0, swagger_1.ApiOkResponse)({ type: oauth_response_dto_1.SocialLookupResponseDto }),
     (0, swagger_1.ApiBadRequestResponse)({
         description: 'accessToken 누락',
         schema: {
@@ -159,8 +177,39 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], OAuthController.prototype, "lookupOAuthAccount", null);
+__decorate([
+    (0, common_1.UseGuards)(auth_guard_1.AuthGuard),
+    (0, swagger_1.ApiBearerAuth)(),
+    (0, common_1.Post)('apple/revoke'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: '애플 OAuth 연결 해제' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['refreshToken'],
+            properties: {
+                refreshToken: { type: 'string', description: 'Apple refresh token (user-specific)' },
+            },
+        },
+    }),
+    (0, swagger_1.ApiOkResponse)({
+        schema: {
+            type: 'object',
+            properties: {
+                code: { type: 'integer', example: 200 },
+                message: { type: 'string', example: 'Apple connection revoked' },
+                data: { type: 'object', example: {} },
+            },
+        },
+    }),
+    __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], OAuthController.prototype, "revokeApple", null);
 exports.OAuthController = OAuthController = __decorate([
     (0, swagger_1.ApiTags)('OAuth'),
     (0, common_1.Controller)('api/v1/oauth'),
-    __metadata("design:paramtypes", [auth_service_1.AuthService])
+    __metadata("design:paramtypes", [social_auth_service_1.SocialAuthService])
 ], OAuthController);

@@ -40,5 +40,9 @@ exports.env = {
         process.env.SUPABASE_ANON_KEY ??
         '',
     supabaseProfileTable: process.env.SUPERBASE_PROFILE_TABLE ?? process.env.SUPABASE_PROFILE_TABLE ?? 'profiles',
+    appleClientId: process.env.APPLE_CLIENT_ID ?? null,
+    appleTeamId: process.env.APPLE_TEAM_ID ?? null,
+    appleKeyId: process.env.APPLE_KEY_ID ?? null,
+    applePrivateKey: process.env.APPLE_PRIVATE_KEY ?? null,
 };
 exports.isProduction = exports.env.nodeEnv === 'production';

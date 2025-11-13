@@ -28,17 +28,26 @@ export const oauthTokenSchema = z
   .object({
     accessToken: z.string().min(10, 'accessToken is required'),
     loginType: loginTypeEnum.optional(),
+    appleRefreshToken: z.string().min(10).optional(),
+    authorizationCode: z.string().min(10).optional(),
   })
   .transform((data) => ({
     accessToken: data.accessToken.trim(),
     loginType: (data.loginType ?? 'email') as LoginType,
+    appleRefreshToken: data.appleRefreshToken?.trim(),
+    authorizationCode: data.authorizationCode?.trim(),
   }));
 
 export const refreshSchema = z.object({
   refreshToken: z.string().min(10),
 });
 
+export const appleRevokeSchema = z.object({
+  refreshToken: z.string().min(10).optional(),
+});
+
 export type SignupInput = z.infer<typeof signupSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type OAuthTokenInput = z.infer<typeof oauthTokenSchema>;
 export type RefreshInput = z.infer<typeof refreshSchema>;
+export type AppleRevokeInput = z.infer<typeof appleRevokeSchema>;

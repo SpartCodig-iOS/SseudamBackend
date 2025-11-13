@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SocialLookupResponseDto = exports.SocialLookupResponseDataDto = exports.DeleteAccountResponseDto = exports.DeleteAccountResponseDataDto = exports.RefreshResponseDto = exports.RefreshResponseDataDto = exports.LoginResponseDto = exports.SignupResponseDto = exports.AuthSessionEnvelopeDto = exports.AuthUserDto = void 0;
+exports.DeleteAccountResponseDto = exports.DeleteAccountResponseDataDto = exports.RefreshResponseDto = exports.RefreshResponseDataDto = exports.LoginResponseDto = exports.SignupResponseDto = exports.AuthSessionEnvelopeDto = exports.AuthUserDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 class AuthUserDto {
 }
@@ -171,25 +171,3 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: DeleteAccountResponseDataDto }),
     __metadata("design:type", DeleteAccountResponseDataDto)
 ], DeleteAccountResponseDto.prototype, "data", void 0);
-class SocialLookupResponseDataDto {
-}
-exports.SocialLookupResponseDataDto = SocialLookupResponseDataDto;
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: true }),
-    __metadata("design:type", Boolean)
-], SocialLookupResponseDataDto.prototype, "registered", void 0);
-class SocialLookupResponseDto {
-}
-exports.SocialLookupResponseDto = SocialLookupResponseDto;
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 200 }),
-    __metadata("design:type", Number)
-], SocialLookupResponseDto.prototype, "code", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'Lookup successful' }),
-    __metadata("design:type", String)
-], SocialLookupResponseDto.prototype, "message", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ type: SocialLookupResponseDataDto }),
-    __metadata("design:type", SocialLookupResponseDataDto)
-], SocialLookupResponseDto.prototype, "data", void 0);
