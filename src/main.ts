@@ -28,13 +28,13 @@ async function bootstrap() {
   app.useStaticAssets(path.join(process.cwd(), 'public'), { prefix: '/public/' });
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('SparatFinalProject App Server API')
-    .setDescription('Supabase 연동 인증/프로필 API')
+    .setTitle('Sseduam App Server API')
+    .setDescription('Sseduam 연동 인증/프로필 API')
     .setVersion('1.0.0')
     .addBearerAuth()
     .addServer(
       env.nodeEnv === 'production'
-        ? 'https://sparatafinalapp.up.railway.app'
+        ? 'https://sseudam.up.railway.app'
         : `http://localhost:${env.port}`,
     )
     .build();
