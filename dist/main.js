@@ -27,12 +27,12 @@ async function bootstrap() {
     app.useGlobalFilters(new all_exceptions_filter_1.AllExceptionsFilter());
     app.useStaticAssets(node_path_1.default.join(process.cwd(), 'public'), { prefix: '/public/' });
     const swaggerConfig = new swagger_1.DocumentBuilder()
-        .setTitle('SparatFinalProject App Server API')
-        .setDescription('Supabase 연동 인증/프로필 API')
+        .setTitle('Sseduam App Server API')
+        .setDescription('Sseduam 연동 인증/프로필 API')
         .setVersion('1.0.0')
         .addBearerAuth()
         .addServer(env_1.env.nodeEnv === 'production'
-        ? 'https://sparatafinalapp.up.railway.app'
+        ? 'https://sseudam.up.railway.app'
         : `http://localhost:${env_1.env.port}`)
         .build();
     const document = swagger_1.SwaggerModule.createDocument(app, swaggerConfig, {
