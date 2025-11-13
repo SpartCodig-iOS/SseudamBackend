@@ -14,6 +14,7 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const api_1 = require("../../types/api");
 const supabaseService_1 = require("../../services/supabaseService");
+const health_response_dto_1 = require("./dto/health-response.dto");
 let HealthController = class HealthController {
     constructor(supabaseService) {
         this.supabaseService = supabaseService;
@@ -30,6 +31,8 @@ exports.HealthController = HealthController;
 __decorate([
     (0, common_1.Get)('health'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: '서버 및 데이터베이스 상태 확인' }),
+    (0, swagger_1.ApiOkResponse)({ type: health_response_dto_1.HealthResponseDto }),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", Promise)

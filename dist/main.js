@@ -9,9 +9,8 @@ node_dns_1.default.setDefaultResultOrder('ipv4first');
 const node_path_1 = __importDefault(require("node:path"));
 const express_1 = require("express");
 const helmet_1 = __importDefault(require("helmet"));
-const swagger_ui_express_1 = __importDefault(require("swagger-ui-express"));
 const core_1 = require("@nestjs/core");
-const swagger_output_json_1 = __importDefault(require("../swagger-output.json"));
+const swagger_1 = require("@nestjs/swagger");
 const app_module_1 = require("./app.module");
 const env_1 = require("./config/env");
 const logger_1 = require("./utils/logger");
@@ -27,14 +26,19 @@ async function bootstrap() {
     app.use((0, express_1.urlencoded)({ extended: true }));
     app.useGlobalFilters(new all_exceptions_filter_1.AllExceptionsFilter());
     app.useStaticAssets(node_path_1.default.join(process.cwd(), 'public'), { prefix: '/public/' });
-    const swaggerFile = {
-        ...swagger_output_json_1.default,
-        host: env_1.env.nodeEnv === 'production'
-            ? 'sparatafinalapp.up.railway.app'
-            : `localhost:${env_1.env.port}`,
-        schemes: env_1.env.nodeEnv === 'production' ? ['https'] : ['http'],
-    };
-    const swaggerOptions = {
+    const swaggerConfig = new swagger_1.DocumentBuilder()
+        .setTitle('SparatFinalProject App Server API')
+        .setDescription('Supabase 연동 인증/프로필 API')
+        .setVersion('1.0.0')
+        .addBearerAuth()
+        .addServer(env_1.env.nodeEnv === 'production'
+        ? 'https://sparatafinalapp.up.railway.app'
+        : `http://localhost:${env_1.env.port}`)
+        .build();
+    const document = swagger_1.SwaggerModule.createDocument(app, swaggerConfig, {
+        deepScanRoutes: true,
+    });
+    swagger_1.SwaggerModule.setup('api-docs', app, document, {
         explorer: true,
         swaggerOptions: {
             docExpansion: 'list',
@@ -46,8 +50,7 @@ async function bootstrap() {
             showCommonExtensions: true,
             tryItOutEnabled: true,
         },
-    };
-    app.use('/api-docs', swagger_ui_express_1.default.serve, swagger_ui_express_1.default.setup(swaggerFile, swaggerOptions));
+    });
     await app.listen(env_1.env.port);
     logger_1.logger.info('Server listening', { port: env_1.env.port, env: env_1.env.nodeEnv });
 }

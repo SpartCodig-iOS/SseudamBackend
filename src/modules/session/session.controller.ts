@@ -1,7 +1,8 @@
 import { BadRequestException, Controller, Get, HttpCode, HttpStatus, Query, UnauthorizedException } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { success } from '../../types/api';
 import { SessionService } from '../../services/sessionService';
+import { SessionResponseDto } from './dto/session-response.dto';
 
 @ApiTags('Session')
 @Controller('api/v1/session')
@@ -10,6 +11,13 @@ export class SessionController {
 
   @Get()
   @HttpCode(HttpStatus.OK)
+@ApiQuery({
+  name: 'sessionId',
+  required: true,
+  description: '초대/로그인 응답으로 받은 세션 ID',
+})
+  @ApiOperation({ summary: '세션 ID 로 현재 로그인 세션 정보 조회' })
+  @ApiOkResponse({ type: SessionResponseDto })
   getSession(@Query('sessionId') sessionId?: string) {
     if (!sessionId) {
       throw new BadRequestException('Session ID parameter is required');

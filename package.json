@@ -14,6 +14,10 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@nestjs/common": "^10.3.9",
+    "@nestjs/core": "^10.3.9",
+    "@nestjs/platform-express": "^10.3.9",
+    "@nestjs/swagger": "^7.4.2",
     "@supabase/supabase-js": "^2.80.0",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
@@ -24,15 +28,11 @@
     "morgan": "^1.10.1",
     "pg": "^8.16.3",
     "postgres": "^3.4.7",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
-    "zod": "^4.1.12",
-    "@nestjs/common": "^10.3.9",
-    "@nestjs/core": "^10.3.9",
-    "@nestjs/platform-express": "^10.3.9",
-    "@nestjs/swagger": "^7.4.2",
-    "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

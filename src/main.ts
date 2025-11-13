@@ -5,10 +5,9 @@ dns.setDefaultResultOrder('ipv4first');
 import path from 'node:path';
 import { json, urlencoded } from 'express';
 import helmet, { HelmetOptions } from 'helmet';
-import swaggerUi from 'swagger-ui-express';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import rawSwaggerFile from '../swagger-output.json';
+import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { env } from './config/env';
 import { logger } from './utils/logger';
@@ -28,16 +27,23 @@ async function bootstrap() {
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useStaticAssets(path.join(process.cwd(), 'public'), { prefix: '/public/' });
 
-  const swaggerFile = {
-    ...rawSwaggerFile,
-    host:
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('SparatFinalProject App Server API')
+    .setDescription('Supabase 연동 인증/프로필 API')
+    .setVersion('1.0.0')
+    .addBearerAuth()
+    .addServer(
       env.nodeEnv === 'production'
-        ? 'sparatafinalapp.up.railway.app'
-        : `localhost:${env.port}`,
-    schemes: env.nodeEnv === 'production' ? ['https'] : ['http'],
-  };
+        ? 'https://sparatafinalapp.up.railway.app'
+        : `http://localhost:${env.port}`,
+    )
+    .build();
 
-  const swaggerOptions = {
+  const document = SwaggerModule.createDocument(app, swaggerConfig, {
+    deepScanRoutes: true,
+  });
+
+  SwaggerModule.setup('api-docs', app, document, {
     explorer: true,
     swaggerOptions: {
       docExpansion: 'list',
@@ -49,9 +55,7 @@ async function bootstrap() {
       showCommonExtensions: true,
       tryItOutEnabled: true,
     },
-  };
-
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerFile, swaggerOptions));
+  });
 
   await app.listen(env.port);
   logger.info('Server listening', { port: env.port, env: env.nodeEnv });

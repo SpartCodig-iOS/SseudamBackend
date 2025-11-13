@@ -17,6 +17,7 @@ const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const api_1 = require("../../types/api");
 const sessionService_1 = require("../../services/sessionService");
+const session_response_dto_1 = require("./dto/session-response.dto");
 let SessionController = class SessionController {
     constructor(sessionService) {
         this.sessionService = sessionService;
@@ -44,6 +45,13 @@ exports.SessionController = SessionController;
 __decorate([
     (0, common_1.Get)(),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiQuery)({
+        name: 'sessionId',
+        required: true,
+        description: '초대/로그인 응답으로 받은 세션 ID',
+    }),
+    (0, swagger_1.ApiOperation)({ summary: '세션 ID 로 현재 로그인 세션 정보 조회' }),
+    (0, swagger_1.ApiOkResponse)({ type: session_response_dto_1.SessionResponseDto }),
     __param(0, (0, common_1.Query)('sessionId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),

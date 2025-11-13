@@ -20,6 +20,7 @@ const api_1 = require("../../types/api");
 const authSchemas_1 = require("../../validators/authSchemas");
 const mappers_1 = require("../../utils/mappers");
 const auth_guard_1 = require("../../common/guards/auth.guard");
+const auth_response_dto_1 = require("./dto/auth-response.dto");
 let AuthController = class AuthController {
     constructor(authService) {
         this.authService = authService;
@@ -79,6 +80,29 @@ exports.AuthController = AuthController;
 __decorate([
     (0, common_1.Post)('signup'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: '사용자 회원가입' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['email', 'password'],
+            properties: {
+                email: { type: 'string', format: 'email', example: 'string' },
+                password: { type: 'string', minLength: 6, example: 'string' },
+                name: { type: 'string', example: 'string' },
+            },
+        },
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: auth_response_dto_1.SignupResponseDto }),
+    (0, swagger_1.ApiBadRequestResponse)({
+        description: '잘못된 요청 본문',
+        schema: {
+            type: 'object',
+            properties: {
+                code: { type: 'integer', example: 400 },
+                message: { type: 'string', example: 'email and password are required' },
+            },
+        },
+    }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
@@ -87,6 +111,48 @@ __decorate([
 __decorate([
     (0, common_1.Post)('login'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: '로그인 (이메일 또는 아이디)' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['password'],
+            properties: {
+                identifier: {
+                    type: 'string',
+                    description: '이메일 전체 또는 @ 앞부분 아이디',
+                    example: 'string',
+                },
+                email: {
+                    type: 'string',
+                    format: 'email',
+                    description: 'identifier 대신 email 사용 가능',
+                    example: 'string',
+                },
+                password: { type: 'string', example: 'string' },
+            },
+        },
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: auth_response_dto_1.LoginResponseDto }),
+    (0, swagger_1.ApiBadRequestResponse)({
+        description: '이메일/패스워드 누락',
+        schema: {
+            type: 'object',
+            properties: {
+                code: { type: 'integer', example: 400 },
+                message: { type: 'string', example: 'email and password are required' },
+            },
+        },
+    }),
+    (0, swagger_1.ApiUnauthorizedResponse)({
+        description: '자격 증명 오류',
+        schema: {
+            type: 'object',
+            properties: {
+                code: { type: 'integer', example: 401 },
+                message: { type: 'string', example: 'Invalid credentials' },
+            },
+        },
+    }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
@@ -95,6 +161,40 @@ __decorate([
 __decorate([
     (0, common_1.Post)('refresh'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: 'Refresh 토큰으로 Access 토큰 재발급' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['refreshToken'],
+            properties: {
+                refreshToken: {
+                    type: 'string',
+                    example: 'string',
+                },
+            },
+        },
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: auth_response_dto_1.RefreshResponseDto }),
+    (0, swagger_1.ApiBadRequestResponse)({
+        description: 'Refresh 토큰 누락',
+        schema: {
+            type: 'object',
+            properties: {
+                code: { type: 'integer', example: 400 },
+                message: { type: 'string', example: 'refreshToken is required' },
+            },
+        },
+    }),
+    (0, swagger_1.ApiUnauthorizedResponse)({
+        description: 'Refresh 토큰 검증 실패',
+        schema: {
+            type: 'object',
+            properties: {
+                code: { type: 'integer', example: 401 },
+                message: { type: 'string', example: 'Invalid or expired refresh token' },
+            },
+        },
+    }),
     __param(0, (0, common_1.Body)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
@@ -102,6 +202,19 @@ __decorate([
 ], AuthController.prototype, "refresh", null);
 __decorate([
     (0, common_1.UseGuards)(auth_guard_1.AuthGuard),
+    (0, swagger_1.ApiBearerAuth)(),
+    (0, swagger_1.ApiOperation)({ summary: '본인 계정 삭제 (Supabase 계정 포함)' }),
+    (0, swagger_1.ApiOkResponse)({ type: auth_response_dto_1.DeleteAccountResponseDto }),
+    (0, swagger_1.ApiUnauthorizedResponse)({
+        description: '인증 실패',
+        schema: {
+            type: 'object',
+            properties: {
+                code: { type: 'integer', example: 401 },
+                message: { type: 'string', example: 'Unauthorized' },
+            },
+        },
+    }),
     (0, common_1.Delete)('account'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     __param(0, (0, common_1.Req)()),

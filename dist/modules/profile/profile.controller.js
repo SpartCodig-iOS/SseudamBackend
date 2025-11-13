@@ -18,6 +18,7 @@ const swagger_1 = require("@nestjs/swagger");
 const auth_guard_1 = require("../../common/guards/auth.guard");
 const api_1 = require("../../types/api");
 const mappers_1 = require("../../utils/mappers");
+const profile_response_dto_1 = require("./dto/profile-response.dto");
 let ProfileController = class ProfileController {
     getProfile(req) {
         if (!req.currentUser) {
@@ -35,6 +36,9 @@ __decorate([
     (0, common_1.UseGuards)(auth_guard_1.AuthGuard),
     (0, common_1.Get)('me'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiBearerAuth)(),
+    (0, swagger_1.ApiOperation)({ summary: '현재 사용자 프로필 조회' }),
+    (0, swagger_1.ApiOkResponse)({ type: profile_response_dto_1.ProfileResponseDto }),
     __param(0, (0, common_1.Req)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
