@@ -15,6 +15,8 @@ const profile_module_1 = require("./modules/profile/profile.module");
 const session_module_1 = require("./modules/session/session.module");
 const health_module_1 = require("./modules/health/health.module");
 const requestLogger_1 = require("./middleware/requestLogger");
+const travel_module_1 = require("./modules/travel/travel.module");
+const meta_module_1 = require("./modules/meta/meta.module");
 let AppModule = class AppModule {
     configure(consumer) {
         consumer.apply(requestLogger_1.RequestLoggerMiddleware).forRoutes('*');
@@ -23,6 +25,15 @@ let AppModule = class AppModule {
 exports.AppModule = AppModule;
 exports.AppModule = AppModule = __decorate([
     (0, common_1.Module)({
-        imports: [shared_module_1.SharedModule, auth_module_1.AuthModule, oauth_module_1.OAuthModule, profile_module_1.ProfileModule, session_module_1.SessionModule, health_module_1.HealthModule],
+        imports: [
+            shared_module_1.SharedModule,
+            auth_module_1.AuthModule,
+            oauth_module_1.OAuthModule,
+            profile_module_1.ProfileModule,
+            session_module_1.SessionModule,
+            health_module_1.HealthModule,
+            travel_module_1.TravelModule,
+            meta_module_1.MetaModule,
+        ],
     })
 ], AppModule);

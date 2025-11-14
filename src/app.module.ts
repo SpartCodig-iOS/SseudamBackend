@@ -6,9 +6,20 @@ import { ProfileModule } from './modules/profile/profile.module';
 import { SessionModule } from './modules/session/session.module';
 import { HealthModule } from './modules/health/health.module';
 import { RequestLoggerMiddleware } from './middleware/requestLogger';
+import { TravelModule } from './modules/travel/travel.module';
+import { MetaModule } from './modules/meta/meta.module';
 
 @Module({
-  imports: [SharedModule, AuthModule, OAuthModule, ProfileModule, SessionModule, HealthModule],
+  imports: [
+    SharedModule,
+    AuthModule,
+    OAuthModule,
+    ProfileModule,
+    SessionModule,
+    HealthModule,
+    TravelModule,
+    MetaModule,
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

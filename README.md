@@ -113,6 +113,23 @@ Nest 앱 엔트리포인트는 `src/main.ts`, 프로덕션은 `node dist/main.js
 | `POST` | `/api/v1/oauth/login`     | 소셜/OAuth access token으로 로그인 | - |
 | `POST` | `/api/v1/oauth/apple/revoke` | Apple refresh token으로 애플 로그인 해제 | Bearer |
 
+### 여행
+
+| 메서드 | 경로                  | 설명                                      | 인증 |
+|--------|-----------------------|-------------------------------------------|------|
+| `GET`  | `/api/v1/travels`     | 내가 참여 중인 여행 목록 조회             | Bearer |
+| `POST` | `/api/v1/travels`     | 여행 이름/기간/국가/환율을 입력해 새 여행 생성 | Bearer |
+| `POST` | `/api/v1/travels/{travelId}/invite` | 호스트가 초대 코드 생성 | Bearer |
+| `POST` | `/api/v1/travels/join` | 초대 코드로 여행 참여 | Bearer |
+| `DELETE` | `/api/v1/travels/{travelId}` | 여행 삭제 (호스트 전용) | Bearer |
+
+### 메타 정보
+
+| 메서드 | 경로                       | 설명                               | 인증 |
+|--------|----------------------------|------------------------------------|------|
+| `GET`  | `/api/v1/meta/countries`   | 국가/통화 메타 데이터 (한글/영문) 조회 | -    |
+| `GET`  | `/api/v1/meta/exchange-rate?base=KRW&quote=USD` | 외부 환율 API(Frankfurter) proxy (1000 기준 환산) | - |
+
 ### 프로필
 
 | 메서드 | 경로                      | 설명             | 인증 |
