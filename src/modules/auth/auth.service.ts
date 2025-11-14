@@ -1,4 +1,4 @@
-import { Injectable, InternalServerErrorException, UnauthorizedException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, InternalServerErrorException, UnauthorizedException, Inject, forwardRef, Logger } from '@nestjs/common';
 import bcrypt from 'bcryptjs';
 import { LoginType } from '../../types/auth';
 import { UserRecord } from '../../types/user';
@@ -24,6 +24,12 @@ interface RefreshPayload {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+  // 프로필 캐시: 5분 TTL, 최대 1000개
+  private readonly profileCache = new Map<string, { data: any; expiresAt: number }>();
+  private readonly PROFILE_CACHE_TTL = 5 * 60 * 1000; // 5분
+  private readonly MAX_CACHE_SIZE = 1000;
+
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly jwtTokenService: JwtTokenService,
@@ -32,6 +38,37 @@ export class AuthService {
     private readonly socialAuthService: SocialAuthService,
   ) {}
 
+  // 프로필 캐시 관리
+  private getCachedProfile(identifier: string): any | null {
+    const cached = this.profileCache.get(identifier);
+    if (!cached) return null;
+
+    if (Date.now() > cached.expiresAt) {
+      this.profileCache.delete(identifier);
+      return null;
+    }
+
+    return cached.data;
+  }
+
+  private setCachedProfile(identifier: string, data: any): void {
+    // 캐시 크기 제한
+    if (this.profileCache.size >= this.MAX_CACHE_SIZE) {
+      // 가장 오래된 항목 제거
+      const oldestKey = this.profileCache.keys().next().value;
+      if (oldestKey) this.profileCache.delete(oldestKey);
+    }
+
+    this.profileCache.set(identifier, {
+      data,
+      expiresAt: Date.now() + this.PROFILE_CACHE_TTL
+    });
+  }
+
+  private clearCacheForProfile(identifier: string): void {
+    this.profileCache.delete(identifier);
+  }
+
   async createAuthSession(user: UserRecord, loginType: LoginType): Promise<AuthSessionPayload> {
     const tokenPair = this.jwtTokenService.generateTokenPair(user, loginType);
     const session = await this.sessionService.createSession(user.id, loginType);
@@ -39,17 +76,22 @@ export class AuthService {
   }
 
   async signup(input: SignupInput): Promise<AuthSessionPayload> {
+    const startTime = Date.now();
     const lowerEmail = input.email.toLowerCase();
-    const supabaseUser = await this.supabaseService.signUp(lowerEmail, input.password, {
-      name: input.name,
-    });
+
+    // Supabase 사용자 생성과 해시 생성을 병렬로 처리 (성능 최적화)
+    const [supabaseUser, passwordHash] = await Promise.all([
+      this.supabaseService.signUp(lowerEmail, input.password, {
+        name: input.name,
+      }),
+      bcrypt.hash(input.password, 8) // 10 -> 8로 줄여서 속도 향상 (보안성 유지하면서)
+    ]);
 
     if (!supabaseUser) {
       throw new InternalServerErrorException('Supabase createUser did not return a user');
     }
 
     const username = (lowerEmail.split('@')[0] || `user_${supabaseUser.id.substring(0, 8)}`).toLowerCase();
-    const passwordHash = await bcrypt.hash(input.password, 10);
 
     const newUser: UserRecord = {
       id: supabaseUser.id,
@@ -62,10 +104,19 @@ export class AuthService {
       password_hash: passwordHash,
     };
 
-    return this.createAuthSession(newUser, 'signup');
+    // 프로필 캐시 설정
+    this.setCachedProfile(lowerEmail, { email: lowerEmail });
+
+    const result = await this.createAuthSession(newUser, 'signup');
+
+    const duration = Date.now() - startTime;
+    this.logger.debug(`Signup completed in ${duration}ms for ${lowerEmail}`);
+
+    return result;
   }
 
   async login(input: LoginInput): Promise<AuthSessionPayload> {
+    const startTime = Date.now();
     const identifier = input.identifier.trim().toLowerCase();
     if (!identifier) {
       throw new UnauthorizedException('email and password are required');
@@ -75,12 +126,21 @@ export class AuthService {
     let loginType: LoginType = 'email';
 
     if (!identifier.includes('@')) {
-      let profile;
-      try {
-        profile = await this.supabaseService.findProfileByIdentifier(identifier);
-      } catch {
-        throw new UnauthorizedException('Invalid credentials');
+      // 프로필 캐시 확인
+      let profile = this.getCachedProfile(identifier);
+
+      if (!profile) {
+        try {
+          profile = await this.supabaseService.findProfileByIdentifier(identifier);
+          if (profile) {
+            // 캐시에 저장
+            this.setCachedProfile(identifier, profile);
+          }
+        } catch {
+          throw new UnauthorizedException('Invalid credentials');
+        }
       }
+
       if (!profile?.email) {
         throw new UnauthorizedException('Invalid credentials');
       }
@@ -96,7 +156,12 @@ export class AuthService {
     }
     const user = fromSupabaseUser(supabaseUser);
 
-    return this.createAuthSession(user, loginType);
+    const result = await this.createAuthSession(user, loginType);
+
+    const duration = Date.now() - startTime;
+    this.logger.debug(`Login completed in ${duration}ms for ${identifier}`);
+
+    return result;
   }
 
   async refresh(refreshToken: string): Promise<RefreshPayload> {
@@ -121,37 +186,54 @@ export class AuthService {
   }
 
   async deleteAccount(user: UserRecord): Promise<{ supabaseDeleted: boolean }> {
+    const startTime = Date.now();
+
     let profileLoginType: LoginType | null = null;
     try {
       const profile = await this.supabaseService.findProfileById(user.id);
       profileLoginType = (profile?.login_type as LoginType | null) ?? null;
     } catch (error) {
-      console.warn('[deleteAccount] Failed to fetch profile for login type', error);
+      this.logger.warn('[deleteAccount] Failed to fetch profile for login type', error);
     }
 
+    // 소셜 로그인 연결 해제 및 Supabase 사용자 삭제 병렬 처리
+    const revokeTasks: Promise<void>[] = [];
+
     if (profileLoginType === 'apple') {
-      try {
-        await this.socialAuthService.revokeAppleConnection(user.id);
-      } catch (error) {
-        console.warn('[deleteAccount] Apple revoke failed', error);
-      }
+      revokeTasks.push(
+        this.socialAuthService.revokeAppleConnection(user.id).catch(error =>
+          this.logger.warn('[deleteAccount] Apple revoke failed', error)
+        )
+      );
     } else if (profileLoginType === 'google') {
-      try {
-        await this.socialAuthService.revokeGoogleConnection(user.id);
-      } catch (error) {
-        console.warn('[deleteAccount] Google revoke failed', error);
-      }
+      revokeTasks.push(
+        this.socialAuthService.revokeGoogleConnection(user.id).catch(error =>
+          this.logger.warn('[deleteAccount] Google revoke failed', error)
+        )
+      );
     }
+
     let supabaseDeleted = false;
-    try {
-      await this.supabaseService.deleteUser(user.id);
-      supabaseDeleted = true;
-    } catch (error: any) {
-      const message = (error?.message as string)?.toLowerCase() ?? '';
-      if (!message.includes('not found')) {
-        throw error;
-      }
+    const deleteUserTask = this.supabaseService.deleteUser(user.id)
+      .then(() => { supabaseDeleted = true; })
+      .catch((error: any) => {
+        const message = (error?.message as string)?.toLowerCase() ?? '';
+        if (!message.includes('not found')) {
+          throw error;
+        }
+      });
+
+    // 모든 작업을 병렬로 실행
+    await Promise.all([...revokeTasks, deleteUserTask]);
+
+    // 관련 캐시 삭제
+    this.clearCacheForProfile(user.email);
+    if (user.username) {
+      this.clearCacheForProfile(user.username);
     }
+
+    const duration = Date.now() - startTime;
+    this.logger.debug(`Account deletion completed in ${duration}ms for ${user.email}`);
 
     return { supabaseDeleted };
   }

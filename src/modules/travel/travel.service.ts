@@ -132,6 +132,7 @@ export class TravelService {
 
   async listTravels(userId: string): Promise<TravelSummary[]> {
     const pool = await getPool();
+    // N+1 쿼리 제거: LATERAL 대신 GROUP BY 사용으로 성능 최적화
     const result = await pool.query(
       `SELECT
          t.id::text AS id,
@@ -143,24 +144,27 @@ export class TravelService {
          t.base_exchange_rate,
          t.invite_code,
          t.status,
-         tm.role,
+         user_member.role,
          t.created_at::text,
          owner_profile.name AS owner_name,
-         COALESCE(members.members, '[]'::json) AS members
+         COALESCE(
+           json_agg(
+             DISTINCT json_build_object(
+               'userId', tm2.user_id,
+               'name', p.name,
+               'role', tm2.role
+             )
+           ) FILTER (WHERE tm2.user_id IS NOT NULL),
+           '[]'::json
+         ) AS members
        FROM travels t
-       INNER JOIN travel_members tm ON tm.travel_id = t.id
+       INNER JOIN travel_members user_member ON user_member.travel_id = t.id AND user_member.user_id = $1
        INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
-       LEFT JOIN LATERAL (
-         SELECT json_agg(json_build_object(
-           'userId', tm2.user_id,
-           'name', p.name,
-           'role', tm2.role
-         )) AS members
-         FROM travel_members tm2
-         LEFT JOIN profiles p ON p.id = tm2.user_id
-         WHERE tm2.travel_id = t.id
-       ) AS members ON TRUE
-       WHERE tm.user_id = $1
+       LEFT JOIN travel_members tm2 ON tm2.travel_id = t.id
+       LEFT JOIN profiles p ON p.id = tm2.user_id
+       GROUP BY t.id, t.title, t.start_date, t.end_date, t.country_code,
+                t.base_currency, t.base_exchange_rate, t.invite_code, t.status,
+                user_member.role, t.created_at, owner_profile.name
        ORDER BY t.created_at DESC`,
       [userId],
     );

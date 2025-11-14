@@ -142,9 +142,16 @@ let TravelSettlementService = class TravelSettlementService {
         const pool = await (0, pool_1.getPool)();
         await this.ensureTransaction(async (client) => {
             await client.query(`DELETE FROM travel_settlements WHERE travel_id = $1`, [travelId]);
-            for (const item of computedSettlements) {
+            // 배치 INSERT로 성능 최적화 (100개 정산 = 1번 쿼리)
+            if (computedSettlements.length > 0) {
+                const ids = computedSettlements.map(item => item.id);
+                const travelIds = Array(computedSettlements.length).fill(travelId);
+                const fromMembers = computedSettlements.map(item => item.fromMemberId);
+                const toMembers = computedSettlements.map(item => item.toMemberId);
+                const amounts = computedSettlements.map(item => item.amount);
                 await client.query(`INSERT INTO travel_settlements (id, travel_id, from_member, to_member, amount)
-           VALUES ($1, $2, $3, $4, $5)`, [item.id, travelId, item.fromMemberId, item.toMemberId, item.amount]);
+           SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::uuid[], $4::uuid[], $5::numeric[])
+           AS t(id, travel_id, from_member, to_member, amount)`, [ids, travelIds, fromMembers, toMembers, amounts]);
             }
         }, pool);
         return this.getSettlementSummary(travelId, userId);

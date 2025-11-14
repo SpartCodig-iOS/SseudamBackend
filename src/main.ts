@@ -22,8 +22,19 @@ async function bootstrap() {
 
   app.use(helmet(helmetOptions));
   app.enableCors();
-  app.use(json());
-  app.use(urlencoded({ extended: true }));
+
+  // HTTP 요청 크기 및 타임아웃 제한
+  app.use(json({ limit: '10mb' }));
+  app.use(urlencoded({ extended: true, limit: '10mb' }));
+
+  // 글로벌 타임아웃 설정 (30초)
+  app.use((req: any, res: any, next: any) => {
+    req.setTimeout(30000, () => {
+      res.status(408).json({ message: 'Request timeout' });
+    });
+    next();
+  });
+
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useStaticAssets(path.join(process.cwd(), 'public'), { prefix: '/public/' });
 
@@ -68,6 +79,17 @@ async function bootstrap() {
 
   await app.listen(env.port);
   logger.info('Server listening', { port: env.port, env: env.nodeEnv });
+
+  // 캐시 워밍 시작 (비동기로 실행하여 서버 시작 차단하지 않음)
+  setTimeout(async () => {
+    try {
+      const { MetaService } = await import('./modules/meta/meta.service');
+      const metaService = app.get(MetaService);
+      await metaService.warmupCache();
+    } catch (error) {
+      logger.error('Cache warmup failed', { error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  }, 1000); // 1초 후 실행
 }
 
 bootstrap();

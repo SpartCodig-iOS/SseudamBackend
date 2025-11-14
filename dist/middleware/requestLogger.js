@@ -14,7 +14,24 @@ const toMilliseconds = (start) => {
     return Math.round((diff / 1000000) * 100) / 100;
 };
 let RequestLoggerMiddleware = class RequestLoggerMiddleware {
+    constructor() {
+        this.excludedPaths = [
+            '/health',
+            '/health/database',
+            '/health/supabase',
+            '/favicon.ico',
+            '/api-docs'
+        ];
+    }
+    shouldSkipLogging(path) {
+        return this.excludedPaths.some(excluded => path.startsWith(excluded));
+    }
     use(req, res, next) {
+        // 헬스체크 및 정적 파일 요청은 로깅 제외
+        if (this.shouldSkipLogging(req.originalUrl)) {
+            next();
+            return;
+        }
         const start = process.hrtime.bigint();
         logger_1.logger.debug('Request started', { method: req.method, path: req.originalUrl });
         res.on('finish', () => {

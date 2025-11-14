@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { getPool } from '../../db/pool';
 import { UpdateProfileInput } from '../../validators/profileSchemas';
 import { UserRecord } from '../../types/user';
@@ -10,10 +10,53 @@ import 'multer';
 
 @Injectable()
 export class ProfileService {
+  private readonly logger = new Logger(ProfileService.name);
   private readonly storageClient = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
   private readonly avatarBucket = 'profileimages';
 
+  // 프로필 캐시: 10분 TTL, 최대 1000개
+  private readonly profileCache = new Map<string, { data: UserRecord; expiresAt: number }>();
+  private readonly PROFILE_CACHE_TTL = 10 * 60 * 1000; // 10분
+  private readonly MAX_CACHE_SIZE = 1000;
+
+  // 프로필 캐시 관리
+  private getCachedProfile(userId: string): UserRecord | null {
+    const cached = this.profileCache.get(userId);
+    if (!cached) return null;
+
+    if (Date.now() > cached.expiresAt) {
+      this.profileCache.delete(userId);
+      return null;
+    }
+
+    return cached.data;
+  }
+
+  private setCachedProfile(userId: string, profile: UserRecord): void {
+    // 캐시 크기 제한
+    if (this.profileCache.size >= this.MAX_CACHE_SIZE) {
+      // 가장 오래된 항목 제거
+      const oldestKey = this.profileCache.keys().next().value;
+      if (oldestKey) this.profileCache.delete(oldestKey);
+    }
+
+    this.profileCache.set(userId, {
+      data: profile,
+      expiresAt: Date.now() + this.PROFILE_CACHE_TTL
+    });
+  }
+
+  private clearCachedProfile(userId: string): void {
+    this.profileCache.delete(userId);
+  }
+
   async getProfile(userId: string): Promise<UserRecord | null> {
+    // 캐시에서 먼저 확인
+    const cachedProfile = this.getCachedProfile(userId);
+    if (cachedProfile) {
+      return cachedProfile;
+    }
+
     const pool = await getPool();
     const result = await pool.query(
       `SELECT
@@ -29,9 +72,11 @@ export class ProfileService {
        LIMIT 1`,
       [userId],
     );
+
     const row = result.rows[0];
     if (!row) return null;
-    return {
+
+    const profile: UserRecord = {
       id: row.id,
       email: row.email,
       name: row.name,
@@ -41,6 +86,11 @@ export class ProfileService {
       updated_at: row.updated_at,
       password_hash: '',
     };
+
+    // 캐시에 저장
+    this.setCachedProfile(userId, profile);
+
+    return profile;
   }
 
   async updateProfile(
@@ -72,7 +122,7 @@ export class ProfileService {
       [userId, payload.name ?? null, avatarURL],
     );
     const row = result.rows[0];
-    return {
+    const updated: UserRecord = {
       id: row.id,
       email: row.email,
       name: row.name,
@@ -82,11 +132,25 @@ export class ProfileService {
       updated_at: row.updated_at,
       password_hash: '',
     };
+    this.setCachedProfile(userId, updated);
+    return updated;
   }
 
   private async uploadToSupabase(userId: string, file: Express.Multer.File): Promise<string> {
-    if (!file || !file.mimetype.startsWith('image/')) {
-      throw new BadRequestException('유효한 이미지 파일을 업로드하세요.');
+    // 파일 유형 및 크기 검증
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+    const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+    if (!file) {
+      throw new BadRequestException('파일이 업로드되지 않았습니다.');
+    }
+
+    if (!ALLOWED_TYPES.includes(file.mimetype)) {
+      throw new BadRequestException('지원되지 않는 파일 형식입니다. JPEG, PNG, GIF, WebP만 허용됩니다.');
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      throw new BadRequestException('파일 크기가 너무 큽니다. 최대 5MB까지 허용됩니다.');
     }
 
     const filename = `${userId}/${randomUUID()}-${file.originalname}`;

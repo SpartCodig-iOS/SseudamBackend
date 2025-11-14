@@ -11,8 +11,16 @@ interface LocalAuthResult {
   loginType?: LoginType;
 }
 
+interface CachedUser {
+  user: UserRecord;
+  timestamp: number;
+}
+
 @Injectable()
 export class AuthGuard implements CanActivate {
+  private readonly tokenCache = new Map<string, CachedUser>();
+  private readonly CACHE_TTL = 5 * 60 * 1000; // 5분 캐시
+
   constructor(
     private readonly jwtTokenService: JwtTokenService,
     private readonly supabaseService: SupabaseService,
@@ -32,10 +40,20 @@ export class AuthGuard implements CanActivate {
       return true;
     }
 
+    // 캐시된 사용자 확인
+    const cachedUser = this.getCachedUser(token);
+    if (cachedUser) {
+      request.currentUser = cachedUser;
+      request.loginType = 'email';
+      return true;
+    }
+
     try {
       const supabaseUser = await this.supabaseService.getUserFromToken(token);
       if (supabaseUser?.email) {
-        request.currentUser = fromSupabaseUser(supabaseUser);
+        const userRecord = fromSupabaseUser(supabaseUser);
+        this.setCachedUser(token, userRecord);
+        request.currentUser = userRecord;
         request.loginType = 'email';
         return true;
       }
@@ -54,6 +72,34 @@ export class AuthGuard implements CanActivate {
       return null;
     }
     return token;
+  }
+
+  private getCachedUser(token: string): UserRecord | null {
+    const cached = this.tokenCache.get(token);
+    if (!cached) return null;
+
+    const now = Date.now();
+    if (now - cached.timestamp > this.CACHE_TTL) {
+      this.tokenCache.delete(token);
+      return null;
+    }
+
+    return cached.user;
+  }
+
+  private setCachedUser(token: string, user: UserRecord): void {
+    this.tokenCache.set(token, {
+      user,
+      timestamp: Date.now(),
+    });
+
+    // 캐시 크기 제한 (1000개로 제한)
+    if (this.tokenCache.size > 1000) {
+      const firstKey = this.tokenCache.keys().next().value;
+      if (firstKey) {
+        this.tokenCache.delete(firstKey);
+      }
+    }
   }
 
   private tryLocalJwt(token: string): LocalAuthResult | null {

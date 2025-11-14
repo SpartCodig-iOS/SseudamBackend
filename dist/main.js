@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -22,8 +55,16 @@ async function bootstrap() {
     };
     app.use((0, helmet_1.default)(helmetOptions));
     app.enableCors();
-    app.use((0, express_1.json)());
-    app.use((0, express_1.urlencoded)({ extended: true }));
+    // HTTP 요청 크기 및 타임아웃 제한
+    app.use((0, express_1.json)({ limit: '10mb' }));
+    app.use((0, express_1.urlencoded)({ extended: true, limit: '10mb' }));
+    // 글로벌 타임아웃 설정 (30초)
+    app.use((req, res, next) => {
+        req.setTimeout(30000, () => {
+            res.status(408).json({ message: 'Request timeout' });
+        });
+        next();
+    });
     app.useGlobalFilters(new all_exceptions_filter_1.AllExceptionsFilter());
     app.useStaticAssets(node_path_1.default.join(process.cwd(), 'public'), { prefix: '/public/' });
     const swaggerConfig = new swagger_1.DocumentBuilder()
@@ -62,5 +103,16 @@ async function bootstrap() {
     });
     await app.listen(env_1.env.port);
     logger_1.logger.info('Server listening', { port: env_1.env.port, env: env_1.env.nodeEnv });
+    // 캐시 워밍 시작 (비동기로 실행하여 서버 시작 차단하지 않음)
+    setTimeout(async () => {
+        try {
+            const { MetaService } = await Promise.resolve().then(() => __importStar(require('./modules/meta/meta.service')));
+            const metaService = app.get(MetaService);
+            await metaService.warmupCache();
+        }
+        catch (error) {
+            logger_1.logger.error('Cache warmup failed', { error: error instanceof Error ? error.message : 'Unknown error' });
+        }
+    }, 1000); // 1초 후 실행
 }
 bootstrap();

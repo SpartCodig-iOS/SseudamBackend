@@ -9,7 +9,25 @@ const toMilliseconds = (start: bigint) => {
 
 @Injectable()
 export class RequestLoggerMiddleware implements NestMiddleware {
+  private readonly excludedPaths = [
+    '/health',
+    '/health/database',
+    '/health/supabase',
+    '/favicon.ico',
+    '/api-docs'
+  ];
+
+  private shouldSkipLogging(path: string): boolean {
+    return this.excludedPaths.some(excluded => path.startsWith(excluded));
+  }
+
   use(req: Request, res: Response, next: NextFunction) {
+    // 헬스체크 및 정적 파일 요청은 로깅 제외
+    if (this.shouldSkipLogging(req.originalUrl)) {
+      next();
+      return;
+    }
+
     const start = process.hrtime.bigint();
     logger.debug('Request started', { method: req.method, path: req.originalUrl });
 

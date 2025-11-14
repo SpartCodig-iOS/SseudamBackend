@@ -78,6 +78,7 @@ export class SupabaseService {
       .from(env.supabaseProfileTable)
       .select('email, username')
       .or(`username.eq.${identifier},email.ilike.${identifier}@%`)
+      .limit(1)
       .maybeSingle();
 
     if (error) {
@@ -93,6 +94,7 @@ export class SupabaseService {
       .from(env.supabaseProfileTable)
       .select('id, email, username, name, login_type')
       .eq('id', id)
+      .limit(1)
       .maybeSingle();
 
     if (error) {
@@ -100,6 +102,23 @@ export class SupabaseService {
     }
 
     return data;
+  }
+
+  // 배치로 여러 프로필 조회 (성능 최적화)
+  async findProfilesByIds(ids: string[]) {
+    if (ids.length === 0) return [];
+
+    const client = this.getClient();
+    const { data, error } = await client
+      .from(env.supabaseProfileTable)
+      .select('id, email, username, name, login_type')
+      .in('id', ids);
+
+    if (error) {
+      throw error;
+    }
+
+    return data || [];
   }
 
   async upsertProfile(params: {

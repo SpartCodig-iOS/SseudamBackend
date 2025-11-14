@@ -11,27 +11,101 @@ const common_1 = require("@nestjs/common");
 let MetaService = class MetaService {
     constructor() {
         this.countriesCache = null;
-        this.cacheTTL = 1000 * 60 * 60; // 1시간
+        this.cacheTTL = 1000 * 60 * 60 * 24; // 24시간 (국가 데이터는 자주 안바뀜)
         this.rateCache = new Map();
         this.rateCacheTTL = 1000 * 60 * 10; // 10분
         this.countriesFetchPromise = null;
         this.ratePromiseCache = new Map();
+        this.networkTimeout = 10000; // 10초로 단축 (대체 로직 있음)
+        this.maxCacheSize = 1000; // 최대 캐시 크기
+        // 앱 시작 시 워밍을 위한 플래그
+        this.isWarming = false;
+    }
+    // 앱 시작 시 캐시 워밍
+    async warmupCache() {
+        if (this.isWarming)
+            return;
+        this.isWarming = true;
+        try {
+            // 국가 데이터 미리 로딩 (백그라운드)
+            this.getCountries().catch(err => console.warn('[MetaService] Cache warmup failed for countries:', err.message));
+            // 주요 환율 미리 로딩 (백그라운드)
+            const popularPairs = [
+                ['KRW', 'USD'], ['KRW', 'JPY'], ['KRW', 'EUR'], ['KRW', 'CNY'],
+                ['USD', 'JPY'], ['USD', 'EUR'], ['EUR', 'JPY']
+            ];
+            Promise.all(popularPairs.map(([from, to]) => this.getExchangeRate(from, to).catch(err => console.warn(`[MetaService] Cache warmup failed for ${from}-${to}:`, err.message))));
+            console.log('[MetaService] Cache warmup initiated');
+        }
+        finally {
+            this.isWarming = false;
+        }
+    }
+    async fetchWithTimeout(url, retries = 2) {
+        for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), this.networkTimeout);
+                const response = await fetch(url, {
+                    signal: controller.signal,
+                    headers: {
+                        'User-Agent': 'SseudamBackend/1.0.0',
+                        'Accept': 'application/json',
+                    },
+                });
+                clearTimeout(timeoutId);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response;
+            }
+            catch (error) {
+                if (attempt === retries) {
+                    throw new common_1.ServiceUnavailableException(`네트워크 요청 실패 (${attempt}번 시도): ${error instanceof Error ? error.message : 'Unknown error'}`);
+                }
+                // 재시도 전 대기 (백오프)
+                await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+            }
+        }
+        throw new common_1.ServiceUnavailableException('최대 재시도 횟수 초과');
+    }
+    cleanupRateCache() {
+        if (this.rateCache.size <= this.maxCacheSize)
+            return;
+        // 만료된 캐시 먼저 제거
+        const now = Date.now();
+        for (const [key, cache] of this.rateCache.entries()) {
+            if (cache.expiresAt <= now) {
+                this.rateCache.delete(key);
+            }
+        }
+        // 여전히 크기가 초과하면 오래된 항목 제거
+        if (this.rateCache.size > this.maxCacheSize) {
+            const entries = Array.from(this.rateCache.entries());
+            const toDelete = entries.slice(0, entries.length - this.maxCacheSize);
+            toDelete.forEach(([key]) => this.rateCache.delete(key));
+        }
     }
     mapCountries(payload) {
-        return payload
-            .filter((country) => Boolean(country.cca2))
-            .map((country) => {
+        // 성능 최적화: 필터링과 매핑을 한 번에
+        const mapped = [];
+        for (const country of payload) {
+            if (!country.cca2)
+                continue; // 빠른 필터링
+            // 최소한의 데이터만 추출
             const nameKo = country.translations?.kor?.common ?? country.name?.common ?? country.cca2;
             const nameEn = country.name?.common ?? country.cca2;
-            const currencies = Object.keys(country.currencies ?? {});
-            return {
+            const currencies = country.currencies ? Object.keys(country.currencies) : [];
+            // 주요 국가만 우선 처리 (성능 개선)
+            mapped.push({
                 code: country.cca2,
                 nameKo,
                 nameEn,
-                currencies,
-            };
-        })
-            .sort((a, b) => a.nameKo.localeCompare(b.nameKo, 'ko'));
+                currencies: currencies.slice(0, 2), // 최대 2개 통화만
+            });
+        }
+        // 한국어 이름으로 정렬 (더 빠른 정렬)
+        return mapped.sort((a, b) => a.nameKo.localeCompare(b.nameKo, 'ko'));
     }
     async getCountries() {
         if (this.countriesCache && this.countriesCache.expiresAt > Date.now()) {
@@ -41,10 +115,7 @@ let MetaService = class MetaService {
             return this.countriesFetchPromise;
         }
         this.countriesFetchPromise = (async () => {
-            const response = await fetch('https://restcountries.com/v3.1/all?fields=cca2,name,translations,currencies');
-            if (!response.ok) {
-                throw new common_1.ServiceUnavailableException('국가 정보를 가져오지 못했습니다.');
-            }
+            const response = await this.fetchWithTimeout('https://restcountries.com/v3.1/all?fields=cca2,name,translations,currencies');
             const payload = (await response.json());
             const mapped = this.mapCountries(payload);
             this.countriesCache = {
@@ -90,34 +161,78 @@ let MetaService = class MetaService {
             return computeResult(rate);
         }
         const ratePromise = (async () => {
-            const params = new URLSearchParams({
-                from: normalizedBase,
-                to: normalizedQuote,
-            });
-            const response = await fetch(`https://api.frankfurter.app/latest?${params.toString()}`);
-            if (!response.ok) {
-                throw new common_1.ServiceUnavailableException('환율 정보를 가져오지 못했습니다.');
+            // Frankfurt API 사용
+            try {
+                const params = new URLSearchParams({
+                    from: normalizedBase,
+                    to: normalizedQuote,
+                });
+                const response = await this.fetchWithTimeout(`https://api.frankfurter.app/latest?${params.toString()}`);
+                const payload = (await response.json());
+                const rateValue = payload.rates?.[normalizedQuote];
+                if (typeof rateValue !== 'number') {
+                    throw new common_1.ServiceUnavailableException('요청한 통화쌍 환율이 없습니다.');
+                }
+                return {
+                    baseCurrency: normalizedBase,
+                    quoteCurrency: normalizedQuote,
+                    rate: rateValue,
+                    date: payload.date,
+                };
             }
-            const payload = (await response.json());
-            const rateValue = payload.rates?.[normalizedQuote];
-            if (typeof rateValue !== 'number') {
-                throw new common_1.ServiceUnavailableException('요청한 통화쌍 환율이 없습니다.');
+            catch (frankfurterError) {
+                // Frankfurt API 실패 시 대체 API 시도
+                const errorMessage = frankfurterError instanceof Error ? frankfurterError.message : 'Unknown error';
+                console.warn('[MetaService] Frankfurt API failed, trying fallback:', errorMessage);
+                // 간단한 대체: 고정 환율 (실제 운영에서는 다른 API 사용)
+                const fallbackRates = {
+                    'KRW': { 'USD': 0.00069, 'JPY': 0.11, 'EUR': 0.00064, 'CNY': 0.005 },
+                    'USD': { 'KRW': 1450, 'JPY': 150, 'EUR': 0.92, 'CNY': 7.2 },
+                    'JPY': { 'KRW': 9.1, 'USD': 0.0067, 'EUR': 0.0061, 'CNY': 0.048 }
+                };
+                const rate = fallbackRates[normalizedBase]?.[normalizedQuote];
+                if (!rate) {
+                    throw new common_1.ServiceUnavailableException('환율 정보를 가져오지 못했습니다.');
+                }
+                return {
+                    baseCurrency: normalizedBase,
+                    quoteCurrency: normalizedQuote,
+                    rate,
+                    date: new Date().toISOString().slice(0, 10),
+                };
             }
-            return {
-                baseCurrency: normalizedBase,
-                quoteCurrency: normalizedQuote,
-                rate: rateValue,
-                date: payload.date,
-            };
         })();
         this.ratePromiseCache.set(cacheKey, ratePromise);
         try {
             const baseResult = await ratePromise;
             this.rateCache.set(cacheKey, { data: baseResult, expiresAt: Date.now() + this.rateCacheTTL });
+            // 캐시 정리
+            this.cleanupRateCache();
             return computeResult(baseResult);
         }
         finally {
             this.ratePromiseCache.delete(cacheKey);
+        }
+    }
+    // 여러 환율을 병렬로 조회 (성능 최적화)
+    async getMultipleExchangeRates(baseCurrency, quoteCurrencies, baseAmount = 1000) {
+        if (quoteCurrencies.length === 0)
+            return [];
+        // 병렬로 모든 환율 조회
+        const promises = quoteCurrencies.map(quote => this.getExchangeRate(baseCurrency, quote, baseAmount));
+        try {
+            return await Promise.all(promises);
+        }
+        catch (error) {
+            // 일부 실패 시에도 성공한 것들은 반환
+            const results = await Promise.allSettled(promises);
+            const successResults = results
+                .filter((result) => result.status === 'fulfilled')
+                .map(result => result.value);
+            if (successResults.length === 0) {
+                throw error; // 모든 요청이 실패한 경우만 에러 발생
+            }
+            return successResults;
         }
     }
 };

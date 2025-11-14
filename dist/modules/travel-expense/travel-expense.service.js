@@ -102,8 +102,12 @@ let TravelExpenseService = class TravelExpenseService {
                 payerId,
             ]);
             const expense = expenseResult.rows[0];
-            await Promise.all(participantIds.map((memberId) => client.query(`INSERT INTO travel_expense_participants (expense_id, member_id, split_amount)
-             VALUES ($1, $2, $3)`, [expense.id, memberId, splitAmount])));
+            // 배치 INSERT로 성능 최적화
+            if (participantIds.length > 0) {
+                const values = participantIds.map((memberId, index) => `($1, $${index + 2}, $${participantIds.length + 2})`).join(', ');
+                await client.query(`INSERT INTO travel_expense_participants (expense_id, member_id, split_amount)
+           VALUES ${values}`, [expense.id, ...participantIds, splitAmount]);
+            }
             const participantsResult = await client.query(`SELECT
            tep.member_id::text,
            p.name

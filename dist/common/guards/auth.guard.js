@@ -18,6 +18,8 @@ let AuthGuard = class AuthGuard {
     constructor(jwtTokenService, supabaseService) {
         this.jwtTokenService = jwtTokenService;
         this.supabaseService = supabaseService;
+        this.tokenCache = new Map();
+        this.CACHE_TTL = 5 * 60 * 1000; // 5분 캐시
     }
     async canActivate(context) {
         const request = context.switchToHttp().getRequest();
@@ -31,10 +33,19 @@ let AuthGuard = class AuthGuard {
             request.loginType = localUser.loginType;
             return true;
         }
+        // 캐시된 사용자 확인
+        const cachedUser = this.getCachedUser(token);
+        if (cachedUser) {
+            request.currentUser = cachedUser;
+            request.loginType = 'email';
+            return true;
+        }
         try {
             const supabaseUser = await this.supabaseService.getUserFromToken(token);
             if (supabaseUser?.email) {
-                request.currentUser = (0, mappers_1.fromSupabaseUser)(supabaseUser);
+                const userRecord = (0, mappers_1.fromSupabaseUser)(supabaseUser);
+                this.setCachedUser(token, userRecord);
+                request.currentUser = userRecord;
                 request.loginType = 'email';
                 return true;
             }
@@ -53,6 +64,30 @@ let AuthGuard = class AuthGuard {
             return null;
         }
         return token;
+    }
+    getCachedUser(token) {
+        const cached = this.tokenCache.get(token);
+        if (!cached)
+            return null;
+        const now = Date.now();
+        if (now - cached.timestamp > this.CACHE_TTL) {
+            this.tokenCache.delete(token);
+            return null;
+        }
+        return cached.user;
+    }
+    setCachedUser(token, user) {
+        this.tokenCache.set(token, {
+            user,
+            timestamp: Date.now(),
+        });
+        // 캐시 크기 제한 (1000개로 제한)
+        if (this.tokenCache.size > 1000) {
+            const firstKey = this.tokenCache.keys().next().value;
+            if (firstKey) {
+                this.tokenCache.delete(firstKey);
+            }
+        }
     }
     tryLocalJwt(token) {
         try {

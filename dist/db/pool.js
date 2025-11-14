@@ -36,9 +36,13 @@ const buildPoolConfig = async () => {
         user: base.user,
         password: base.password,
         database: base.database,
-        max: 10,
-        idleTimeoutMillis: 30000,
+        max: env_1.env.nodeEnv === 'production' ? 20 : 10, // 프로덕션에서 더 많은 연결
+        min: 2, // 최소 연결 유지
+        idleTimeoutMillis: 60000, // 1분 idle timeout
         connectionTimeoutMillis: 10000,
+        allowExitOnIdle: true, // 프로세스 종료 시 정리
+        statement_timeout: 30000, // 30초 쿼리 타임아웃
+        query_timeout: 30000,
     };
     if ((0, network_1.shouldUseTLS)(base.host)) {
         config.ssl = {
