@@ -72,12 +72,12 @@ let SupabaseService = class SupabaseService {
             throw error;
         return data.user;
     }
-    async findProfileByIdentifier(identifier) {
+    async findProfileById(id) {
         const client = this.getClient();
         const { data, error } = await client
             .from(env_1.env.supabaseProfileTable)
-            .select('email, username')
-            .or(`username.eq.${identifier},email.ilike.${identifier}@%`)
+            .select('id, email, username, name, login_type')
+            .eq('id', id)
             .limit(1)
             .maybeSingle();
         if (error) {
@@ -85,12 +85,12 @@ let SupabaseService = class SupabaseService {
         }
         return data;
     }
-    async findProfileById(id) {
+    async findProfileByIdentifier(identifier) {
         const client = this.getClient();
         const { data, error } = await client
             .from(env_1.env.supabaseProfileTable)
-            .select('id, email, username, name, login_type')
-            .eq('id', id)
+            .select('id, email, username, name')
+            .or(`username.eq.${identifier},email.ilike.${identifier}@%`)
             .limit(1)
             .maybeSingle();
         if (error) {

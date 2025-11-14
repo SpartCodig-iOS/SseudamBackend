@@ -19,8 +19,10 @@ const auth_service_1 = require("./auth.service");
 const api_1 = require("../../types/api");
 const authSchemas_1 = require("../../validators/authSchemas");
 const auth_guard_1 = require("../../common/guards/auth.guard");
+const rate_limit_guard_1 = require("../../common/guards/rate-limit.guard");
 const auth_response_dto_1 = require("./dto/auth-response.dto");
 const auth_response_util_1 = require("./auth-response.util");
+const rate_limit_decorator_1 = require("../../common/decorators/rate-limit.decorator");
 let AuthController = class AuthController {
     constructor(authService) {
         this.authService = authService;
@@ -69,6 +71,8 @@ exports.AuthController = AuthController;
 __decorate([
     (0, common_1.Post)('signup'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, common_1.UseGuards)(rate_limit_guard_1.RateLimitGuard),
+    (0, rate_limit_decorator_1.RateLimit)({ limit: 5, windowMs: 15 * 60 * 1000, keyPrefix: 'auth:signup' }),
     (0, swagger_1.ApiOperation)({ summary: '사용자 회원가입' }),
     (0, swagger_1.ApiBody)({
         schema: {
@@ -100,6 +104,8 @@ __decorate([
 __decorate([
     (0, common_1.Post)('login'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, common_1.UseGuards)(rate_limit_guard_1.RateLimitGuard),
+    (0, rate_limit_decorator_1.RateLimit)({ limit: 5, windowMs: 15 * 60 * 1000, keyPrefix: 'auth:login' }),
     (0, swagger_1.ApiOperation)({ summary: '로그인 (이메일 또는 아이디)' }),
     (0, swagger_1.ApiBody)({
         schema: {
@@ -108,14 +114,14 @@ __decorate([
             properties: {
                 identifier: {
                     type: 'string',
-                    description: '이메일 전체 또는 @ 앞부분 아이디',
-                    example: 'string',
+                    description: '이메일 전체 또는 아이디',
+                    example: 'user 또는 user@example.com',
                 },
                 email: {
                     type: 'string',
                     format: 'email',
-                    description: 'identifier 대신 email 사용 가능',
-                    example: 'string',
+                    description: '(선택) identifier 대신 사용할 이메일',
+                    example: 'user@example.com',
                 },
                 password: { type: 'string', example: 'string' },
             },

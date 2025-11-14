@@ -30,8 +30,11 @@ let SessionController = class SessionController {
         if (!session) {
             throw new common_1.BadRequestException('Session not found or expired');
         }
-        await this.sessionService.touchSession(sessionId);
-        return (0, api_1.success)(session, 'Session info retrieved successfully');
+        if (session.isActive) {
+            await this.sessionService.touchSession(sessionId);
+        }
+        const message = session.isActive ? 'Session info retrieved successfully' : 'Session info retrieved (inactive)';
+        return (0, api_1.success)(session, message);
     }
 };
 exports.SessionController = SessionController;

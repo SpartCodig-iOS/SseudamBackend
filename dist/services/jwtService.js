@@ -15,28 +15,30 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const env_1 = require("../config/env");
 const secondsToMs = (value) => value * 1000;
 let JwtTokenService = class JwtTokenService {
-    createAccessPayload(user, loginType) {
+    createAccessPayload(user, sessionId, loginType) {
         return {
             sub: user.id,
             email: user.email,
             name: user.name ?? undefined,
             loginType,
             lastLoginAt: new Date().toISOString(),
+            sessionId,
         };
     }
-    createRefreshPayload(user) {
+    createRefreshPayload(user, sessionId) {
         return {
             sub: user.id,
             typ: 'refresh',
+            sessionId,
         };
     }
-    generateTokenPair(user, loginType) {
+    generateTokenPair(user, loginType, sessionId) {
         const accessExpiresAt = new Date(Date.now() + secondsToMs(env_1.env.accessTokenTTL));
         const refreshExpiresAt = new Date(Date.now() + secondsToMs(env_1.env.refreshTokenTTL));
-        const accessToken = jsonwebtoken_1.default.sign(this.createAccessPayload(user, loginType), env_1.env.jwtSecret, {
+        const accessToken = jsonwebtoken_1.default.sign(this.createAccessPayload(user, sessionId, loginType), env_1.env.jwtSecret, {
             expiresIn: env_1.env.accessTokenTTL,
         });
-        const refreshToken = jsonwebtoken_1.default.sign(this.createRefreshPayload(user), env_1.env.jwtSecret, {
+        const refreshToken = jsonwebtoken_1.default.sign(this.createRefreshPayload(user, sessionId), env_1.env.jwtSecret, {
             expiresIn: env_1.env.refreshTokenTTL,
         });
         return {

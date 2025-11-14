@@ -25,10 +25,8 @@ interface RefreshPayload {
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
-  // 프로필 캐시: 5분 TTL, 최대 1000개
-  private readonly profileCache = new Map<string, { data: any; expiresAt: number }>();
-  private readonly PROFILE_CACHE_TTL = 5 * 60 * 1000; // 5분
-  private readonly MAX_CACHE_SIZE = 1000;
+  private readonly identifierCache = new Map<string, { email: string; expiresAt: number }>();
+  private readonly IDENTIFIER_CACHE_TTL = 5 * 60 * 1000;
 
   constructor(
     private readonly supabaseService: SupabaseService,
@@ -38,40 +36,32 @@ export class AuthService {
     private readonly socialAuthService: SocialAuthService,
   ) {}
 
-  // 프로필 캐시 관리
-  private getCachedProfile(identifier: string): any | null {
-    const cached = this.profileCache.get(identifier);
+  private getCachedEmail(identifier: string): string | null {
+    const cached = this.identifierCache.get(identifier);
     if (!cached) return null;
-
     if (Date.now() > cached.expiresAt) {
-      this.profileCache.delete(identifier);
+      this.identifierCache.delete(identifier);
       return null;
     }
-
-    return cached.data;
+    return cached.email;
   }
 
-  private setCachedProfile(identifier: string, data: any): void {
-    // 캐시 크기 제한
-    if (this.profileCache.size >= this.MAX_CACHE_SIZE) {
-      // 가장 오래된 항목 제거
-      const oldestKey = this.profileCache.keys().next().value;
-      if (oldestKey) this.profileCache.delete(oldestKey);
-    }
-
-    this.profileCache.set(identifier, {
-      data,
-      expiresAt: Date.now() + this.PROFILE_CACHE_TTL
+  private setCachedEmail(identifier: string, email: string): void {
+    this.identifierCache.set(identifier, {
+      email,
+      expiresAt: Date.now() + this.IDENTIFIER_CACHE_TTL,
     });
-  }
-
-  private clearCacheForProfile(identifier: string): void {
-    this.profileCache.delete(identifier);
+    if (this.identifierCache.size > 1000) {
+      const oldestKey = this.identifierCache.keys().next().value;
+      if (oldestKey) {
+        this.identifierCache.delete(oldestKey);
+      }
+    }
   }
 
   async createAuthSession(user: UserRecord, loginType: LoginType): Promise<AuthSessionPayload> {
-    const tokenPair = this.jwtTokenService.generateTokenPair(user, loginType);
     const session = await this.sessionService.createSession(user.id, loginType);
+    const tokenPair = this.jwtTokenService.generateTokenPair(user, loginType, session.sessionId);
     return { user, tokenPair, loginType, session };
   }
 
@@ -104,10 +94,9 @@ export class AuthService {
       password_hash: passwordHash,
     };
 
-    // 프로필 캐시 설정
-    this.setCachedProfile(lowerEmail, { email: lowerEmail });
-
     const result = await this.createAuthSession(newUser, 'signup');
+    this.setCachedEmail(lowerEmail, lowerEmail);
+    this.setCachedEmail(username, lowerEmail);
 
     const duration = Date.now() - startTime;
     this.logger.debug(`Signup completed in ${duration}ms for ${lowerEmail}`);
@@ -119,33 +108,32 @@ export class AuthService {
     const startTime = Date.now();
     const identifier = input.identifier.trim().toLowerCase();
     if (!identifier) {
-      throw new UnauthorizedException('email and password are required');
+      throw new UnauthorizedException('identifier is required');
     }
 
     let emailToUse = identifier;
     let loginType: LoginType = 'email';
 
     if (!identifier.includes('@')) {
-      // 프로필 캐시 확인
-      let profile = this.getCachedProfile(identifier);
-
-      if (!profile) {
+      const cachedEmail = this.getCachedEmail(identifier);
+      if (cachedEmail) {
+        emailToUse = cachedEmail;
+      } else {
+        let profile;
         try {
           profile = await this.supabaseService.findProfileByIdentifier(identifier);
-          if (profile) {
-            // 캐시에 저장
-            this.setCachedProfile(identifier, profile);
-          }
         } catch {
           throw new UnauthorizedException('Invalid credentials');
         }
-      }
 
-      if (!profile?.email) {
-        throw new UnauthorizedException('Invalid credentials');
+        if (!profile?.email) {
+          throw new UnauthorizedException('Invalid credentials');
+        }
+
+        emailToUse = profile.email.toLowerCase();
+        loginType = 'username';
+        this.setCachedEmail(identifier, emailToUse);
       }
-      emailToUse = profile.email.toLowerCase();
-      loginType = 'username';
     }
 
     let supabaseUser;
@@ -155,6 +143,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
     const user = fromSupabaseUser(supabaseUser);
+
+    this.setCachedEmail(user.email.toLowerCase(), user.email.toLowerCase());
+    if (user.username) {
+      this.setCachedEmail(user.username.toLowerCase(), user.email.toLowerCase());
+    }
 
     const result = await this.createAuthSession(user, loginType);
 
@@ -166,8 +159,13 @@ export class AuthService {
 
   async refresh(refreshToken: string): Promise<RefreshPayload> {
     const payload = this.jwtTokenService.verifyRefreshToken(refreshToken);
-    if (!payload.sub) {
+    if (!payload.sub || !payload.sessionId) {
       throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    const currentSession = await this.sessionService.getSession(payload.sessionId);
+    if (!currentSession || !currentSession.isActive) {
+      throw new UnauthorizedException('Session expired or revoked');
     }
 
     let user: UserRecord;
@@ -180,6 +178,9 @@ export class AuthService {
     } catch (error) {
       throw new UnauthorizedException('User verification failed');
     }
+
+    // 기존 세션은 재사용하지 않으므로 즉시 폐기
+    await this.sessionService.deleteSession(payload.sessionId);
 
     const sessionPayload = await this.createAuthSession(user, 'email');
     return { tokenPair: sessionPayload.tokenPair, loginType: sessionPayload.loginType, session: sessionPayload.session };
@@ -225,12 +226,6 @@ export class AuthService {
 
     // 모든 작업을 병렬로 실행
     await Promise.all([...revokeTasks, deleteUserTask]);
-
-    // 관련 캐시 삭제
-    this.clearCacheForProfile(user.email);
-    if (user.username) {
-      this.clearCacheForProfile(user.username);
-    }
 
     const duration = Date.now() - startTime;
     this.logger.debug(`Account deletion completed in ${duration}ms for ${user.email}`);

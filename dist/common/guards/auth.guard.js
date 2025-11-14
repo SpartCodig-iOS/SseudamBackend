@@ -14,10 +14,12 @@ const common_1 = require("@nestjs/common");
 const jwtService_1 = require("../../services/jwtService");
 const supabaseService_1 = require("../../services/supabaseService");
 const mappers_1 = require("../../utils/mappers");
+const sessionService_1 = require("../../services/sessionService");
 let AuthGuard = class AuthGuard {
-    constructor(jwtTokenService, supabaseService) {
+    constructor(jwtTokenService, supabaseService, sessionService) {
         this.jwtTokenService = jwtTokenService;
         this.supabaseService = supabaseService;
+        this.sessionService = sessionService;
         this.tokenCache = new Map();
         this.CACHE_TTL = 5 * 60 * 1000; // 5분 캐시
     }
@@ -29,6 +31,7 @@ let AuthGuard = class AuthGuard {
         }
         const localUser = this.tryLocalJwt(token);
         if (localUser) {
+            await this.ensureSessionActive(localUser.sessionId);
             request.currentUser = localUser.user;
             request.loginType = localUser.loginType;
             return true;
@@ -92,7 +95,7 @@ let AuthGuard = class AuthGuard {
     tryLocalJwt(token) {
         try {
             const payload = this.jwtTokenService.verifyAccessToken(token);
-            if (payload?.sub && payload?.email) {
+            if (payload?.sub && payload?.email && payload.sessionId) {
                 const issuedAt = payload.iat ? new Date(payload.iat * 1000) : new Date();
                 const user = {
                     id: payload.sub,
@@ -104,7 +107,7 @@ let AuthGuard = class AuthGuard {
                     created_at: issuedAt,
                     updated_at: issuedAt,
                 };
-                return { user, loginType: payload.loginType };
+                return { user, loginType: payload.loginType, sessionId: payload.sessionId };
             }
             return null;
         }
@@ -112,10 +115,17 @@ let AuthGuard = class AuthGuard {
             return null;
         }
     }
+    async ensureSessionActive(sessionId) {
+        const session = await this.sessionService.getSession(sessionId);
+        if (!session || !session.isActive) {
+            throw new common_1.UnauthorizedException('Session expired or revoked');
+        }
+    }
 };
 exports.AuthGuard = AuthGuard;
 exports.AuthGuard = AuthGuard = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [jwtService_1.JwtTokenService,
-        supabaseService_1.SupabaseService])
+        supabaseService_1.SupabaseService,
+        sessionService_1.SessionService])
 ], AuthGuard);

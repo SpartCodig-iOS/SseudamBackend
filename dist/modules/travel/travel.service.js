@@ -95,39 +95,40 @@ let TravelService = TravelService_1 = class TravelService {
     }
     async listTravels(userId) {
         const pool = await (0, pool_1.getPool)();
-        // N+1 쿼리 제거: LATERAL 대신 GROUP BY 사용으로 성능 최적화
         const result = await pool.query(`SELECT
-         t.id::text AS id,
-         t.title,
-         t.start_date::text,
-         t.end_date::text,
-         t.country_code,
-         t.base_currency,
-         t.base_exchange_rate,
-         t.invite_code,
-         t.status,
-         user_member.role,
-         t.created_at::text,
+         ut.id::text AS id,
+         ut.title,
+         ut.start_date::text,
+         ut.end_date::text,
+         ut.country_code,
+         ut.base_currency,
+         ut.base_exchange_rate,
+         ut.invite_code,
+         ut.status,
+         ut.role,
+         ut.created_at::text,
          owner_profile.name AS owner_name,
-         COALESCE(
-           json_agg(
-             DISTINCT json_build_object(
-               'userId', tm2.user_id,
-               'name', p.name,
-               'role', tm2.role
-             )
-           ) FILTER (WHERE tm2.user_id IS NOT NULL),
-           '[]'::json
-         ) AS members
-       FROM travels t
-       INNER JOIN travel_members user_member ON user_member.travel_id = t.id AND user_member.user_id = $1
-       INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
-       LEFT JOIN travel_members tm2 ON tm2.travel_id = t.id
-       LEFT JOIN profiles p ON p.id = tm2.user_id
-       GROUP BY t.id, t.title, t.start_date, t.end_date, t.country_code,
-                t.base_currency, t.base_exchange_rate, t.invite_code, t.status,
-                user_member.role, t.created_at, owner_profile.name
-       ORDER BY t.created_at DESC`, [userId]);
+         COALESCE(members.members, '[]'::json) AS members
+       FROM (
+         SELECT t.*, tm.role
+         FROM travels t
+         INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
+       ) AS ut
+       INNER JOIN profiles owner_profile ON owner_profile.id = ut.owner_id
+       LEFT JOIN LATERAL (
+         SELECT json_agg(
+                  json_build_object(
+                    'userId', tm2.user_id,
+                    'name', p.name,
+                    'role', tm2.role
+                  )
+                  ORDER BY tm2.joined_at
+                ) AS members
+         FROM travel_members tm2
+         LEFT JOIN profiles p ON p.id = tm2.user_id
+         WHERE tm2.travel_id = ut.id
+       ) AS members ON TRUE
+       ORDER BY ut.created_at DESC`, [userId]);
         return result.rows.map((row) => this.mapSummary(row));
     }
     async getMemberRole(travelId, userId) {

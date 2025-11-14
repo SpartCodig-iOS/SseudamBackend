@@ -12,6 +12,7 @@ import { AuthService } from './auth.service';
 import { success } from '../../types/api';
 import { loginSchema, refreshSchema, signupSchema, logoutSchema } from '../../validators/authSchemas';
 import { AuthGuard } from '../../common/guards/auth.guard';
+import { RateLimitGuard } from '../../common/guards/rate-limit.guard';
 import { RequestWithUser } from '../../types/request';
 import {
   DeleteAccountResponseDto,
@@ -20,6 +21,7 @@ import {
   SignupResponseDto,
 } from './dto/auth-response.dto';
 import { buildAuthSessionResponse } from './auth-response.util';
+import { RateLimit } from '../../common/decorators/rate-limit.decorator';
 
 @ApiTags('Auth')
 @Controller('api/v1/auth')
@@ -28,6 +30,8 @@ export class AuthController {
 
   @Post('signup')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ limit: 5, windowMs: 15 * 60 * 1000, keyPrefix: 'auth:signup' })
   @ApiOperation({ summary: '사용자 회원가입' })
   @ApiBody({
     schema: {
@@ -60,6 +64,8 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ limit: 5, windowMs: 15 * 60 * 1000, keyPrefix: 'auth:login' })
   @ApiOperation({ summary: '로그인 (이메일 또는 아이디)' })
   @ApiBody({
     schema: {
@@ -68,14 +74,14 @@ export class AuthController {
       properties: {
         identifier: {
           type: 'string',
-          description: '이메일 전체 또는 @ 앞부분 아이디',
-          example: 'string',
+          description: '이메일 전체 또는 아이디',
+          example: 'user 또는 user@example.com',
         },
         email: {
           type: 'string',
           format: 'email',
-          description: 'identifier 대신 email 사용 가능',
-          example: 'string',
+          description: '(선택) identifier 대신 사용할 이메일',
+          example: 'user@example.com',
         },
         password: { type: 'string', example: 'string' },
       },
@@ -162,6 +168,7 @@ export class AuthController {
       'Token refreshed successfully',
     );
   }
+
 
   @UseGuards(AuthGuard)
   @ApiBearerAuth()

@@ -31,41 +31,34 @@ let AuthService = AuthService_1 = class AuthService {
         this.sessionService = sessionService;
         this.socialAuthService = socialAuthService;
         this.logger = new common_1.Logger(AuthService_1.name);
-        // 프로필 캐시: 5분 TTL, 최대 1000개
-        this.profileCache = new Map();
-        this.PROFILE_CACHE_TTL = 5 * 60 * 1000; // 5분
-        this.MAX_CACHE_SIZE = 1000;
+        this.identifierCache = new Map();
+        this.IDENTIFIER_CACHE_TTL = 5 * 60 * 1000;
     }
-    // 프로필 캐시 관리
-    getCachedProfile(identifier) {
-        const cached = this.profileCache.get(identifier);
+    getCachedEmail(identifier) {
+        const cached = this.identifierCache.get(identifier);
         if (!cached)
             return null;
         if (Date.now() > cached.expiresAt) {
-            this.profileCache.delete(identifier);
+            this.identifierCache.delete(identifier);
             return null;
         }
-        return cached.data;
+        return cached.email;
     }
-    setCachedProfile(identifier, data) {
-        // 캐시 크기 제한
-        if (this.profileCache.size >= this.MAX_CACHE_SIZE) {
-            // 가장 오래된 항목 제거
-            const oldestKey = this.profileCache.keys().next().value;
-            if (oldestKey)
-                this.profileCache.delete(oldestKey);
-        }
-        this.profileCache.set(identifier, {
-            data,
-            expiresAt: Date.now() + this.PROFILE_CACHE_TTL
+    setCachedEmail(identifier, email) {
+        this.identifierCache.set(identifier, {
+            email,
+            expiresAt: Date.now() + this.IDENTIFIER_CACHE_TTL,
         });
-    }
-    clearCacheForProfile(identifier) {
-        this.profileCache.delete(identifier);
+        if (this.identifierCache.size > 1000) {
+            const oldestKey = this.identifierCache.keys().next().value;
+            if (oldestKey) {
+                this.identifierCache.delete(oldestKey);
+            }
+        }
     }
     async createAuthSession(user, loginType) {
-        const tokenPair = this.jwtTokenService.generateTokenPair(user, loginType);
         const session = await this.sessionService.createSession(user.id, loginType);
+        const tokenPair = this.jwtTokenService.generateTokenPair(user, loginType, session.sessionId);
         return { user, tokenPair, loginType, session };
     }
     async signup(input) {
@@ -92,9 +85,9 @@ let AuthService = AuthService_1 = class AuthService {
             username,
             password_hash: passwordHash,
         };
-        // 프로필 캐시 설정
-        this.setCachedProfile(lowerEmail, { email: lowerEmail });
         const result = await this.createAuthSession(newUser, 'signup');
+        this.setCachedEmail(lowerEmail, lowerEmail);
+        this.setCachedEmail(username, lowerEmail);
         const duration = Date.now() - startTime;
         this.logger.debug(`Signup completed in ${duration}ms for ${lowerEmail}`);
         return result;
@@ -103,30 +96,30 @@ let AuthService = AuthService_1 = class AuthService {
         const startTime = Date.now();
         const identifier = input.identifier.trim().toLowerCase();
         if (!identifier) {
-            throw new common_1.UnauthorizedException('email and password are required');
+            throw new common_1.UnauthorizedException('identifier is required');
         }
         let emailToUse = identifier;
         let loginType = 'email';
         if (!identifier.includes('@')) {
-            // 프로필 캐시 확인
-            let profile = this.getCachedProfile(identifier);
-            if (!profile) {
+            const cachedEmail = this.getCachedEmail(identifier);
+            if (cachedEmail) {
+                emailToUse = cachedEmail;
+            }
+            else {
+                let profile;
                 try {
                     profile = await this.supabaseService.findProfileByIdentifier(identifier);
-                    if (profile) {
-                        // 캐시에 저장
-                        this.setCachedProfile(identifier, profile);
-                    }
                 }
                 catch {
                     throw new common_1.UnauthorizedException('Invalid credentials');
                 }
+                if (!profile?.email) {
+                    throw new common_1.UnauthorizedException('Invalid credentials');
+                }
+                emailToUse = profile.email.toLowerCase();
+                loginType = 'username';
+                this.setCachedEmail(identifier, emailToUse);
             }
-            if (!profile?.email) {
-                throw new common_1.UnauthorizedException('Invalid credentials');
-            }
-            emailToUse = profile.email.toLowerCase();
-            loginType = 'username';
         }
         let supabaseUser;
         try {
@@ -136,6 +129,10 @@ let AuthService = AuthService_1 = class AuthService {
             throw new common_1.UnauthorizedException('Invalid credentials');
         }
         const user = (0, mappers_1.fromSupabaseUser)(supabaseUser);
+        this.setCachedEmail(user.email.toLowerCase(), user.email.toLowerCase());
+        if (user.username) {
+            this.setCachedEmail(user.username.toLowerCase(), user.email.toLowerCase());
+        }
         const result = await this.createAuthSession(user, loginType);
         const duration = Date.now() - startTime;
         this.logger.debug(`Login completed in ${duration}ms for ${identifier}`);
@@ -143,8 +140,12 @@ let AuthService = AuthService_1 = class AuthService {
     }
     async refresh(refreshToken) {
         const payload = this.jwtTokenService.verifyRefreshToken(refreshToken);
-        if (!payload.sub) {
+        if (!payload.sub || !payload.sessionId) {
             throw new common_1.UnauthorizedException('Invalid refresh token');
+        }
+        const currentSession = await this.sessionService.getSession(payload.sessionId);
+        if (!currentSession || !currentSession.isActive) {
+            throw new common_1.UnauthorizedException('Session expired or revoked');
         }
         let user;
         try {
@@ -157,6 +158,8 @@ let AuthService = AuthService_1 = class AuthService {
         catch (error) {
             throw new common_1.UnauthorizedException('User verification failed');
         }
+        // 기존 세션은 재사용하지 않으므로 즉시 폐기
+        await this.sessionService.deleteSession(payload.sessionId);
         const sessionPayload = await this.createAuthSession(user, 'email');
         return { tokenPair: sessionPayload.tokenPair, loginType: sessionPayload.loginType, session: sessionPayload.session };
     }
@@ -189,11 +192,6 @@ let AuthService = AuthService_1 = class AuthService {
         });
         // 모든 작업을 병렬로 실행
         await Promise.all([...revokeTasks, deleteUserTask]);
-        // 관련 캐시 삭제
-        this.clearCacheForProfile(user.email);
-        if (user.username) {
-            this.clearCacheForProfile(user.username);
-        }
         const duration = Date.now() - startTime;
         this.logger.debug(`Account deletion completed in ${duration}ms for ${user.email}`);
         return { supabaseDeleted };

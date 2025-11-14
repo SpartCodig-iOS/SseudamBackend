@@ -16,7 +16,7 @@ exports.loginSchema = zod_1.z
     password: zod_1.z.string().min(1),
 })
     .refine((data) => Boolean(data.identifier ?? data.email), {
-    message: 'Either identifier or email is required',
+    message: 'identifier or email is required',
     path: ['identifier'],
 })
     .transform((data) => ({

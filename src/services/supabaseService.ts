@@ -72,12 +72,12 @@ export class SupabaseService {
     return data.user;
   }
 
-  async findProfileByIdentifier(identifier: string) {
+  async findProfileById(id: string) {
     const client = this.getClient();
     const { data, error } = await client
       .from(env.supabaseProfileTable)
-      .select('email, username')
-      .or(`username.eq.${identifier},email.ilike.${identifier}@%`)
+      .select('id, email, username, name, login_type')
+      .eq('id', id)
       .limit(1)
       .maybeSingle();
 
@@ -88,12 +88,12 @@ export class SupabaseService {
     return data;
   }
 
-  async findProfileById(id: string) {
+  async findProfileByIdentifier(identifier: string) {
     const client = this.getClient();
     const { data, error } = await client
       .from(env.supabaseProfileTable)
-      .select('id, email, username, name, login_type')
-      .eq('id', id)
+      .select('id, email, username, name')
+      .or(`username.eq.${identifier},email.ilike.${identifier}@%`)
       .limit(1)
       .maybeSingle();
 

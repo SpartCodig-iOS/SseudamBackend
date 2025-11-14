@@ -6,8 +6,10 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { Response } from 'express';
+import * as Sentry from '@sentry/node';
 import { ZodError, ZodIssue } from 'zod';
 import { logger } from '../../utils/logger';
+import { env } from '../../config/env';
 
 const formatZodIssue = (issue: ZodIssue) => ({
   path: issue.path,
@@ -19,6 +21,11 @@ const formatZodIssue = (issue: ZodIssue) => ({
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
+  private capture(exception: unknown) {
+    if (!env.sentryDsn) return;
+    Sentry.captureException(exception);
+  }
+
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
@@ -47,6 +54,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
       if (status >= 500) {
         logger.error('Unhandled exception', { message, stack: exception.stack });
+        this.capture(exception);
       } else {
         logger.info('Handled error response', { status, message });
       }
@@ -61,6 +69,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const status = HttpStatus.INTERNAL_SERVER_ERROR;
     const message = (exception as Error)?.message || 'Internal Server Error';
     logger.error('Unhandled exception', { message, stack: (exception as Error)?.stack });
+    this.capture(exception);
 
     return response.status(status).json({
       code: status,

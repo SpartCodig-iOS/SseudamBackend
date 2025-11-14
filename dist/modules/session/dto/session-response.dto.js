@@ -38,3 +38,15 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: '2025-12-15T10:00:00.000Z' }),
     __metadata("design:type", String)
 ], SessionResponseDto.prototype, "expiresAt", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: null, nullable: true }),
+    __metadata("design:type", Object)
+], SessionResponseDto.prototype, "revokedAt", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'active', enum: ['active', 'revoked', 'expired'] }),
+    __metadata("design:type", String)
+], SessionResponseDto.prototype, "status", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true }),
+    __metadata("design:type", Boolean)
+], SessionResponseDto.prototype, "isActive", void 0);

@@ -18,4 +18,13 @@ export class SessionResponseDto {
 
   @ApiProperty({ example: '2025-12-15T10:00:00.000Z' })
   expiresAt!: string;
+
+  @ApiProperty({ example: null, nullable: true })
+  revokedAt!: string | null;
+
+  @ApiProperty({ example: 'active', enum: ['active', 'revoked', 'expired'] })
+  status!: string;
+
+  @ApiProperty({ example: true })
+  isActive!: boolean;
 }

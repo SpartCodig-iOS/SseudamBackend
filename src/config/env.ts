@@ -49,6 +49,50 @@ export const env = {
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? null,
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? null,
   googleRedirectUri: process.env.GOOGLE_REDIRECT_URI ?? null,
+  corsOrigins: (
+    process.env.CORS_ALLOWED_ORIGINS ??
+    process.env.CORS_ORIGINS ??
+    'http://localhost:3000,https://sseudam.up.railway.app'
+  )
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0),
+  sentryDsn: process.env.SENTRY_DSN ?? null,
+  sentryTracesSampleRate: optionalNumber(process.env.SENTRY_TRACES_SAMPLE_RATE, 0.1) ?? 0.1,
 };
 
 export const isProduction = env.nodeEnv === 'production';
+
+if (env.corsOrigins.length === 0) {
+  env.corsOrigins.push('http://localhost:3000', 'https://sseudam.up.railway.app');
+}
+
+const missingVars: string[] = [];
+const requiredEnv: Array<[keyof typeof env, string]> = [
+  ['databaseUrl', 'DATABASE_URL / SUPABASE_DB_URL'],
+  ['jwtSecret', 'JWT_SECRET'],
+  ['supabaseUrl', 'SUPABASE_URL'],
+  ['supabaseServiceRoleKey', 'SUPABASE_SERVICE_ROLE_KEY'],
+];
+
+for (const [key, label] of requiredEnv) {
+  if (!env[key]) {
+    missingVars.push(label);
+  }
+}
+
+if (missingVars.length > 0) {
+  throw new Error(
+    `[ENV] Missing required environment variables: ${missingVars.join(', ')}`,
+  );
+}
+
+if (env.jwtSecret === 'secret') {
+  if (isProduction) {
+    throw new Error('[ENV] JWT_SECRET must be set in production');
+  } else {
+    console.warn(
+      '[ENV] Using fallback JWT secret. Set JWT_SECRET to a secure value.',
+    );
+  }
+}

@@ -44,17 +44,46 @@ const express_1 = require("express");
 const helmet_1 = __importDefault(require("helmet"));
 const core_1 = require("@nestjs/core");
 const swagger_1 = require("@nestjs/swagger");
+const Sentry = __importStar(require("@sentry/node"));
 const app_module_1 = require("./app.module");
 const env_1 = require("./config/env");
 const logger_1 = require("./utils/logger");
 const all_exceptions_filter_1 = require("./common/filters/all-exceptions.filter");
 async function bootstrap() {
     const app = await core_1.NestFactory.create(app_module_1.AppModule);
+    if (env_1.env.sentryDsn) {
+        Sentry.init({
+            dsn: env_1.env.sentryDsn,
+            environment: env_1.env.nodeEnv,
+            tracesSampleRate: env_1.env.sentryTracesSampleRate,
+            integrations: [Sentry.expressIntegration()],
+        });
+    }
     const helmetOptions = {
         contentSecurityPolicy: false,
     };
     app.use((0, helmet_1.default)(helmetOptions));
-    app.enableCors();
+    const allowedOrigins = new Set(env_1.env.corsOrigins);
+    const allowAll = allowedOrigins.has('*');
+    const localOrigins = [
+        `http://localhost:${env_1.env.port}`,
+        `http://127.0.0.1:${env_1.env.port}`,
+        `http://0.0.0.0:${env_1.env.port}`,
+    ];
+    localOrigins.forEach((origin) => allowedOrigins.add(origin));
+    app.enableCors({
+        origin: (origin, callback) => {
+            if (!origin || allowAll) {
+                return callback(null, true);
+            }
+            if (allowedOrigins.has(origin)) {
+                return callback(null, true);
+            }
+            return callback(new Error(`Origin ${origin} is not allowed by CORS`), false);
+        },
+        methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+        credentials: true,
+    });
     // HTTP 요청 크기 및 타임아웃 제한
     app.use((0, express_1.json)({ limit: '10mb' }));
     app.use((0, express_1.urlencoded)({ extended: true, limit: '10mb' }));
@@ -103,7 +132,6 @@ async function bootstrap() {
     });
     await app.listen(env_1.env.port);
     logger_1.logger.info('Server listening', { port: env_1.env.port, env: env_1.env.nodeEnv });
-    // 캐시 워밍 시작 (비동기로 실행하여 서버 시작 차단하지 않음)
     setTimeout(async () => {
         try {
             const { MetaService } = await Promise.resolve().then(() => __importStar(require('./modules/meta/meta.service')));
@@ -113,6 +141,6 @@ async function bootstrap() {
         catch (error) {
             logger_1.logger.error('Cache warmup failed', { error: error instanceof Error ? error.message : 'Unknown error' });
         }
-    }, 1000); // 1초 후 실행
+    }, 1000);
 }
 bootstrap();

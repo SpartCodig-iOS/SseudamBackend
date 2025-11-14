@@ -43,6 +43,7 @@ export class MetaService {
 
   // 앱 시작 시 워밍을 위한 플래그
   private isWarming = false;
+  private fallbackWarned = false;
 
   // 앱 시작 시 캐시 워밍
   async warmupCache(): Promise<void> {
@@ -56,17 +57,26 @@ export class MetaService {
       );
 
       // 주요 환율 미리 로딩 (백그라운드)
-      const popularPairs = [
-        ['KRW', 'USD'], ['KRW', 'JPY'], ['KRW', 'EUR'], ['KRW', 'CNY'],
-        ['USD', 'JPY'], ['USD', 'EUR'], ['EUR', 'JPY']
-      ];
+      const warmupMatrix: Record<string, string[]> = {
+        KRW: ['USD', 'JPY', 'EUR'],
+        USD: ['KRW', 'JPY', 'EUR'],
+        EUR: ['USD', 'KRW', 'JPY'],
+      };
 
-      Promise.all(
-        popularPairs.map(([from, to]) =>
-          this.getExchangeRate(from, to).catch(err =>
-            console.warn(`[MetaService] Cache warmup failed for ${from}-${to}:`, err.message)
-          )
-        )
+      await Promise.allSettled(
+        Object.entries(warmupMatrix).map(async ([base, quotes]) => {
+          try {
+            await this.getMultipleExchangeRates(base, quotes);
+          } catch (err) {
+            if (!this.fallbackWarned) {
+              console.warn(
+                `[MetaService] Cache warmup failed for base ${base}:`,
+                err instanceof Error ? err.message : err,
+              );
+              this.fallbackWarned = true;
+            }
+          }
+        }),
       );
 
       console.log('[MetaService] Cache warmup initiated');
@@ -239,9 +249,11 @@ export class MetaService {
           date: payload.date,
         };
       } catch (frankfurterError) {
-        // Frankfurt API 실패 시 대체 API 시도
         const errorMessage = frankfurterError instanceof Error ? frankfurterError.message : 'Unknown error';
-        console.warn('[MetaService] Frankfurt API failed, trying fallback:', errorMessage);
+        if (!this.fallbackWarned) {
+          console.warn('[MetaService] Frankfurt API failed, trying fallback:', errorMessage);
+          this.fallbackWarned = true;
+        }
 
         // 간단한 대체: 고정 환율 (실제 운영에서는 다른 API 사용)
         const fallbackRates: Record<string, Record<string, number>> = {

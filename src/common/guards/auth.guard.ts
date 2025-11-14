@@ -5,10 +5,12 @@ import { JwtTokenService } from '../../services/jwtService';
 import { SupabaseService } from '../../services/supabaseService';
 import { fromSupabaseUser } from '../../utils/mappers';
 import { UserRecord } from '../../types/user';
+import { SessionService } from '../../services/sessionService';
 
 interface LocalAuthResult {
   user: UserRecord;
   loginType?: LoginType;
+  sessionId: string;
 }
 
 interface CachedUser {
@@ -24,6 +26,7 @@ export class AuthGuard implements CanActivate {
   constructor(
     private readonly jwtTokenService: JwtTokenService,
     private readonly supabaseService: SupabaseService,
+    private readonly sessionService: SessionService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -35,6 +38,7 @@ export class AuthGuard implements CanActivate {
 
     const localUser = this.tryLocalJwt(token);
     if (localUser) {
+      await this.ensureSessionActive(localUser.sessionId);
       request.currentUser = localUser.user;
       request.loginType = localUser.loginType;
       return true;
@@ -105,7 +109,7 @@ export class AuthGuard implements CanActivate {
   private tryLocalJwt(token: string): LocalAuthResult | null {
     try {
       const payload = this.jwtTokenService.verifyAccessToken(token);
-      if (payload?.sub && payload?.email) {
+      if (payload?.sub && payload?.email && payload.sessionId) {
         const issuedAt = payload.iat ? new Date(payload.iat * 1000) : new Date();
         const user: UserRecord = {
           id: payload.sub,
@@ -117,11 +121,18 @@ export class AuthGuard implements CanActivate {
           created_at: issuedAt,
           updated_at: issuedAt,
         };
-        return { user, loginType: payload.loginType };
+        return { user, loginType: payload.loginType, sessionId: payload.sessionId };
       }
       return null;
     } catch (error) {
       return null;
+    }
+  }
+
+  private async ensureSessionActive(sessionId: string): Promise<void> {
+    const session = await this.sessionService.getSession(sessionId);
+    if (!session || !session.isActive) {
+      throw new UnauthorizedException('Session expired or revoked');
     }
   }
 }

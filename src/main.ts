@@ -8,6 +8,7 @@ import helmet, { HelmetOptions } from 'helmet';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import * as Sentry from '@sentry/node';
 import { AppModule } from './app.module';
 import { env } from './config/env';
 import { logger } from './utils/logger';
@@ -16,12 +17,41 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
+  if (env.sentryDsn) {
+    Sentry.init({
+      dsn: env.sentryDsn,
+      environment: env.nodeEnv,
+      tracesSampleRate: env.sentryTracesSampleRate,
+      integrations: [Sentry.expressIntegration()],
+    });
+  }
+
   const helmetOptions: HelmetOptions = {
     contentSecurityPolicy: false,
   };
 
   app.use(helmet(helmetOptions));
-  app.enableCors();
+  const allowedOrigins = new Set(env.corsOrigins);
+  const allowAll = allowedOrigins.has('*');
+  const localOrigins = [
+    `http://localhost:${env.port}`,
+    `http://127.0.0.1:${env.port}`,
+    `http://0.0.0.0:${env.port}`,
+  ];
+  localOrigins.forEach((origin) => allowedOrigins.add(origin));
+  app.enableCors({
+    origin: (origin, callback) => {
+      if (!origin || allowAll) {
+        return callback(null, true);
+      }
+      if (allowedOrigins.has(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`Origin ${origin} is not allowed by CORS`), false);
+    },
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    credentials: true,
+  });
 
   // HTTP 요청 크기 및 타임아웃 제한
   app.use(json({ limit: '10mb' }));
@@ -80,7 +110,6 @@ async function bootstrap() {
   await app.listen(env.port);
   logger.info('Server listening', { port: env.port, env: env.nodeEnv });
 
-  // 캐시 워밍 시작 (비동기로 실행하여 서버 시작 차단하지 않음)
   setTimeout(async () => {
     try {
       const { MetaService } = await import('./modules/meta/meta.service');
@@ -89,7 +118,7 @@ async function bootstrap() {
     } catch (error) {
       logger.error('Cache warmup failed', { error: error instanceof Error ? error.message : 'Unknown error' });
     }
-  }, 1000); // 1초 후 실행
+  }, 1000);
 }
 
 bootstrap();

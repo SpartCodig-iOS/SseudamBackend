@@ -112,6 +112,7 @@ npm start
 #### 🔐 인증
 ```http
 POST /api/v1/auth/signup          # 회원가입
+POST /api/v1/auth/logout          # 로그아웃 (sessionId 필요)
 POST /api/v1/auth/login           # 로그인
 POST /api/v1/auth/refresh         # 토큰 갱신
 DELETE /api/v1/auth/account       # 계정 삭제

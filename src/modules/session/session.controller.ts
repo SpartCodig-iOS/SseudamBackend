@@ -22,7 +22,10 @@ export class SessionController {
     if (!session) {
       throw new BadRequestException('Session not found or expired');
     }
-    await this.sessionService.touchSession(sessionId);
-    return success(session, 'Session info retrieved successfully');
+    if (session.isActive) {
+      await this.sessionService.touchSession(sessionId);
+    }
+    const message = session.isActive ? 'Session info retrieved successfully' : 'Session info retrieved (inactive)';
+    return success(session, message);
   }
 }
