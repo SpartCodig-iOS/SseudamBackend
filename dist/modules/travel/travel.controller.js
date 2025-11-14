@@ -39,6 +39,21 @@ let TravelController = class TravelController {
         const travel = await this.travelService.createTravel(req.currentUser.id, payload);
         return (0, api_1.success)(travel, 'Travel created');
     }
+    async updateTravel(travelId, body, req) {
+        if (!req.currentUser) {
+            throw new common_1.UnauthorizedException('Unauthorized');
+        }
+        const payload = travelSchemas_1.createTravelSchema.parse(body);
+        const travel = await this.travelService.updateTravel(travelId, req.currentUser.id, payload);
+        return (0, api_1.success)(travel, 'Travel updated');
+    }
+    async removeMember(travelId, memberId, req) {
+        if (!req.currentUser) {
+            throw new common_1.UnauthorizedException('Unauthorized');
+        }
+        await this.travelService.removeMember(travelId, req.currentUser.id, memberId);
+        return (0, api_1.success)({}, 'Member removed');
+    }
     async createInvite(travelId, req) {
         if (!req.currentUser) {
             throw new common_1.UnauthorizedException('Unauthorized');
@@ -118,6 +133,43 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], TravelController.prototype, "create", null);
+__decorate([
+    (0, common_1.Patch)(':travelId'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: '여행 정보 수정 (호스트 전용)' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['title', 'startDate', 'endDate', 'countryCode', 'baseCurrency', 'baseExchangeRate'],
+            properties: {
+                title: { type: 'string', example: '일본 겨울 여행' },
+                startDate: { type: 'string', example: '2025-12-01' },
+                endDate: { type: 'string', example: '2025-12-05' },
+                countryCode: { type: 'string', example: 'JP' },
+                baseCurrency: { type: 'string', example: 'KRW' },
+                baseExchangeRate: { type: 'number', example: 105.6 },
+            },
+        },
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: travel_response_dto_1.TravelSummaryDto }),
+    __param(0, (0, common_1.Param)('travelId')),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object, Object]),
+    __metadata("design:returntype", Promise)
+], TravelController.prototype, "updateTravel", null);
+__decorate([
+    (0, common_1.Delete)(':travelId/members/:memberId'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: '여행 멤버 삭제 (호스트 전용)' }),
+    __param(0, (0, common_1.Param)('travelId')),
+    __param(1, (0, common_1.Param)('memberId')),
+    __param(2, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, Object]),
+    __metadata("design:returntype", Promise)
+], TravelController.prototype, "removeMember", null);
 __decorate([
     (0, common_1.Post)(':travelId/invite'),
     (0, common_1.HttpCode)(common_1.HttpStatus.CREATED),

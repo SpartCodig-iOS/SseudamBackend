@@ -1,8 +1,12 @@
 import { z } from 'zod';
 
 export const updateProfileSchema = z.object({
-  name: z.string().min(1).max(120).nullable().optional(),
-  avatarURL: z.string().url().nullable().optional(),
+  name: z
+    .preprocess((val) => (val === undefined || val === null || val === '' ? undefined : val), z.string().min(1).max(120))
+    .optional(),
+  avatarURL: z
+    .preprocess((val) => (val === undefined || val === null || val === '' ? undefined : val), z.string().url())
+    .optional(),
 });
 
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;

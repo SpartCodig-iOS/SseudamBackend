@@ -24,7 +24,7 @@ export interface TravelSummary {
   role: string;
   createdAt: string;
   ownerName: string | null;
-  members: TravelMember[];
+  members?: TravelMember[];
 }
 
 export interface TravelDetail extends TravelSummary {}
@@ -57,7 +57,7 @@ export class TravelService {
       role: row.role,
       createdAt: row.created_at,
       ownerName: row.owner_name ?? null,
-      members: row.members || [],
+      members: row.members ?? undefined,
     };
   }
 
@@ -340,5 +340,78 @@ export class TravelService {
       owner_name: inviteRow.owner_name,
       members,
     });
+  }
+
+  async updateTravel(
+    travelId: string,
+    userId: string,
+    payload: CreateTravelInput,
+  ): Promise<TravelSummary> {
+    const ownerRole = await this.getMemberRole(travelId, userId);
+    if (ownerRole !== 'owner') {
+      throw new ForbiddenException('여행 수정 권한이 없습니다.');
+    }
+
+    const pool = await getPool();
+    const result = await pool.query(
+      `UPDATE travels
+       SET title = $2,
+           start_date = $3,
+           end_date = $4,
+           country_code = $5,
+           base_currency = $6,
+           base_exchange_rate = $7,
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING
+         id::text AS id,
+         title,
+         start_date::text,
+         end_date::text,
+         country_code,
+         base_currency,
+         base_exchange_rate,
+         invite_code,
+         status,
+         created_at::text`,
+      [
+        travelId,
+        payload.title,
+        payload.startDate,
+        payload.endDate,
+        payload.countryCode,
+        payload.baseCurrency,
+        payload.baseExchangeRate,
+      ],
+    );
+    const travelRow = result.rows[0];
+    if (!travelRow) {
+      throw new NotFoundException('여행을 찾을 수 없습니다.');
+    }
+
+    const ownerProfile = await pool.query(`SELECT name FROM profiles WHERE id = $1`, [userId]);
+
+    return this.mapSummary({
+      ...travelRow,
+      role: 'owner',
+      owner_name: ownerProfile.rows[0]?.name ?? null,
+      members: undefined,
+    });
+  }
+
+  async removeMember(travelId: string, ownerId: string, memberId: string): Promise<void> {
+    const ownerRole = await this.getMemberRole(travelId, ownerId);
+    if (ownerRole !== 'owner') {
+      throw new ForbiddenException('호스트만 멤버를 삭제할 수 있습니다.');
+    }
+    if (ownerId === memberId) {
+      throw new BadRequestException('호스트는 스스로를 삭제할 수 없습니다.');
+    }
+
+    const pool = await getPool();
+    await pool.query(
+      `DELETE FROM travel_members WHERE travel_id = $1 AND user_id = $2`,
+      [travelId, memberId],
+    );
   }
 }

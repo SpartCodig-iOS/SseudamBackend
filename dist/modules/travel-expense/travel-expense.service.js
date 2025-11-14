@@ -106,7 +106,6 @@ let TravelExpenseService = class TravelExpenseService {
              VALUES ($1, $2, $3)`, [expense.id, memberId, splitAmount])));
             const participantsResult = await client.query(`SELECT
            tep.member_id::text,
-           tep.split_amount,
            p.name
          FROM travel_expense_participants tep
          LEFT JOIN profiles p ON p.id = tep.member_id
@@ -127,7 +126,6 @@ let TravelExpenseService = class TravelExpenseService {
                 participants: participantsResult.rows.map((row) => ({
                     memberId: row.member_id,
                     name: row.name ?? null,
-                    splitAmount: Number(row.split_amount),
                 })),
             };
         }
@@ -153,14 +151,13 @@ let TravelExpenseService = class TravelExpenseService {
          e.category,
          e.payer_id::text,
          payer.name AS payer_name,
-         COALESCE(participants.participants, '[]'::json) AS participants
+        COALESCE(participants.participants, '[]'::json) AS participants
        FROM travel_expenses e
        LEFT JOIN profiles payer ON payer.id = e.payer_id
        LEFT JOIN LATERAL (
          SELECT json_agg(json_build_object(
            'memberId', tep.member_id,
-           'name', p.name,
-           'splitAmount', tep.split_amount
+           'name', p.name
          )) AS participants
          FROM travel_expense_participants tep
          LEFT JOIN profiles p ON p.id = tep.member_id
@@ -182,7 +179,6 @@ let TravelExpenseService = class TravelExpenseService {
             participants: row.participants?.map((participant) => ({
                 memberId: participant.memberId,
                 name: participant.name ?? null,
-                splitAmount: Number(participant.splitAmount),
             })) ?? [],
         }));
     }

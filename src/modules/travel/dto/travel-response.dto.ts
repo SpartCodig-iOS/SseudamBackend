@@ -37,8 +37,8 @@ export class TravelSummaryDto {
   @ApiProperty({ example: '홍길동', nullable: true })
   ownerName!: string | null;
 
-  @ApiProperty({ type: () => TravelMemberDto, isArray: true })
-  members!: TravelMemberDto[];
+  @ApiProperty({ type: () => TravelMemberDto, isArray: true, required: false })
+  members?: TravelMemberDto[];
 }
 
 export class TravelMemberDto {
@@ -58,9 +58,6 @@ export class TravelExpenseParticipantDto {
 
   @ApiProperty({ example: '김철수', nullable: true })
   name!: string | null;
-
-  @ApiProperty({ example: 35200 })
-  splitAmount!: number;
 }
 
 export class TravelExpenseDto {

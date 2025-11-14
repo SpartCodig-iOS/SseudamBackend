@@ -1,4 +1,17 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Req, UseGuards, UnauthorizedException } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Patch,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { success } from '../../types/api';
 import { AuthGuard } from '../../common/guards/auth.guard';
@@ -73,6 +86,52 @@ export class TravelController {
     return success(travel, 'Travel created');
   }
 
+  @Patch(':travelId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '여행 정보 수정 (호스트 전용)' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['title', 'startDate', 'endDate', 'countryCode', 'baseCurrency', 'baseExchangeRate'],
+      properties: {
+        title: { type: 'string', example: '일본 겨울 여행' },
+        startDate: { type: 'string', example: '2025-12-01' },
+        endDate: { type: 'string', example: '2025-12-05' },
+        countryCode: { type: 'string', example: 'JP' },
+        baseCurrency: { type: 'string', example: 'KRW' },
+        baseExchangeRate: { type: 'number', example: 105.6 },
+      },
+    },
+  })
+  @ApiOkResponse({ type: TravelSummaryDto })
+  async updateTravel(
+    @Param('travelId') travelId: string,
+    @Body() body: unknown,
+    @Req() req: RequestWithUser,
+  ) {
+    if (!req.currentUser) {
+      throw new UnauthorizedException('Unauthorized');
+    }
+    const payload = createTravelSchema.parse(body);
+    const travel = await this.travelService.updateTravel(travelId, req.currentUser.id, payload);
+    return success(travel, 'Travel updated');
+  }
+
+  @Delete(':travelId/members/:memberId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '여행 멤버 삭제 (호스트 전용)' })
+  async removeMember(
+    @Param('travelId') travelId: string,
+    @Param('memberId') memberId: string,
+    @Req() req: RequestWithUser,
+  ) {
+    if (!req.currentUser) {
+      throw new UnauthorizedException('Unauthorized');
+    }
+    await this.travelService.removeMember(travelId, req.currentUser.id, memberId);
+    return success({}, 'Member removed');
+  }
+
   @Post(':travelId/invite')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '여행 초대 코드 생성' })
@@ -117,5 +176,4 @@ export class TravelController {
     await this.travelService.deleteTravel(travelId, req.currentUser.id);
     return success({}, 'Travel deleted');
   }
-
 }

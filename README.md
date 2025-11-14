@@ -121,7 +121,9 @@ Nest 앱 엔트리포인트는 `src/main.ts`, 프로덕션은 `node dist/main.js
 | `POST` | `/api/v1/travels`     | 여행 이름/기간/국가/환율을 입력해 새 여행 생성 | Bearer |
 | `POST` | `/api/v1/travels/{travelId}/invite` | 호스트가 초대 코드 생성 | Bearer |
 | `POST` | `/api/v1/travels/join` | 초대 코드로 여행 참여 | Bearer |
+| `PATCH` | `/api/v1/travels/{travelId}` | 여행 정보 수정 (호스트 전용) | Bearer |
 | `DELETE` | `/api/v1/travels/{travelId}` | 여행 삭제 (호스트 전용) | Bearer |
+| `DELETE` | `/api/v1/travels/{travelId}/members/{memberId}` | 멤버 제거 (호스트 전용) | Bearer |
 | `GET` | `/api/v1/travels/{travelId}/expenses` | 여행 지출 목록 조회 | Bearer |
 | `POST` | `/api/v1/travels/{travelId}/expenses` | 여행 지출 추가 (금액/통화/참여자) | Bearer |
 
@@ -180,7 +182,7 @@ channel.subscribe()
 | 메서드 | 경로                      | 설명             | 인증 |
 |--------|---------------------------|------------------|------|
 | `GET`  | `/api/v1/profile/me`      | 내 프로필 조회   | Bearer |
-| `PATCH`| `/api/v1/profile/me`      | 내 프로필 수정 (이름/아바타) | Bearer |
+| `PATCH`| `/api/v1/profile/me`      | 내 프로필 수정 (이름 + 아바타 이미지 업로드, `multipart/form-data`) | Bearer |
 
 ### 세션
 

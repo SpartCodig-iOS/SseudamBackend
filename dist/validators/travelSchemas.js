@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.travelInviteCodeSchema = exports.createTravelSchema = void 0;
+exports.updateMemberSchema = exports.travelInviteCodeSchema = exports.createTravelSchema = void 0;
 const zod_1 = require("zod");
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 const isoDateSchema = zod_1.z
@@ -36,4 +36,7 @@ exports.createTravelSchema = zod_1.z
 }));
 exports.travelInviteCodeSchema = zod_1.z.object({
     inviteCode: zod_1.z.string().min(6).max(64),
+});
+exports.updateMemberSchema = zod_1.z.object({
+    role: zod_1.z.enum(['editor', 'viewer', 'member']),
 });

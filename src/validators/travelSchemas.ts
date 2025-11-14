@@ -43,3 +43,9 @@ export const travelInviteCodeSchema = z.object({
 });
 
 export type TravelInviteJoinInput = z.infer<typeof travelInviteCodeSchema>;
+
+export const updateMemberSchema = z.object({
+  role: z.enum(['editor', 'viewer', 'member']),
+});
+
+export type UpdateMemberInput = z.infer<typeof updateMemberSchema>;

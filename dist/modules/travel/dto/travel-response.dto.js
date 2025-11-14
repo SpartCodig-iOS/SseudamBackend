@@ -63,7 +63,7 @@ __decorate([
     __metadata("design:type", Object)
 ], TravelSummaryDto.prototype, "ownerName", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ type: () => TravelMemberDto, isArray: true }),
+    (0, swagger_1.ApiProperty)({ type: () => TravelMemberDto, isArray: true, required: false }),
     __metadata("design:type", Array)
 ], TravelSummaryDto.prototype, "members", void 0);
 class TravelMemberDto {
@@ -92,10 +92,6 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: '김철수', nullable: true }),
     __metadata("design:type", Object)
 ], TravelExpenseParticipantDto.prototype, "name", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 35200 }),
-    __metadata("design:type", Number)
-], TravelExpenseParticipantDto.prototype, "splitAmount", void 0);
 class TravelExpenseDto {
 }
 exports.TravelExpenseDto = TravelExpenseDto;
