@@ -12,7 +12,7 @@ import {
   UseGuards,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { success } from '../../types/api';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RequestWithUser } from '../../types/request';
@@ -31,12 +31,16 @@ export class TravelController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '참여 중인 여행 목록 조회' })
   @ApiOkResponse({ type: TravelSummaryDto, isArray: true })
-  async list(@Req() req: RequestWithUser) {
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
+  async list(@Req() req: RequestWithUser, @Req() request: RequestWithUser) {
     if (!req.currentUser) {
       throw new UnauthorizedException('Unauthorized');
     }
-    const travels = await this.travelService.listTravels(req.currentUser.id);
-    return success(travels);
+    const page = Number((request.query?.page as string) ?? '1') || 1;
+    const limit = Number((request.query?.limit as string) ?? '20') || 20;
+    const result = await this.travelService.listTravels(req.currentUser.id, { page, limit });
+    return success(result);
   }
 
   @Post()

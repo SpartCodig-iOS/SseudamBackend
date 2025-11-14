@@ -195,10 +195,25 @@ export class TravelExpenseService {
     }
   }
 
-  async listExpenses(travelId: string, userId: string): Promise<TravelExpense[]> {
+  async listExpenses(
+    travelId: string,
+    userId: string,
+    pagination: { page?: number; limit?: number } = {},
+  ): Promise<{ total: number; page: number; limit: number; items: TravelExpense[] }> {
     await this.getTravelContext(travelId, userId);
     const pool = await getPool();
-    const result = await pool.query(
+    const page = Math.max(1, pagination.page ?? 1);
+    const limit = Math.min(100, Math.max(1, pagination.limit ?? 20));
+    const offset = (page - 1) * limit;
+
+    const totalPromise = pool.query(
+      `SELECT COUNT(*)::int AS total
+       FROM travel_expenses
+       WHERE travel_id = $1`,
+      [travelId],
+    );
+
+    const listPromise = pool.query(
       `SELECT
          e.id::text,
          e.title,
@@ -223,26 +238,35 @@ export class TravelExpenseService {
          WHERE tep.expense_id = e.id
        ) participants ON TRUE
        WHERE e.travel_id = $1
-       ORDER BY e.expense_date DESC, e.created_at DESC`,
-      [travelId],
+       ORDER BY e.expense_date DESC, e.created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [travelId, limit, offset],
     );
 
-    return result.rows.map((row) => ({
-      id: row.id,
-      title: row.title,
-      note: row.note,
-      amount: Number(row.amount),
-      currency: row.currency,
-      convertedAmount: Number(row.converted_amount),
-      expenseDate: row.expense_date,
-      category: row.category,
-      payerId: row.payer_id,
-      payerName: row.payer_name ?? null,
-      participants:
-        row.participants?.map((participant: any) => ({
-          memberId: participant.memberId,
-          name: participant.name ?? null,
-        })) ?? [],
-    }));
+    const [totalResult, listResult] = await Promise.all([totalPromise, listPromise]);
+    const total = totalResult.rows[0]?.total ?? 0;
+
+    return {
+      total,
+      page,
+      limit,
+      items: listResult.rows.map((row) => ({
+        id: row.id,
+        title: row.title,
+        note: row.note,
+        amount: Number(row.amount),
+        currency: row.currency,
+        convertedAmount: Number(row.converted_amount),
+        expenseDate: row.expense_date,
+        category: row.category,
+        payerId: row.payer_id,
+        payerName: row.payer_name ?? null,
+        participants:
+          row.participants?.map((participant: any) => ({
+            memberId: participant.memberId,
+            name: participant.name ?? null,
+          })) ?? [],
+      })),
+    };
   }
 }

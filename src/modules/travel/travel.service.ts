@@ -130,9 +130,23 @@ export class TravelService {
     }
   }
 
-  async listTravels(userId: string): Promise<TravelSummary[]> {
+  async listTravels(
+    userId: string,
+    pagination: { page?: number; limit?: number } = {},
+  ): Promise<{ total: number; page: number; limit: number; items: TravelSummary[] }> {
     const pool = await getPool();
-    const result = await pool.query(
+    const page = Math.max(1, pagination.page ?? 1);
+    const limit = Math.min(100, Math.max(1, pagination.limit ?? 20));
+    const offset = (page - 1) * limit;
+
+    const totalPromise = pool.query(
+      `SELECT COUNT(*)::int AS total
+       FROM travel_members tm
+       WHERE tm.user_id = $1`,
+      [userId],
+    );
+
+    const listPromise = pool.query(
       `SELECT
          ut.id::text AS id,
          ut.title,
@@ -166,10 +180,20 @@ export class TravelService {
          LEFT JOIN profiles p ON p.id = tm2.user_id
          WHERE tm2.travel_id = ut.id
        ) AS members ON TRUE
-       ORDER BY ut.created_at DESC`,
-      [userId],
+       ORDER BY ut.created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [userId, limit, offset],
     );
-    return result.rows.map((row) => this.mapSummary(row));
+
+    const [totalResult, listResult] = await Promise.all([totalPromise, listPromise]);
+    const total = totalResult.rows[0]?.total ?? 0;
+
+    return {
+      total,
+      page,
+      limit,
+      items: listResult.rows.map((row) => this.mapSummary(row)),
+    };
   }
 
   private async getMemberRole(travelId: string, userId: string): Promise<string | null> {

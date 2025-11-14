@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RequestWithUser } from '../../types/request';
 import { success } from '../../types/api';
@@ -18,12 +18,16 @@ export class TravelExpenseController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '여행 지출 목록 조회' })
   @ApiOkResponse({ type: TravelExpenseDto, isArray: true })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
   async list(@Param('travelId') travelId: string, @Req() req: RequestWithUser) {
     if (!req.currentUser) {
       throw new UnauthorizedException('Unauthorized');
     }
-    const expenses = await this.travelExpenseService.listExpenses(travelId, req.currentUser.id);
-    return success(expenses);
+    const page = Number((req.query?.page as string) ?? '1') || 1;
+    const limit = Number((req.query?.limit as string) ?? '20') || 20;
+    const result = await this.travelExpenseService.listExpenses(travelId, req.currentUser.id, { page, limit });
+    return success(result);
   }
 
   @Post()
