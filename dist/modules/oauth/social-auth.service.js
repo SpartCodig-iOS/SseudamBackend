@@ -160,58 +160,92 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         return { registered: Boolean(profile) };
     }
     async revokeAppleConnection(userId, refreshToken) {
-        const tokenToUse = refreshToken ??
-            (await this.supabaseService.getAppleRefreshToken(userId)) ??
-            null;
-        if (!tokenToUse) {
-            throw new common_1.BadRequestException('Apple refresh token is required');
+        try {
+            const tokenToUse = refreshToken ??
+                (await this.supabaseService.getAppleRefreshToken(userId)) ??
+                null;
+            if (!tokenToUse) {
+                this.logger.warn(`[revokeAppleConnection] No Apple refresh token found for user ${userId}, skipping revoke`);
+                return; // 토큰이 없으면 조용히 종료 (이미 연결 해제된 상태)
+            }
+            this.ensureAppleEnv();
+            const clientSecret = this.buildAppleClientSecret();
+            const body = new URLSearchParams({
+                token: tokenToUse,
+                token_type_hint: 'refresh_token',
+                client_id: env_1.env.appleClientId,
+                client_secret: clientSecret,
+            });
+            // 타임아웃 추가 (8초)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+            const response = await fetch('https://appleid.apple.com/auth/revoke', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body,
+                signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
+            if (!response.ok) {
+                const text = await response.text();
+                this.logger.warn(`[revokeAppleConnection] Apple revoke failed: ${response.status} ${text}`);
+                // 계정 삭제 시에는 Apple 연결 해제 실패해도 계속 진행
+                return;
+            }
+            // 성공 시에만 토큰 삭제
+            await this.supabaseService.saveAppleRefreshToken(userId, null);
+            this.logger.debug(`[revokeAppleConnection] Successfully revoked Apple connection for user ${userId}`);
         }
-        this.ensureAppleEnv();
-        const clientSecret = this.buildAppleClientSecret();
-        const body = new URLSearchParams({
-            token: tokenToUse,
-            token_type_hint: 'refresh_token',
-            client_id: env_1.env.appleClientId,
-            client_secret: clientSecret,
-        });
-        const response = await fetch('https://appleid.apple.com/auth/revoke', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body,
-        });
-        if (!response.ok) {
-            const text = await response.text();
-            throw new common_1.ServiceUnavailableException(`Apple revoke failed: ${response.status} ${text}`);
+        catch (error) {
+            // Apple 연결 해제 실패는 로그만 남기고 계정 삭제는 계속 진행
+            this.logger.warn(`[revokeAppleConnection] Failed to revoke Apple connection for user ${userId}:`, error);
+            return;
         }
-        await this.supabaseService.saveAppleRefreshToken(userId, null);
     }
     async revokeGoogleConnection(userId, refreshToken) {
-        const tokenToUse = refreshToken ??
-            (await this.supabaseService.getGoogleRefreshToken(userId)) ??
-            null;
-        if (!tokenToUse) {
-            throw new common_1.BadRequestException('Google refresh token is required');
+        try {
+            const tokenToUse = refreshToken ??
+                (await this.supabaseService.getGoogleRefreshToken(userId)) ??
+                null;
+            if (!tokenToUse) {
+                this.logger.warn(`[revokeGoogleConnection] No Google refresh token found for user ${userId}, skipping revoke`);
+                return; // 토큰이 없으면 조용히 종료 (이미 연결 해제된 상태)
+            }
+            this.ensureGoogleEnv();
+            const body = new URLSearchParams({
+                token: tokenToUse,
+                client_id: env_1.env.googleClientId,
+                client_secret: env_1.env.googleClientSecret,
+            });
+            // 타임아웃 추가 (8초)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+            const response = await fetch('https://oauth2.googleapis.com/revoke', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body,
+                signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
+            if (!response.ok) {
+                const text = await response.text();
+                this.logger.warn(`[revokeGoogleConnection] Google revoke failed: ${response.status} ${text}`);
+                // 계정 삭제 시에는 Google 연결 해제 실패해도 계속 진행
+                return;
+            }
+            // 성공 시에만 토큰 삭제
+            await this.supabaseService.saveGoogleRefreshToken(userId, null);
+            this.logger.debug(`[revokeGoogleConnection] Successfully revoked Google connection for user ${userId}`);
         }
-        this.ensureGoogleEnv();
-        const body = new URLSearchParams({
-            token: tokenToUse,
-            client_id: env_1.env.googleClientId,
-            client_secret: env_1.env.googleClientSecret,
-        });
-        const response = await fetch('https://oauth2.googleapis.com/revoke', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
-            body,
-        });
-        if (!response.ok) {
-            const text = await response.text();
-            throw new common_1.ServiceUnavailableException(`Google revoke failed: ${response.status} ${text}`);
+        catch (error) {
+            // Google 연결 해제 실패는 로그만 남기고 계정 삭제는 계속 진행
+            this.logger.warn(`[revokeGoogleConnection] Failed to revoke Google connection for user ${userId}:`, error);
+            return;
         }
-        await this.supabaseService.saveGoogleRefreshToken(userId, null);
     }
     resolveGoogleRedirectUri(override) {
         const resolved = override ?? env_1.env.googleRedirectUri;

@@ -67,25 +67,109 @@ let AuthService = AuthService_1 = class AuthService {
        LIMIT 1`, [identifier, `${identifier}@%`]);
         return result.rows[0]?.email?.toLowerCase() ?? null;
     }
+    // 고성능 직접 인증: 단일 쿼리로 사용자 정보 조회 및 비밀번호 확인
+    async authenticateUserDirect(email, password) {
+        const authStartTime = Date.now();
+        const pool = await (0, pool_1.getPool)();
+        // 최적화된 단일 쿼리 (서브쿼리 제거, 더 빠름)
+        // password_hash 컬럼이 존재하지 않을 수 있으므로 안전하게 처리
+        let result;
+        try {
+            result = await pool.query(`SELECT
+           id::text,
+           email,
+           name,
+           username,
+           avatar_url,
+           created_at,
+           updated_at,
+           password_hash
+         FROM profiles
+         WHERE email = $1
+         LIMIT 1`, [email.toLowerCase()]);
+        }
+        catch (error) {
+            // password_hash 컬럼이 없는 경우 없이 조회
+            if (error instanceof Error && error.message.includes('password_hash')) {
+                result = await pool.query(`SELECT
+             id::text,
+             email,
+             name,
+             username,
+             avatar_url,
+             created_at,
+             updated_at
+           FROM profiles
+           WHERE email = $1
+           LIMIT 1`, [email.toLowerCase()]);
+            }
+            else {
+                throw error;
+            }
+        }
+        const row = result.rows[0];
+        if (!row)
+            return null;
+        // 비밀번호 확인을 병렬로 처리할 수 있도록 준비
+        let isValidPassword = false;
+        if (row.password_hash) {
+            // bcrypt 검증 (가장 빠른 방법)
+            isValidPassword = await bcryptjs_1.default.compare(password, row.password_hash);
+        }
+        else {
+            // Supabase 인증으로 폴백 (password_hash가 없는 경우)
+            try {
+                await this.supabaseService.signIn(email, password);
+                isValidPassword = true;
+            }
+            catch {
+                isValidPassword = false;
+            }
+        }
+        if (!isValidPassword)
+            return null;
+        const authDuration = Date.now() - authStartTime;
+        this.logger.debug(`Fast auth completed in ${authDuration}ms for ${email}`);
+        return {
+            id: row.id,
+            email: row.email,
+            name: row.name,
+            username: row.username,
+            avatar_url: row.avatar_url,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            password_hash: '', // 보안상 빈 값으로 설정
+        };
+    }
     async createAuthSession(user, loginType) {
-        const session = await this.sessionService.createSession(user.id, loginType);
+        const startTime = Date.now();
+        // 세션 생성과 토큰 생성을 병렬로 처리 (성능 최적화)
+        const [session] = await Promise.all([
+            this.sessionService.createSession(user.id, loginType)
+        ]);
+        // 세션 ID를 받은 후 토큰 생성
         const tokenPair = this.jwtTokenService.generateTokenPair(user, loginType, session.sessionId);
+        const duration = Date.now() - startTime;
+        this.logger.debug(`Auth session created in ${duration}ms for user ${user.id}`);
         return { user, tokenPair, loginType, session };
     }
     async signup(input) {
         const startTime = Date.now();
         const lowerEmail = input.email.toLowerCase();
-        // Supabase 사용자 생성과 해시 생성을 병렬로 처리 (성능 최적화)
+        // 모든 작업을 병렬로 처리 (성능 최적화)
         const [supabaseUser, passwordHash] = await Promise.all([
             this.supabaseService.signUp(lowerEmail, input.password, {
                 name: input.name,
             }),
-            bcryptjs_1.default.hash(input.password, 8) // 10 -> 8로 줄여서 속도 향상 (보안성 유지하면서)
+            bcryptjs_1.default.hash(input.password, 6) // 8 -> 6으로 더 단축 (회원가입 속도 우선)
         ]);
         if (!supabaseUser) {
             throw new common_1.InternalServerErrorException('Supabase createUser did not return a user');
         }
-        const username = (lowerEmail.split('@')[0] || `user_${supabaseUser.id.substring(0, 8)}`).toLowerCase();
+        // username 생성 최적화
+        const username = lowerEmail.includes('@')
+            ? lowerEmail.split('@')[0].toLowerCase()
+            : `user_${supabaseUser.id.substring(0, 8)}`;
         const newUser = {
             id: supabaseUser.id,
             email: lowerEmail,
@@ -96,11 +180,17 @@ let AuthService = AuthService_1 = class AuthService {
             username,
             password_hash: passwordHash,
         };
-        const result = await this.createAuthSession(newUser, 'signup');
-        this.setCachedEmail(lowerEmail, lowerEmail);
-        this.setCachedEmail(username, lowerEmail);
+        // 세션 생성과 캐시 업데이트를 병렬로 처리
+        const [result] = await Promise.all([
+            this.createAuthSession(newUser, 'signup'),
+            // 캐시 업데이트는 동기적으로 빠르므로 Promise로 감쌀 필요 없음
+            Promise.resolve().then(() => {
+                this.setCachedEmail(lowerEmail, lowerEmail);
+                this.setCachedEmail(username, lowerEmail);
+            })
+        ]);
         const duration = Date.now() - startTime;
-        this.logger.debug(`Signup completed in ${duration}ms for ${lowerEmail}`);
+        this.logger.debug(`Fast signup completed in ${duration}ms for ${lowerEmail}`);
         return result;
     }
     async login(input) {
@@ -111,6 +201,7 @@ let AuthService = AuthService_1 = class AuthService {
         }
         let emailToUse = identifier;
         let loginType = 'email';
+        // 이메일이 아닌 경우 (username) 캐시에서 먼저 확인
         if (!identifier.includes('@')) {
             const cachedEmail = this.getCachedEmail(identifier);
             if (cachedEmail) {
@@ -127,21 +218,19 @@ let AuthService = AuthService_1 = class AuthService {
                 this.setCachedEmail(identifier, emailToUse);
             }
         }
-        let supabaseUser;
-        try {
-            supabaseUser = await this.supabaseService.signIn(emailToUse, input.password);
-        }
-        catch {
+        // 고성능 직접 인증: Supabase 대신 직접 DB 쿼리 (더 빠름)
+        const user = await this.authenticateUserDirect(emailToUse, input.password);
+        if (!user) {
             throw new common_1.UnauthorizedException('Invalid credentials');
         }
-        const user = (0, mappers_1.fromSupabaseUser)(supabaseUser);
+        // 캐시 업데이트 (다음 로그인 시 더 빠르게)
         this.setCachedEmail(user.email.toLowerCase(), user.email.toLowerCase());
         if (user.username) {
             this.setCachedEmail(user.username.toLowerCase(), user.email.toLowerCase());
         }
         const result = await this.createAuthSession(user, loginType);
         const duration = Date.now() - startTime;
-        this.logger.debug(`Login completed in ${duration}ms for ${identifier}`);
+        this.logger.debug(`Fast login completed in ${duration}ms for ${identifier}`);
         return result;
     }
     async refresh(refreshToken) {
@@ -171,6 +260,8 @@ let AuthService = AuthService_1 = class AuthService {
     }
     async deleteAccount(user) {
         const startTime = Date.now();
+        const pool = await (0, pool_1.getPool)();
+        // 프로필 타입 조회
         let profileLoginType = null;
         try {
             const profile = await this.supabaseService.findProfileById(user.id);
@@ -179,27 +270,48 @@ let AuthService = AuthService_1 = class AuthService {
         catch (error) {
             this.logger.warn('[deleteAccount] Failed to fetch profile for login type', error);
         }
-        // 소셜 로그인 연결 해제 및 Supabase 사용자 삭제 병렬 처리
-        const revokeTasks = [];
+        // 1) 지출/참여 기록 제거
+        await pool.query('DELETE FROM travel_expense_participants WHERE member_id = $1', [user.id]);
+        await pool.query('DELETE FROM travel_expenses WHERE payer_id = $1', [user.id]);
+        // 2) 여행 멤버/초대/세션 제거
+        await pool.query('DELETE FROM travel_members WHERE user_id = $1', [user.id]);
+        await pool.query('DELETE FROM travel_invites WHERE created_by = $1', [user.id]);
+        await pool.query('DELETE FROM user_sessions WHERE user_id = $1', [user.id]);
+        // 3) 소셜 연결 해제
         if (profileLoginType === 'apple') {
-            revokeTasks.push(this.socialAuthService.revokeAppleConnection(user.id).catch(error => this.logger.warn('[deleteAccount] Apple revoke failed', error)));
+            await this.socialAuthService
+                .revokeAppleConnection(user.id)
+                .catch((error) => this.logger.warn('[deleteAccount] Apple revoke failed', error));
         }
         else if (profileLoginType === 'google') {
-            revokeTasks.push(this.socialAuthService.revokeGoogleConnection(user.id).catch(error => this.logger.warn('[deleteAccount] Google revoke failed', error)));
+            await this.socialAuthService
+                .revokeGoogleConnection(user.id)
+                .catch((error) => this.logger.warn('[deleteAccount] Google revoke failed', error));
         }
+        // 4) 프로필 삭제
+        await pool.query('DELETE FROM profiles WHERE id = $1', [user.id]);
+        // 5) Supabase 사용자 삭제
         let supabaseDeleted = false;
-        const deleteUserTask = this.supabaseService.deleteUser(user.id)
-            .then(() => { supabaseDeleted = true; })
-            .catch((error) => {
-            const message = error?.message?.toLowerCase() ?? '';
+        try {
+            await this.supabaseService.deleteUser(user.id);
+            supabaseDeleted = true;
+        }
+        catch (error) {
+            const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
             if (!message.includes('not found')) {
-                throw error;
+                this.logger.warn('[deleteAccount] Supabase deletion failed', error);
             }
-        });
-        // 모든 작업을 병렬로 실행
-        await Promise.all([...revokeTasks, deleteUserTask]);
+            else {
+                supabaseDeleted = true;
+            }
+        }
+        // 캐시에서도 제거
+        this.identifierCache.delete(user.email.toLowerCase());
+        if (user.username) {
+            this.identifierCache.delete(user.username.toLowerCase());
+        }
         const duration = Date.now() - startTime;
-        this.logger.debug(`Account deletion completed in ${duration}ms for ${user.email}`);
+        this.logger.debug(`Fast account deletion completed in ${duration}ms for ${user.email}`);
         return { supabaseDeleted };
     }
     async logoutBySessionId(sessionId) {

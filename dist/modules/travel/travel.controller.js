@@ -24,12 +24,14 @@ let TravelController = class TravelController {
     constructor(travelService) {
         this.travelService = travelService;
     }
-    async list(req) {
+    async list(req, request) {
         if (!req.currentUser) {
             throw new common_1.UnauthorizedException('Unauthorized');
         }
-        const travels = await this.travelService.listTravels(req.currentUser.id);
-        return (0, api_1.success)(travels);
+        const page = Number(request.query?.page ?? '1') || 1;
+        const limit = Number(request.query?.limit ?? '20') || 20;
+        const result = await this.travelService.listTravels(req.currentUser.id, { page, limit });
+        return (0, api_1.success)(result);
     }
     async create(body, req) {
         if (!req.currentUser) {
@@ -83,9 +85,12 @@ __decorate([
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     (0, swagger_1.ApiOperation)({ summary: '참여 중인 여행 목록 조회' }),
     (0, swagger_1.ApiOkResponse)({ type: travel_response_dto_1.TravelSummaryDto, isArray: true }),
+    (0, swagger_1.ApiQuery)({ name: 'page', required: false, type: Number, example: 1 }),
+    (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number, example: 20 }),
     __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], TravelController.prototype, "list", null);
 __decorate([

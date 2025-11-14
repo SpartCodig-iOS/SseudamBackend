@@ -38,13 +38,17 @@ const buildPoolConfig = async (): Promise<PoolConfig> => {
     user: base.user,
     password: base.password,
     database: base.database,
-    max: env.nodeEnv === 'production' ? 20 : 10, // 프로덕션에서 더 많은 연결
-    min: 2, // 최소 연결 유지
-    idleTimeoutMillis: 60_000, // 1분 idle timeout
-    connectionTimeoutMillis: 10_000,
-    allowExitOnIdle: true, // 프로세스 종료 시 정리
-    statement_timeout: 30_000, // 30초 쿼리 타임아웃
-    query_timeout: 30_000,
+    max: env.nodeEnv === 'production' ? 25 : 12, // 더 많은 연결로 동시성 향상
+    min: env.nodeEnv === 'production' ? 5 : 3, // Cold Start 최적화: 미리 연결 유지
+    idleTimeoutMillis: 120_000, // 2분으로 늘려서 연결 재사용 향상
+    connectionTimeoutMillis: 5_000, // 5초로 단축 (빠른 실패)
+    allowExitOnIdle: true,
+    statement_timeout: 15_000, // 15초로 단축 (빠른 쿼리 강제)
+    query_timeout: 15_000,
+    // Cold Start 최적화: 연결 검증 간소화
+    application_name: 'SseudamBackend-Fast',
+    keepAlive: true, // TCP 연결 유지
+    keepAliveInitialDelayMillis: 10000,
   };
 
   if (shouldUseTLS(base.host)) {

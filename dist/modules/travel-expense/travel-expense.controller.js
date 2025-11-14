@@ -28,8 +28,10 @@ let TravelExpenseController = class TravelExpenseController {
         if (!req.currentUser) {
             throw new common_1.UnauthorizedException('Unauthorized');
         }
-        const expenses = await this.travelExpenseService.listExpenses(travelId, req.currentUser.id);
-        return (0, api_1.success)(expenses);
+        const page = Number(req.query?.page ?? '1') || 1;
+        const limit = Number(req.query?.limit ?? '20') || 20;
+        const result = await this.travelExpenseService.listExpenses(travelId, req.currentUser.id, { page, limit });
+        return (0, api_1.success)(result);
     }
     async create(travelId, body, req) {
         if (!req.currentUser) {
@@ -46,6 +48,8 @@ __decorate([
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     (0, swagger_1.ApiOperation)({ summary: '여행 지출 목록 조회' }),
     (0, swagger_1.ApiOkResponse)({ type: travel_response_dto_1.TravelExpenseDto, isArray: true }),
+    (0, swagger_1.ApiQuery)({ name: 'page', required: false, type: Number, example: 1 }),
+    (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number, example: 20 }),
     __param(0, (0, common_1.Param)('travelId')),
     __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),

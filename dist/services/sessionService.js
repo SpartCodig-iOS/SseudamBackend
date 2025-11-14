@@ -119,31 +119,37 @@ let SessionService = SessionService_1 = class SessionService {
     }
     async createSession(userId, loginType) {
         const startTime = Date.now();
-        await this.cleanupExpiredSessions();
-        // 기존 사용자 세션들을 캐시에서 제거
+        // 기존 사용자 세션들을 캐시에서 제거 (빠른 메모리 작업)
         this.clearUserSessions(userId);
+        // 만료 세션 정리는 백그라운드로 (첫 로그인 속도 향상)
+        this.cleanupExpiredSessions().catch(err => this.logger.warn('Background session cleanup failed', err));
         const pool = await this.getClient();
-        const result = await pool.query(`INSERT INTO user_sessions (user_id, login_type, expires_at, last_seen_at, revoked_at)
-       VALUES ($1, $2, NOW() + INTERVAL '${this.defaultTTLHours} hours', NOW(), NULL)
-       ON CONFLICT (user_id) DO UPDATE
-         SET session_id = gen_random_uuid(),
-             login_type = EXCLUDED.login_type,
-             expires_at = EXCLUDED.expires_at,
-             last_seen_at = EXCLUDED.last_seen_at,
-             revoked_at = NULL,
-             created_at = user_sessions.created_at
-       RETURNING session_id::text AS session_id,
-                 user_id::text AS user_id,
-                 login_type,
-                 created_at::text,
-                 last_seen_at::text,
-                 expires_at::text,
-                 revoked_at::text`, [userId, loginType]);
+        // 최적화된 세션 생성 쿼리 (더 빠른 UPSERT)
+        const result = await pool.query(`WITH new_session AS (
+         INSERT INTO user_sessions (user_id, login_type, expires_at, last_seen_at, revoked_at)
+         VALUES ($1, $2, NOW() + INTERVAL '${this.defaultTTLHours} hours', NOW(), NULL)
+         ON CONFLICT (user_id) DO UPDATE
+           SET session_id = gen_random_uuid(),
+               login_type = EXCLUDED.login_type,
+               expires_at = EXCLUDED.expires_at,
+               last_seen_at = EXCLUDED.last_seen_at,
+               revoked_at = NULL
+         RETURNING session_id, user_id, login_type, created_at, last_seen_at, expires_at, revoked_at
+       )
+       SELECT
+         session_id::text AS session_id,
+         user_id::text AS user_id,
+         login_type,
+         created_at::text,
+         last_seen_at::text,
+         expires_at::text,
+         revoked_at::text
+       FROM new_session`, [userId, loginType]);
         const session = this.mapRowToSession(result.rows[0]);
         // 새 세션을 캐시에 저장
         this.setCachedSession(session.sessionId, session);
         const duration = Date.now() - startTime;
-        this.logger.debug(`Session created in ${duration}ms for user ${userId}`);
+        this.logger.debug(`Fast session created in ${duration}ms for user ${userId}`);
         return session;
     }
     async getSession(sessionId) {

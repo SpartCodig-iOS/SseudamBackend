@@ -93,9 +93,15 @@ let TravelService = TravelService_1 = class TravelService {
             throw new common_1.InternalServerErrorException('여행 생성에 실패했습니다.');
         }
     }
-    async listTravels(userId) {
+    async listTravels(userId, pagination = {}) {
         const pool = await (0, pool_1.getPool)();
-        const result = await pool.query(`SELECT
+        const page = Math.max(1, pagination.page ?? 1);
+        const limit = Math.min(100, Math.max(1, pagination.limit ?? 20));
+        const offset = (page - 1) * limit;
+        const totalPromise = pool.query(`SELECT COUNT(*)::int AS total
+       FROM travel_members tm
+       WHERE tm.user_id = $1`, [userId]);
+        const listPromise = pool.query(`SELECT
          ut.id::text AS id,
          ut.title,
          ut.start_date::text,
@@ -128,8 +134,16 @@ let TravelService = TravelService_1 = class TravelService {
          LEFT JOIN profiles p ON p.id = tm2.user_id
          WHERE tm2.travel_id = ut.id
        ) AS members ON TRUE
-       ORDER BY ut.created_at DESC`, [userId]);
-        return result.rows.map((row) => this.mapSummary(row));
+       ORDER BY ut.created_at DESC
+       LIMIT $2 OFFSET $3`, [userId, limit, offset]);
+        const [totalResult, listResult] = await Promise.all([totalPromise, listPromise]);
+        const total = totalResult.rows[0]?.total ?? 0;
+        return {
+            total,
+            page,
+            limit,
+            items: listResult.rows.map((row) => this.mapSummary(row)),
+        };
     }
     async getMemberRole(travelId, userId) {
         const pool = await (0, pool_1.getPool)();
