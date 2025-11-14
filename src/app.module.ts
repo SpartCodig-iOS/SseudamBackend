@@ -9,6 +9,7 @@ import { RequestLoggerMiddleware } from './middleware/requestLogger';
 import { TravelModule } from './modules/travel/travel.module';
 import { MetaModule } from './modules/meta/meta.module';
 import { TravelExpenseModule } from './modules/travel-expense/travel-expense.module';
+import { TravelSettlementModule } from './modules/travel-settlement/travel-settlement.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { TravelExpenseModule } from './modules/travel-expense/travel-expense.mod
     TravelModule,
     MetaModule,
     TravelExpenseModule,
+    TravelSettlementModule,
   ],
 })
 export class AppModule implements NestModule {

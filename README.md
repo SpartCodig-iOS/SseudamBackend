@@ -126,6 +126,9 @@ Nest 앱 엔트리포인트는 `src/main.ts`, 프로덕션은 `node dist/main.js
 | `DELETE` | `/api/v1/travels/{travelId}/members/{memberId}` | 멤버 제거 (호스트 전용) | Bearer |
 | `GET` | `/api/v1/travels/{travelId}/expenses` | 여행 지출 목록 조회 | Bearer |
 | `POST` | `/api/v1/travels/{travelId}/expenses` | 여행 지출 추가 (금액/통화/참여자) | Bearer |
+| `POST` | `/api/v1/travels/{travelId}/settlements/save` | 추천 정산 결과 저장 | Bearer |
+| `GET` | `/api/v1/travels/{travelId}/settlements` | 정산 통계/추천 거래 조회 | Bearer |
+| `PATCH` | `/api/v1/travels/{travelId}/settlements/{settlementId}/complete` | 정산 완료 처리 | Bearer |
 
 ### 실시간 지출 공유 (Supabase Realtime)
 
