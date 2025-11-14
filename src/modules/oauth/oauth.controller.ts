@@ -52,29 +52,9 @@ export class OAuthController {
           example: 'apple',
           nullable: true,
         },
-        appleRefreshToken: {
-          type: 'string',
-          description: '애플 최초 가입 시 전달되는 refresh token',
-          nullable: true,
-        },
-        googleRefreshToken: {
-          type: 'string',
-          description: '구글 최초 가입 시 전달되는 refresh token',
-          nullable: true,
-        },
         authorizationCode: {
           type: 'string',
           description: '애플/구글 authorization_code (refresh token 교환용)',
-          nullable: true,
-        },
-        codeVerifier: {
-          type: 'string',
-          description: 'PKCE 코드 검증 값 (구글 교환 시 선택)',
-          nullable: true,
-        },
-        redirectUri: {
-          type: 'string',
-          description: 'authorization_code 교환에 사용할 redirect_uri',
           nullable: true,
         },
       },
@@ -108,31 +88,6 @@ export class OAuthController {
           type: 'string',
           description: '로그인 타입 (기본값 email)',
           example: 'apple',
-          nullable: true,
-        },
-        appleRefreshToken: {
-          type: 'string',
-          description: '애플 최초 가입 시 전달되는 refresh token',
-          nullable: true,
-        },
-        googleRefreshToken: {
-          type: 'string',
-          description: '구글 최초 가입 시 전달되는 refresh token',
-          nullable: true,
-        },
-        authorizationCode: {
-          type: 'string',
-          description: '애플/구글 authorization_code (refresh token 교환용)',
-          nullable: true,
-        },
-        codeVerifier: {
-          type: 'string',
-          description: 'PKCE 코드 검증 값 (구글 교환 시 선택)',
-          nullable: true,
-        },
-        redirectUri: {
-          type: 'string',
-          description: 'authorization_code 교환에 사용할 redirect_uri',
           nullable: true,
         },
       },
