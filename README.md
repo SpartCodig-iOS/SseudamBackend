@@ -47,6 +47,20 @@ Nest 앱 엔트리포인트는 `src/main.ts`, 프로덕션은 `node dist/main.js
 - Supabase / Render 호스트(`*.supabase.co`, `*.render.com`)는 자동으로 TLS 를 사용
 - `DATABASE_FORCE_IPV4=1` 설정 시 IPv4 우선 연결
 - `DATABASE_REQUIRE_TLS`, `DATABASE_SSL_REJECT_UNAUTHORIZED` 로 세부 TLS 제어
+- 세션 관리를 위해서는 Supabase DB 에 `user_sessions` 테이블을 생성해야 합니다.
+```sql
+CREATE TABLE IF NOT EXISTS user_sessions (
+  session_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  login_type TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL
+);
+
+ALTER TABLE user_sessions ENABLE ROW LEVEL SECURITY;
+-- 필요한 RLS 정책 추가
+```
 
 ---
 
@@ -102,6 +116,7 @@ Nest 앱 엔트리포인트는 `src/main.ts`, 프로덕션은 `node dist/main.js
 | `POST` | `/api/v1/auth/signup`     | 회원가입           | -    |
 | `POST` | `/api/v1/auth/login`      | 로그인 (이메일/아이디) | - |
 | `POST` | `/api/v1/auth/refresh`    | 토큰 재발급        | Refresh Token |
+| `POST` | `/api/v1/auth/logout`     | 로그아웃 (sessionId 폐기) | - |
 | `DELETE` | `/api/v1/auth/account`  | 계정 삭제 (Supabase 포함) | Bearer |
 
 ### OAuth (소셜)
@@ -189,11 +204,9 @@ channel.subscribe()
 
 ### 세션
 
-| 메서드 | 경로                | 설명                | 인증 |
-|--------|---------------------|---------------------|------|
-| `GET`  | `/api/v1/session`   | 세션 정보 조회      | `X-Session-ID` |
-
----
+| 메서드 | 경로                | 설명                                    | 인증 |
+|--------|---------------------|-----------------------------------------|------|
+| `GET`  | `/api/v1/session`   | `sessionId` 로 최근 로그인 타입 조회     | 쿼리(sessionId) |
 
 ## 🔐 인증 방식
 
@@ -201,11 +214,7 @@ channel.subscribe()
    - 헤더: `Authorization: Bearer <access_token>`
    - 사용처: `/api/v1/profile/me`, `/api/v1/auth/account`, Protected API
 
-2. **세션 ID**
-   - 헤더: `X-Session-ID: <session_id>`
-   - 사용처: `/api/v1/session`
-
-로그인/회원가입 시 응답 예시는 기존과 동일합니다:
+로그인/회원가입 시 응답 예시:
 ```json
 {
   "code": 200,
@@ -215,8 +224,10 @@ channel.subscribe()
     "refreshToken": "ey...",
     "accessTokenExpiresAt": "2025-11-10T05:39:56.500Z",
     "refreshTokenExpiresAt": "2025-11-16T05:39:56.500Z",
-    "sessionId": "f55ccc20...",
-    "sessionExpiresAt": "2025-11-10T05:39:56.505Z"
+    "sessionId": "1bf1e7d9-....",
+    "sessionExpiresAt": "2025-12-10T05:39:56.500Z",
+    "lastLoginAt": "2025-11-10T05:39:56.500Z",
+    "loginType": "email"
   },
   "message": "Login successful"
 }

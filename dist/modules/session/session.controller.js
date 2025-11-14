@@ -22,40 +22,29 @@ let SessionController = class SessionController {
     constructor(sessionService) {
         this.sessionService = sessionService;
     }
-    getSession(sessionId) {
+    async getSession(sessionId) {
         if (!sessionId) {
-            throw new common_1.BadRequestException('Session ID parameter is required');
+            throw new common_1.BadRequestException('sessionId is required');
         }
-        const session = this.sessionService.updateSessionLastLogin(sessionId);
+        const session = await this.sessionService.getSession(sessionId);
         if (!session) {
-            throw new common_1.UnauthorizedException('Invalid or expired session');
+            throw new common_1.BadRequestException('Session not found or expired');
         }
-        return (0, api_1.success)({
-            loginType: session.loginType || 'unknown',
-            lastLoginAt: session.lastLoginAt || null,
-            userId: session.userId,
-            email: session.email,
-            sessionId: session.sessionId,
-            createdAt: session.createdAt,
-            expiresAt: session.expiresAt,
-        }, 'Session info retrieved successfully');
+        await this.sessionService.touchSession(sessionId);
+        return (0, api_1.success)(session, 'Session info retrieved successfully');
     }
 };
 exports.SessionController = SessionController;
 __decorate([
     (0, common_1.Get)(),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    (0, swagger_1.ApiQuery)({
-        name: 'sessionId',
-        required: true,
-        description: '초대/로그인 응답으로 받은 세션 ID',
-    }),
-    (0, swagger_1.ApiOperation)({ summary: '세션 ID 로 현재 로그인 세션 정보 조회' }),
+    (0, swagger_1.ApiOperation)({ summary: '세션 ID로 최근 로그인 정보를 조회' }),
+    (0, swagger_1.ApiQuery)({ name: 'sessionId', required: true }),
     (0, swagger_1.ApiOkResponse)({ type: session_response_dto_1.SessionResponseDto }),
     __param(0, (0, common_1.Query)('sessionId')),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [String]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], SessionController.prototype, "getSession", null);
 exports.SessionController = SessionController = __decorate([
     (0, swagger_1.ApiTags)('Session'),

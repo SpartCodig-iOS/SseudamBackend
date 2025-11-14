@@ -10,8 +10,8 @@ exports.SharedModule = void 0;
 const common_1 = require("@nestjs/common");
 const auth_guard_1 = require("../../common/guards/auth.guard");
 const jwtService_1 = require("../../services/jwtService");
-const sessionService_1 = require("../../services/sessionService");
 const supabaseService_1 = require("../../services/supabaseService");
+const sessionService_1 = require("../../services/sessionService");
 let SharedModule = class SharedModule {
 };
 exports.SharedModule = SharedModule;

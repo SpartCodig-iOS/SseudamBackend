@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, HttpCode, HttpStatus, Query, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Controller, Get, HttpCode, HttpStatus, Query } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { success } from '../../types/api';
 import { SessionService } from '../../services/sessionService';
@@ -11,34 +11,18 @@ export class SessionController {
 
   @Get()
   @HttpCode(HttpStatus.OK)
-@ApiQuery({
-  name: 'sessionId',
-  required: true,
-  description: '초대/로그인 응답으로 받은 세션 ID',
-})
-  @ApiOperation({ summary: '세션 ID 로 현재 로그인 세션 정보 조회' })
+  @ApiOperation({ summary: '세션 ID로 최근 로그인 정보를 조회' })
+  @ApiQuery({ name: 'sessionId', required: true })
   @ApiOkResponse({ type: SessionResponseDto })
-  getSession(@Query('sessionId') sessionId?: string) {
+  async getSession(@Query('sessionId') sessionId?: string) {
     if (!sessionId) {
-      throw new BadRequestException('Session ID parameter is required');
+      throw new BadRequestException('sessionId is required');
     }
-
-    const session = this.sessionService.updateSessionLastLogin(sessionId);
+    const session = await this.sessionService.getSession(sessionId);
     if (!session) {
-      throw new UnauthorizedException('Invalid or expired session');
+      throw new BadRequestException('Session not found or expired');
     }
-
-    return success(
-      {
-        loginType: session.loginType || 'unknown',
-        lastLoginAt: session.lastLoginAt || null,
-        userId: session.userId,
-        email: session.email,
-        sessionId: session.sessionId,
-        createdAt: session.createdAt,
-        expiresAt: session.expiresAt,
-      },
-      'Session info retrieved successfully',
-    );
+    await this.sessionService.touchSession(sessionId);
+    return success(session, 'Session info retrieved successfully');
   }
 }

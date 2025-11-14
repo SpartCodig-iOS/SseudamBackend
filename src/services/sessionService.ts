@@ -1,107 +1,106 @@
 import { Injectable } from '@nestjs/common';
-import { randomBytes } from 'crypto';
+import { getPool } from '../db/pool';
 import { LoginType } from '../types/auth';
-import { UserRecord } from '../types/user';
 
-export interface SessionData {
+export interface SessionRecord {
   sessionId: string;
   userId: string;
-  email: string;
-  name?: string | null;
   loginType: LoginType;
-  lastLoginAt: string;
   createdAt: string;
+  lastSeenAt: string;
   expiresAt: string;
 }
 
 @Injectable()
 export class SessionService {
-  private readonly sessions = new Map<string, SessionData>();
+  private readonly defaultTTLHours = 24 * 30;
 
-  private generateSessionId(): string {
-    return randomBytes(32).toString('hex');
+  private async getClient() {
+    return getPool();
   }
 
-  createSession(user: UserRecord, loginType: LoginType, ttlMinutes = 1440): SessionData {
-    const sessionId = this.generateSessionId();
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000);
-
-    const sessionData: SessionData = {
-      sessionId,
-      userId: user.id,
-      email: user.email,
-      name: user.name,
-      loginType,
-      lastLoginAt: now.toISOString(),
-      createdAt: now.toISOString(),
-      expiresAt: expiresAt.toISOString(),
+  async createSession(userId: string, loginType: LoginType): Promise<SessionRecord> {
+    const pool = await this.getClient();
+    const result = await pool.query(
+      `INSERT INTO user_sessions (user_id, login_type, expires_at, last_seen_at)
+       VALUES ($1, $2, NOW() + INTERVAL '${this.defaultTTLHours} hours', NOW())
+       ON CONFLICT (user_id) DO UPDATE
+         SET session_id = gen_random_uuid(),
+             login_type = EXCLUDED.login_type,
+             expires_at = EXCLUDED.expires_at,
+             last_seen_at = EXCLUDED.last_seen_at,
+             created_at = user_sessions.created_at
+       RETURNING session_id::text AS session_id,
+                 user_id::text AS user_id,
+                 login_type,
+                 created_at::text,
+                 last_seen_at::text,
+                 expires_at::text`,
+      [userId, loginType],
+    );
+    const row = result.rows[0];
+    return {
+      sessionId: row.session_id,
+      userId: row.user_id,
+      loginType: row.login_type,
+      createdAt: row.created_at,
+      lastSeenAt: row.last_seen_at,
+      expiresAt: row.expires_at,
     };
-
-    this.sessions.set(sessionId, sessionData);
-    return sessionData;
   }
 
-  getSession(sessionId: string): SessionData | null {
-    const session = this.sessions.get(sessionId);
-    if (!session) {
-      return null;
-    }
-
-    if (new Date() > new Date(session.expiresAt)) {
-      this.sessions.delete(sessionId);
-      return null;
-    }
-
-    return session;
+  async getSession(sessionId: string): Promise<SessionRecord | null> {
+    const pool = await this.getClient();
+    const result = await pool.query(
+      `SELECT session_id::text AS session_id,
+              user_id::text AS user_id,
+              login_type,
+              created_at::text,
+              last_seen_at::text,
+              expires_at::text
+       FROM user_sessions
+       WHERE session_id = $1
+         AND expires_at > NOW()
+       LIMIT 1`,
+      [sessionId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      sessionId: row.session_id,
+      userId: row.user_id,
+      loginType: row.login_type,
+      createdAt: row.created_at,
+      lastSeenAt: row.last_seen_at,
+      expiresAt: row.expires_at,
+    };
   }
 
-  updateSessionLastLogin(sessionId: string): SessionData | null {
-    const session = this.sessions.get(sessionId);
-    if (!session) {
-      return null;
-    }
-
-    if (new Date() > new Date(session.expiresAt)) {
-      this.sessions.delete(sessionId);
-      return null;
-    }
-
-    session.lastLoginAt = new Date().toISOString();
-    this.sessions.set(sessionId, session);
-    return session;
+  async touchSession(sessionId: string): Promise<void> {
+    const pool = await this.getClient();
+    await pool.query(
+      `UPDATE user_sessions
+       SET last_seen_at = NOW()
+       WHERE session_id = $1`,
+      [sessionId],
+    );
   }
 
-  deleteSession(sessionId: string): boolean {
-    return this.sessions.delete(sessionId);
+  async deleteSession(sessionId: string): Promise<boolean> {
+    const pool = await this.getClient();
+    const result = await pool.query(
+      `DELETE FROM user_sessions WHERE session_id = $1`,
+      [sessionId],
+    );
+    return (result.rowCount ?? 0) > 0;
   }
 
-  deleteUserSessions(userId: string): number {
-    let deleted = 0;
-    for (const [sessionId, session] of this.sessions.entries()) {
-      if (session.userId === userId) {
-        this.sessions.delete(sessionId);
-        deleted++;
-      }
-    }
-    return deleted;
-  }
-
-  cleanExpiredSessions(): number {
-    const now = new Date();
-    let cleaned = 0;
-
-    for (const [sessionId, session] of this.sessions.entries()) {
-      if (now > new Date(session.expiresAt)) {
-        this.sessions.delete(sessionId);
-        cleaned++;
-      }
-    }
-
-    return cleaned;
-  }
-
-  getActiveSessionCount(): number {
-    return this.sessions.size;
+  async deleteUserSessions(userId: string): Promise<number> {
+    const pool = await this.getClient();
+    const result = await pool.query(
+      `DELETE FROM user_sessions WHERE user_id = $1`,
+      [userId],
+    );
+    return result.rowCount ?? 0;
   }
 }

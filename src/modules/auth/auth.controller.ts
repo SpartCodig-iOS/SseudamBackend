@@ -10,7 +10,7 @@ import {
 } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { success } from '../../types/api';
-import { loginSchema, refreshSchema, signupSchema } from '../../validators/authSchemas';
+import { loginSchema, refreshSchema, signupSchema, logoutSchema } from '../../validators/authSchemas';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RequestWithUser } from '../../types/request';
 import {
@@ -157,6 +157,7 @@ export class AuthController {
         refreshTokenExpiresAt: result.tokenPair.refreshTokenExpiresAt.toISOString(),
         sessionId: result.session.sessionId,
         sessionExpiresAt: result.session.expiresAt,
+        loginType: result.loginType,
       },
       'Token refreshed successfully',
     );
@@ -192,6 +193,24 @@ export class AuthController {
       },
       'Account deleted successfully',
     );
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '로그아웃 (sessionId 기반)' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['sessionId'],
+      properties: {
+        sessionId: { type: 'string', description: '로그인 응답에서 받은 sessionId' },
+      },
+    },
+  })
+  async logout(@Body() body: unknown) {
+    const payload = logoutSchema.parse(body);
+    const result = await this.authService.logoutBySessionId(payload.sessionId);
+    return success(result, 'Logout successful');
   }
 
 }

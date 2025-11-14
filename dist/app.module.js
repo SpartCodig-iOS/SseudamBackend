@@ -32,12 +32,12 @@ exports.AppModule = AppModule = __decorate([
             auth_module_1.AuthModule,
             oauth_module_1.OAuthModule,
             profile_module_1.ProfileModule,
-            session_module_1.SessionModule,
             health_module_1.HealthModule,
             travel_module_1.TravelModule,
             meta_module_1.MetaModule,
             travel_expense_module_1.TravelExpenseModule,
             travel_settlement_module_1.TravelSettlementModule,
+            session_module_1.SessionModule,
         ],
     })
 ], AppModule);

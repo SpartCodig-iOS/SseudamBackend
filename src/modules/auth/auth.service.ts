@@ -3,8 +3,8 @@ import bcrypt from 'bcryptjs';
 import { LoginType } from '../../types/auth';
 import { UserRecord } from '../../types/user';
 import { LoginInput, SignupInput } from '../../validators/authSchemas';
-import { SessionData, SessionService } from '../../services/sessionService';
 import { JwtTokenService, TokenPair } from '../../services/jwtService';
+import { SessionRecord, SessionService } from '../../services/sessionService';
 import { SupabaseService } from '../../services/supabaseService';
 import { fromSupabaseUser } from '../../utils/mappers';
 import { SocialAuthService } from '../oauth/social-auth.service';
@@ -12,13 +12,14 @@ import { SocialAuthService } from '../oauth/social-auth.service';
 export interface AuthSessionPayload {
   user: UserRecord;
   tokenPair: TokenPair;
-  session: SessionData;
   loginType: LoginType;
+  session: SessionRecord;
 }
 
 interface RefreshPayload {
   tokenPair: TokenPair;
-  session: SessionData;
+  loginType: LoginType;
+  session: SessionRecord;
 }
 
 @Injectable()
@@ -31,10 +32,10 @@ export class AuthService {
     private readonly socialAuthService: SocialAuthService,
   ) {}
 
-  createAuthSession(user: UserRecord, loginType: LoginType): AuthSessionPayload {
+  async createAuthSession(user: UserRecord, loginType: LoginType): Promise<AuthSessionPayload> {
     const tokenPair = this.jwtTokenService.generateTokenPair(user, loginType);
-    const session = this.sessionService.createSession(user, loginType);
-    return { user, tokenPair, session, loginType };
+    const session = await this.sessionService.createSession(user.id, loginType);
+    return { user, tokenPair, loginType, session };
   }
 
   async signup(input: SignupInput): Promise<AuthSessionPayload> {
@@ -115,8 +116,8 @@ export class AuthService {
       throw new UnauthorizedException('User verification failed');
     }
 
-    const sessionPayload = this.createAuthSession(user, 'email');
-    return { tokenPair: sessionPayload.tokenPair, session: sessionPayload.session };
+    const sessionPayload = await this.createAuthSession(user, 'email');
+    return { tokenPair: sessionPayload.tokenPair, loginType: sessionPayload.loginType, session: sessionPayload.session };
   }
 
   async deleteAccount(user: UserRecord): Promise<{ supabaseDeleted: boolean }> {
@@ -155,4 +156,11 @@ export class AuthService {
     return { supabaseDeleted };
   }
 
+  async logoutBySessionId(sessionId: string): Promise<{ revoked: boolean }> {
+    if (!sessionId) {
+      throw new UnauthorizedException('sessionId is required');
+    }
+    const deleted = await this.sessionService.deleteSession(sessionId);
+    return { revoked: deleted };
+  }
 }

@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.appleRevokeSchema = exports.refreshSchema = exports.oauthTokenSchema = exports.loginSchema = exports.signupSchema = void 0;
+exports.logoutSchema = exports.appleRevokeSchema = exports.refreshSchema = exports.oauthTokenSchema = exports.loginSchema = exports.signupSchema = void 0;
 const zod_1 = require("zod");
 const auth_1 = require("../types/auth");
 exports.signupSchema = zod_1.z.object({
@@ -54,4 +54,7 @@ exports.refreshSchema = zod_1.z.object({
 });
 exports.appleRevokeSchema = zod_1.z.object({
     refreshToken: zod_1.z.string().min(10).optional(),
+});
+exports.logoutSchema = zod_1.z.object({
+    sessionId: zod_1.z.string().min(10, 'sessionId is required'),
 });

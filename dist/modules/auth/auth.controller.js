@@ -45,6 +45,7 @@ let AuthController = class AuthController {
             refreshTokenExpiresAt: result.tokenPair.refreshTokenExpiresAt.toISOString(),
             sessionId: result.session.sessionId,
             sessionExpiresAt: result.session.expiresAt,
+            loginType: result.loginType,
         }, 'Token refreshed successfully');
     }
     async deleteAccount(req) {
@@ -57,6 +58,11 @@ let AuthController = class AuthController {
             userID: currentUser.id,
             supabaseDeleted: result.supabaseDeleted,
         }, 'Account deleted successfully');
+    }
+    async logout(body) {
+        const payload = authSchemas_1.logoutSchema.parse(body);
+        const result = await this.authService.logoutBySessionId(payload.sessionId);
+        return (0, api_1.success)(result, 'Logout successful');
     }
 };
 exports.AuthController = AuthController;
@@ -205,6 +211,24 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "deleteAccount", null);
+__decorate([
+    (0, common_1.Post)('logout'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: '로그아웃 (sessionId 기반)' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['sessionId'],
+            properties: {
+                sessionId: { type: 'string', description: '로그인 응답에서 받은 sessionId' },
+            },
+        },
+    }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "logout", null);
 exports.AuthController = AuthController = __decorate([
     (0, swagger_1.ApiTags)('Auth'),
     (0, common_1.Controller)('api/v1/auth'),

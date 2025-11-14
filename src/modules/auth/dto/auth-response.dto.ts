@@ -36,14 +36,17 @@ export class AuthSessionEnvelopeDto {
   @ApiProperty({ example: '2025-11-16T05:39:56.500Z' })
   refreshTokenExpiresAt!: string;
 
-  @ApiProperty({ example: 'f55ccc2093224215a581c74fb9e5bfcf2ac06b589fb7bc1bf471fbc6fdc70d31' })
+  @ApiProperty({ example: '16d3f6c6-8b5d-4927-b1b7-0c08d08d874f' })
   sessionId!: string;
 
-  @ApiProperty({ example: '2025-11-10T05:39:56.505Z' })
+  @ApiProperty({ example: '2025-12-16T05:39:56.500Z' })
   sessionExpiresAt!: string;
 
-  @ApiProperty({ example: '2025-11-09T05:39:41.649Z', nullable: true })
-  lastLoginAt?: string | null;
+  @ApiProperty({ example: '2025-11-14T11:52:04.000Z' })
+  lastLoginAt!: string;
+
+  @ApiProperty({ example: 'email' })
+  loginType!: string;
 }
 
 export class SignupResponseDto {
@@ -81,11 +84,14 @@ export class RefreshResponseDataDto {
   @ApiProperty({ example: '2025-11-16T05:39:56.500Z' })
   refreshTokenExpiresAt!: string;
 
-  @ApiProperty({ example: 'f55ccc2093224215a581c74fb9e5bfcf2ac06b589fb7bc1bf471fbc6fdc70d31' })
+  @ApiProperty({ example: '16d3f6c6-8b5d-4927-b1b7-0c08d08d874f' })
   sessionId!: string;
 
-  @ApiProperty({ example: '2025-11-10T05:39:56.505Z' })
+  @ApiProperty({ example: '2025-12-16T05:39:56.500Z' })
   sessionExpiresAt!: string;
+
+  @ApiProperty({ example: 'email' })
+  loginType!: string;
 }
 
 export class RefreshResponseDto {

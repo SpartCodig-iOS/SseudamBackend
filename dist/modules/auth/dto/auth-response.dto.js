@@ -62,17 +62,21 @@ __decorate([
     __metadata("design:type", String)
 ], AuthSessionEnvelopeDto.prototype, "refreshTokenExpiresAt", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 'f55ccc2093224215a581c74fb9e5bfcf2ac06b589fb7bc1bf471fbc6fdc70d31' }),
+    (0, swagger_1.ApiProperty)({ example: '16d3f6c6-8b5d-4927-b1b7-0c08d08d874f' }),
     __metadata("design:type", String)
 ], AuthSessionEnvelopeDto.prototype, "sessionId", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: '2025-11-10T05:39:56.505Z' }),
+    (0, swagger_1.ApiProperty)({ example: '2025-12-16T05:39:56.500Z' }),
     __metadata("design:type", String)
 ], AuthSessionEnvelopeDto.prototype, "sessionExpiresAt", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: '2025-11-09T05:39:41.649Z', nullable: true }),
-    __metadata("design:type", Object)
+    (0, swagger_1.ApiProperty)({ example: '2025-11-14T11:52:04.000Z' }),
+    __metadata("design:type", String)
 ], AuthSessionEnvelopeDto.prototype, "lastLoginAt", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'email' }),
+    __metadata("design:type", String)
+], AuthSessionEnvelopeDto.prototype, "loginType", void 0);
 class SignupResponseDto {
 }
 exports.SignupResponseDto = SignupResponseDto;
@@ -123,13 +127,17 @@ __decorate([
     __metadata("design:type", String)
 ], RefreshResponseDataDto.prototype, "refreshTokenExpiresAt", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 'f55ccc2093224215a581c74fb9e5bfcf2ac06b589fb7bc1bf471fbc6fdc70d31' }),
+    (0, swagger_1.ApiProperty)({ example: '16d3f6c6-8b5d-4927-b1b7-0c08d08d874f' }),
     __metadata("design:type", String)
 ], RefreshResponseDataDto.prototype, "sessionId", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: '2025-11-10T05:39:56.505Z' }),
+    (0, swagger_1.ApiProperty)({ example: '2025-12-16T05:39:56.500Z' }),
     __metadata("design:type", String)
 ], RefreshResponseDataDto.prototype, "sessionExpiresAt", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'email' }),
+    __metadata("design:type", String)
+], RefreshResponseDataDto.prototype, "loginType", void 0);
 class RefreshResponseDto {
 }
 exports.RefreshResponseDto = RefreshResponseDto;

@@ -11,5 +11,6 @@ export const buildAuthSessionResponse = (result: AuthSessionResult) => ({
   refreshTokenExpiresAt: result.tokenPair.refreshTokenExpiresAt.toISOString(),
   sessionId: result.session.sessionId,
   sessionExpiresAt: result.session.expiresAt,
-  lastLoginAt: result.session.lastLoginAt,
+  lastLoginAt: result.session.lastSeenAt,
+  loginType: result.loginType,
 });

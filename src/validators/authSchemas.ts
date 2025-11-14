@@ -61,8 +61,13 @@ export const appleRevokeSchema = z.object({
   refreshToken: z.string().min(10).optional(),
 });
 
+export const logoutSchema = z.object({
+  sessionId: z.string().min(10, 'sessionId is required'),
+});
+
 export type SignupInput = z.infer<typeof signupSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type OAuthTokenInput = z.infer<typeof oauthTokenSchema>;
 export type RefreshInput = z.infer<typeof refreshSchema>;
 export type AppleRevokeInput = z.infer<typeof appleRevokeSchema>;
+export type LogoutInput = z.infer<typeof logoutSchema>;

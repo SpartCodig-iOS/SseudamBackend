@@ -11,48 +11,30 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SessionResponseDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
-class SessionDataDto {
-}
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'email' }),
-    __metadata("design:type", String)
-], SessionDataDto.prototype, "loginType", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: '2025-11-08T20:39:05.084Z', nullable: true }),
-    __metadata("design:type", Object)
-], SessionDataDto.prototype, "lastLoginAt", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'f22fc114-8dc4-4b0a-a77a-559e2abbad80' }),
-    __metadata("design:type", String)
-], SessionDataDto.prototype, "userId", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'testuser@example.com' }),
-    __metadata("design:type", String)
-], SessionDataDto.prototype, "email", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'c46760962b6433f148963bd6645d1b6e5c342a41178dbfc66cfb75aa8bb03c48' }),
-    __metadata("design:type", String)
-], SessionDataDto.prototype, "sessionId", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: '2025-11-09T05:55:28.259Z' }),
-    __metadata("design:type", String)
-], SessionDataDto.prototype, "createdAt", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: '2025-11-10T05:55:28.259Z' }),
-    __metadata("design:type", String)
-], SessionDataDto.prototype, "expiresAt", void 0);
 class SessionResponseDto {
 }
 exports.SessionResponseDto = SessionResponseDto;
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 200 }),
-    __metadata("design:type", Number)
-], SessionResponseDto.prototype, "code", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'Session info retrieved successfully' }),
+    (0, swagger_1.ApiProperty)({ example: '16d3f6c6-...' }),
     __metadata("design:type", String)
-], SessionResponseDto.prototype, "message", void 0);
+], SessionResponseDto.prototype, "sessionId", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ type: SessionDataDto }),
-    __metadata("design:type", SessionDataDto)
-], SessionResponseDto.prototype, "data", void 0);
+    (0, swagger_1.ApiProperty)({ example: '5815702d-...' }),
+    __metadata("design:type", String)
+], SessionResponseDto.prototype, "userId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'email' }),
+    __metadata("design:type", String)
+], SessionResponseDto.prototype, "loginType", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '2025-11-15T10:00:00.000Z' }),
+    __metadata("design:type", String)
+], SessionResponseDto.prototype, "createdAt", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '2025-11-20T10:00:00.000Z' }),
+    __metadata("design:type", String)
+], SessionResponseDto.prototype, "lastSeenAt", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '2025-12-15T10:00:00.000Z' }),
+    __metadata("design:type", String)
+], SessionResponseDto.prototype, "expiresAt", void 0);

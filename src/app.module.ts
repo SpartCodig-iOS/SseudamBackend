@@ -17,12 +17,12 @@ import { TravelSettlementModule } from './modules/travel-settlement/travel-settl
     AuthModule,
     OAuthModule,
     ProfileModule,
-    SessionModule,
     HealthModule,
     TravelModule,
     MetaModule,
     TravelExpenseModule,
     TravelSettlementModule,
+    SessionModule,
   ],
 })
 export class AppModule implements NestModule {
