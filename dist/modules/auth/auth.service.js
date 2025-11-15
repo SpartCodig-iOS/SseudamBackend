@@ -420,73 +420,76 @@ let AuthService = AuthService_1 = class AuthService {
                 this.logger.warn('[deleteAccount] Failed to load Google refresh token', error);
             }
         }
-        if (profileLoginType === 'apple') {
-            if (appleRefreshToken) {
-                try {
-                    await this.socialAuthService.revokeAppleConnection(user.id, appleRefreshToken);
+        await (async () => {
+            if (profileLoginType === 'apple') {
+                if (appleRefreshToken) {
+                    try {
+                        await this.socialAuthService.revokeAppleConnection(user.id, appleRefreshToken);
+                    }
+                    catch (error) {
+                        this.logger.warn('[deleteAccount] Apple revoke failed', error);
+                    }
                 }
-                catch (error) {
-                    this.logger.warn('[deleteAccount] Apple revoke failed', error);
-                }
-            }
-            else {
-                this.logger.warn('[deleteAccount] Apple refresh token missing, skipping revoke');
-            }
-        }
-        else if (profileLoginType === 'google') {
-            if (googleRefreshToken) {
-                try {
-                    await this.socialAuthService.revokeGoogleConnection(user.id, googleRefreshToken);
-                }
-                catch (error) {
-                    this.logger.warn('[deleteAccount] Google revoke failed', error);
+                else {
+                    this.logger.warn('[deleteAccount] Apple refresh token missing, skipping revoke');
                 }
             }
-            else {
-                this.logger.warn('[deleteAccount] Google refresh token missing, skipping revoke');
+            else if (profileLoginType === 'google') {
+                if (googleRefreshToken) {
+                    try {
+                        await this.socialAuthService.revokeGoogleConnection(user.id, googleRefreshToken);
+                    }
+                    catch (error) {
+                        this.logger.warn('[deleteAccount] Google revoke failed', error);
+                    }
+                }
+                else {
+                    this.logger.warn('[deleteAccount] Google refresh token missing, skipping revoke');
+                }
             }
-        }
-        const client = await pool.connect();
-        try {
-            await client.query('BEGIN');
-            // 1) 지출/참여 기록 제거
-            await client.query(`DELETE FROM travel_expense_participants
-         WHERE member_id = $1
-            OR expense_id IN (
-              SELECT id FROM travel_expenses WHERE payer_id = $1
-            )`, [user.id]);
-            await client.query('DELETE FROM travel_expenses WHERE payer_id = $1', [user.id]);
-            // 2) 여행 관련 엔터티 제거
-            await client.query('DELETE FROM travel_members WHERE user_id = $1', [user.id]);
-            await client.query('DELETE FROM travel_invites WHERE created_by = $1', [user.id]);
-            await client.query('DELETE FROM travel_settlements WHERE from_member = $1 OR to_member = $1', [user.id]);
-            await client.query('DELETE FROM user_sessions WHERE user_id = $1', [user.id]);
-            // 3) 프로필 삭제
-            await client.query('DELETE FROM profiles WHERE id = $1', [user.id]);
-            await client.query('COMMIT');
-        }
-        catch (error) {
-            await client.query('ROLLBACK');
-            throw error;
-        }
-        finally {
-            client.release();
-        }
+        })();
+        await (async () => {
+            const client = await pool.connect();
+            try {
+                await client.query('BEGIN');
+                await client.query(`DELETE FROM travel_expense_participants
+           WHERE member_id = $1
+              OR expense_id IN (
+                SELECT id FROM travel_expenses WHERE payer_id = $1
+              )`, [user.id]);
+                await client.query('DELETE FROM travel_expenses WHERE payer_id = $1', [user.id]);
+                await client.query('DELETE FROM travel_members WHERE user_id = $1', [user.id]);
+                await client.query('DELETE FROM travel_invites WHERE created_by = $1', [user.id]);
+                await client.query('DELETE FROM travel_settlements WHERE from_member = $1 OR to_member = $1', [user.id]);
+                await client.query('DELETE FROM user_sessions WHERE user_id = $1', [user.id]);
+                await client.query('DELETE FROM profiles WHERE id = $1', [user.id]);
+                await client.query('COMMIT');
+            }
+            catch (error) {
+                await client.query('ROLLBACK');
+                throw error;
+            }
+            finally {
+                client.release();
+            }
+        })();
         // 4) Supabase 사용자 삭제
         let supabaseDeleted = false;
-        try {
-            await this.supabaseService.deleteUser(user.id);
-            supabaseDeleted = true;
-        }
-        catch (error) {
-            const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
-            if (!message.includes('not found')) {
-                this.logger.warn('[deleteAccount] Supabase deletion failed', error);
-            }
-            else {
+        const supabaseDeletion = (async () => {
+            try {
+                await this.supabaseService.deleteUser(user.id);
                 supabaseDeleted = true;
             }
-        }
+            catch (error) {
+                const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
+                if (!message.includes('not found')) {
+                    this.logger.warn('[deleteAccount] Supabase deletion failed', error);
+                }
+                else {
+                    supabaseDeleted = true;
+                }
+            }
+        })();
         // 캐시에서도 제거
         this.identifierCache.delete(user.email.toLowerCase());
         if (user.username) {
@@ -495,7 +498,7 @@ let AuthService = AuthService_1 = class AuthService {
         const oauthCacheCleanup = this.socialAuthService
             .invalidateOAuthCacheByUser(user.id)
             .catch((error) => this.logger.warn('[deleteAccount] OAuth cache cleanup failed', error));
-        await oauthCacheCleanup;
+        await Promise.all([supabaseDeletion, oauthCacheCleanup]);
         const duration = Date.now() - startTime;
         this.logger.debug(`Fast account deletion completed in ${duration}ms for ${user.email}`);
         return { supabaseDeleted };
