@@ -9,6 +9,7 @@ var SessionService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SessionService = void 0;
 const common_1 = require("@nestjs/common");
+const crypto_1 = require("crypto");
 const pool_1 = require("../db/pool");
 let SessionService = SessionService_1 = class SessionService {
     constructor() {
@@ -128,19 +129,25 @@ let SessionService = SessionService_1 = class SessionService {
         this.scheduleCleanup();
         const pool = await this.getClient();
         const ttlHours = this.defaultTTLHours;
-        // 초고속 세션 생성: 기존 세션 삭제 + 새 세션 생성 (단일 CTE)
+        const newSessionId = (0, crypto_1.randomUUID)();
+        // 초고속 세션 생성: Upsert로 중복 없이 세션 갱신
         try {
-            const result = await pool.query(`WITH deleted AS (
-           DELETE FROM user_sessions WHERE user_id = $1
-         ),
-         inserted AS (
-           INSERT INTO user_sessions (user_id, login_type, expires_at, last_seen_at)
-           VALUES ($1, $2, NOW() + make_interval(hours => $3), NOW())
-           RETURNING session_id::text, user_id::text, login_type,
-                     created_at::text, last_seen_at::text, expires_at::text,
-                     revoked_at::text
-         )
-         SELECT * FROM inserted`, [userId, loginType, ttlHours]);
+            const result = await pool.query(`INSERT INTO user_sessions (session_id, user_id, login_type, expires_at, last_seen_at)
+         VALUES ($4, $1, $2, NOW() + make_interval(hours => $3), NOW())
+         ON CONFLICT (user_id)
+         DO UPDATE
+           SET session_id = EXCLUDED.session_id,
+               login_type = EXCLUDED.login_type,
+               expires_at = EXCLUDED.expires_at,
+               last_seen_at = EXCLUDED.last_seen_at,
+               revoked_at = NULL
+         RETURNING session_id::text,
+                   user_id::text,
+                   login_type,
+                   created_at::text,
+                   last_seen_at::text,
+                   expires_at::text,
+                   revoked_at::text`, [userId, loginType, ttlHours, newSessionId]);
             const session = this.mapRowToSession(result.rows[0]);
             // 새 세션을 캐시에 저장
             this.setCachedSession(session.sessionId, session);
