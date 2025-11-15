@@ -1,4 +1,5 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { SharedModule } from './modules/shared/shared.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { OAuthModule } from './modules/oauth/oauth.module';
@@ -10,6 +11,8 @@ import { TravelModule } from './modules/travel/travel.module';
 import { MetaModule } from './modules/meta/meta.module';
 import { TravelExpenseModule } from './modules/travel-expense/travel-expense.module';
 import { TravelSettlementModule } from './modules/travel-settlement/travel-settlement.module';
+import { PerformanceInterceptor } from './common/interceptors/performance.interceptor';
+import { ResponseTransformInterceptor } from './common/filters/response-transform.filter';
 
 @Module({
   imports: [
@@ -23,6 +26,16 @@ import { TravelSettlementModule } from './modules/travel-settlement/travel-settl
     TravelExpenseModule,
     TravelSettlementModule,
     SessionModule,
+  ],
+  providers: [
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: PerformanceInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ResponseTransformInterceptor,
+    },
   ],
 })
 export class AppModule implements NestModule {

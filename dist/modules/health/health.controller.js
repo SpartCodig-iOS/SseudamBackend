@@ -17,6 +17,7 @@ const supabaseService_1 = require("../../services/supabaseService");
 const cacheService_1 = require("../../services/cacheService");
 const pool_1 = require("../../db/pool");
 const health_response_dto_1 = require("./dto/health-response.dto");
+const memory_optimizer_1 = require("../../utils/memory-optimizer");
 let HealthController = class HealthController {
     constructor(supabaseService, cacheService) {
         this.supabaseService = supabaseService;
@@ -31,7 +32,8 @@ let HealthController = class HealthController {
     }
     async getMetrics() {
         const startTime = process.hrtime.bigint();
-        // 메모리 사용량
+        // 최적화된 메모리 통계
+        const memoryStats = memory_optimizer_1.MemoryOptimizer.getMemoryStats();
         const memoryUsage = process.memoryUsage();
         const formatBytes = (bytes) => {
             const mb = bytes / 1024 / 1024;
@@ -55,6 +57,7 @@ let HealthController = class HealthController {
                     total: formatBytes(memoryUsage.heapTotal),
                     external: formatBytes(memoryUsage.external),
                     percentage: (memoryUsage.rss / memoryUsage.heapTotal) * 100,
+                    optimized: memoryStats, // 최적화된 메모리 정보
                 },
                 cpu: {
                     usage: cpuUsage,
@@ -69,6 +72,12 @@ let HealthController = class HealthController {
                 pool: poolStats || { message: 'Pool not initialized' },
             },
             cache: cacheStats,
+            optimization: {
+                compressionEnabled: true,
+                keepAliveEnabled: true,
+                memoryCacheEnabled: true,
+                performanceMonitoringEnabled: true,
+            },
             timestamp: new Date().toISOString(),
         });
     }

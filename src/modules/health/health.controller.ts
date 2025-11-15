@@ -5,6 +5,7 @@ import { SupabaseService } from '../../services/supabaseService';
 import { CacheService } from '../../services/cacheService';
 import { getPoolStats } from '../../db/pool';
 import { HealthResponseDto } from './dto/health-response.dto';
+import { MemoryOptimizer } from '../../utils/memory-optimizer';
 
 @ApiTags('Health')
 @Controller()
@@ -94,7 +95,8 @@ export class HealthController {
   async getMetrics() {
     const startTime = process.hrtime.bigint();
 
-    // 메모리 사용량
+    // 최적화된 메모리 통계
+    const memoryStats = MemoryOptimizer.getMemoryStats();
     const memoryUsage = process.memoryUsage();
     const formatBytes = (bytes: number) => {
       const mb = bytes / 1024 / 1024;
@@ -123,6 +125,7 @@ export class HealthController {
           total: formatBytes(memoryUsage.heapTotal),
           external: formatBytes(memoryUsage.external),
           percentage: (memoryUsage.rss / memoryUsage.heapTotal) * 100,
+          optimized: memoryStats, // 최적화된 메모리 정보
         },
         cpu: {
           usage: cpuUsage,
@@ -137,6 +140,12 @@ export class HealthController {
         pool: poolStats || { message: 'Pool not initialized' },
       },
       cache: cacheStats,
+      optimization: {
+        compressionEnabled: true,
+        keepAliveEnabled: true,
+        memoryCacheEnabled: true,
+        performanceMonitoringEnabled: true,
+      },
       timestamp: new Date().toISOString(),
     });
   }

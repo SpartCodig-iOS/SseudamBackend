@@ -50,7 +50,10 @@ const app_module_1 = require("./app.module");
 const env_1 = require("./config/env");
 const logger_1 = require("./utils/logger");
 const all_exceptions_filter_1 = require("./common/filters/all-exceptions.filter");
+const memory_optimizer_1 = require("./utils/memory-optimizer");
 async function bootstrap() {
+    // 메모리 최적화 초기화
+    memory_optimizer_1.MemoryOptimizer.initialize();
     if (env_1.env.sentryDsn) {
         const client = Sentry.init({
             dsn: env_1.env.sentryDsn,
@@ -85,11 +88,12 @@ async function bootstrap() {
     };
     app.use((0, helmet_1.default)(helmetOptions));
     app.use((0, compression_1.default)({
-        threshold: 1024, // 1KB 이상일 때만 압축
+        threshold: 512, // 512B 이상일 때만 압축 (더 작은 임계값)
         level: 6, // 압축 레벨 (1: 빠름, 9: 최고 압축률, 6: 균형)
-        memLevel: 8, // 메모리 사용량 레벨 (1-9, 높을수록 빠름)
-        chunkSize: 16384, // 청크 크기 (16KB)
+        memLevel: 9, // 메모리 사용량 레벨 (1-9, 높을수록 빠름) - 증가
+        chunkSize: 32768, // 청크 크기 (32KB) - 증가
         windowBits: 15, // 압축 윈도우 크기
+        // strategy: compression.constants.Z_DEFAULT_STRATEGY, // 기본 압축 전략
         filter: (req, res) => {
             // 압축 제외 조건
             if (req.headers['x-no-compression']) {
@@ -102,10 +106,16 @@ async function bootstrap() {
                     'image/', 'video/', 'audio/',
                     'application/zip', 'application/gzip',
                     'application/x-rar', 'application/pdf',
+                    'application/octet-stream',
                 ];
                 if (skipCompressionTypes.some(type => contentType.includes(type))) {
                     return false;
                 }
+            }
+            // 매우 작은 응답은 압축하지 않음
+            const contentLength = res.getHeader('content-length');
+            if (contentLength && parseInt(contentLength) < 512) {
+                return false;
             }
             return compression_1.default.filter(req, res);
         },

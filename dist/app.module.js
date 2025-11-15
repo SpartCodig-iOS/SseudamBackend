@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppModule = void 0;
 const common_1 = require("@nestjs/common");
+const core_1 = require("@nestjs/core");
 const shared_module_1 = require("./modules/shared/shared.module");
 const auth_module_1 = require("./modules/auth/auth.module");
 const oauth_module_1 = require("./modules/oauth/oauth.module");
@@ -19,6 +20,8 @@ const travel_module_1 = require("./modules/travel/travel.module");
 const meta_module_1 = require("./modules/meta/meta.module");
 const travel_expense_module_1 = require("./modules/travel-expense/travel-expense.module");
 const travel_settlement_module_1 = require("./modules/travel-settlement/travel-settlement.module");
+const performance_interceptor_1 = require("./common/interceptors/performance.interceptor");
+const response_transform_filter_1 = require("./common/filters/response-transform.filter");
 let AppModule = class AppModule {
     configure(consumer) {
         consumer.apply(requestLogger_1.RequestLoggerMiddleware).forRoutes('*');
@@ -38,6 +41,16 @@ exports.AppModule = AppModule = __decorate([
             travel_expense_module_1.TravelExpenseModule,
             travel_settlement_module_1.TravelSettlementModule,
             session_module_1.SessionModule,
+        ],
+        providers: [
+            {
+                provide: core_1.APP_INTERCEPTOR,
+                useClass: performance_interceptor_1.PerformanceInterceptor,
+            },
+            {
+                provide: core_1.APP_INTERCEPTOR,
+                useClass: response_transform_filter_1.ResponseTransformInterceptor,
+            },
         ],
     })
 ], AppModule);
