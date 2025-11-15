@@ -36,6 +36,53 @@ export class SupabaseService {
     return this.client;
   }
 
+  private normalizeUsername(base: string, userId: string): string {
+    const cleaned = base
+      .toLowerCase()
+      .replace(/[^a-z0-9_]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 24);
+    if (cleaned.length >= 3) {
+      return cleaned;
+    }
+    return `user_${userId.replace(/[^a-z0-9]/gi, '').slice(0, 12) || userId.slice(0, 12)}`;
+  }
+
+  private async ensureUniqueUsername(
+    base: string,
+    userId: string,
+    client?: SupabaseClient,
+  ): Promise<string> {
+    const supabase = client ?? this.getClient();
+    const normalizedBase = this.normalizeUsername(base, userId);
+    let candidate = normalizedBase;
+    let attempts = 0;
+
+    while (attempts < 10) {
+      const { data, error } = await supabase
+        .from(env.supabaseProfileTable)
+        .select('id')
+        .eq('username', candidate)
+        .limit(1);
+
+      if (error) {
+        throw error;
+      }
+
+      const existingId = data?.[0]?.id as string | undefined;
+      if (!existingId || existingId === userId) {
+        return candidate;
+      }
+
+      const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+      candidate = `${normalizedBase}_${randomSuffix}`.slice(0, 32);
+      attempts += 1;
+    }
+
+    return `${normalizedBase}_${Date.now().toString(36)}`.slice(0, 32);
+  }
+
   async signUp(email: string, password: string, metadata: Record<string, string | undefined>) {
     const client = this.getClient();
     const { data, error } = await client.auth.admin.createUser({
@@ -131,10 +178,26 @@ export class SupabaseService {
     if (!user.email) {
       throw new Error('Supabase user does not contain an email');
     }
-    const username =
+    const client = this.getClient();
+    const { data: existingProfile, error: existingProfileError } = await client
+      .from(env.supabaseProfileTable)
+      .select('username')
+      .eq('id', user.id)
+      .limit(1)
+      .maybeSingle();
+    if (existingProfileError) {
+      throw existingProfileError;
+    }
+    const existingProfileUsername =
+      (existingProfile?.username as string | undefined) ?? null;
+
+    const proposedUsername =
       (user.user_metadata?.username as string | undefined) ??
       user.email.split('@')[0] ??
       user.id;
+    const username =
+      existingProfileUsername ??
+      (await this.ensureUniqueUsername(proposedUsername, user.id, client));
 
     const metadata = user.user_metadata ?? {};
     const displayName = (metadata.display_name as string | null) ?? null;

@@ -36,6 +36,42 @@ let SupabaseService = class SupabaseService {
         }
         return this.client;
     }
+    normalizeUsername(base, userId) {
+        const cleaned = base
+            .toLowerCase()
+            .replace(/[^a-z0-9_]/g, '_')
+            .replace(/_+/g, '_')
+            .replace(/^_+|_+$/g, '')
+            .slice(0, 24);
+        if (cleaned.length >= 3) {
+            return cleaned;
+        }
+        return `user_${userId.replace(/[^a-z0-9]/gi, '').slice(0, 12) || userId.slice(0, 12)}`;
+    }
+    async ensureUniqueUsername(base, userId, client) {
+        const supabase = client ?? this.getClient();
+        const normalizedBase = this.normalizeUsername(base, userId);
+        let candidate = normalizedBase;
+        let attempts = 0;
+        while (attempts < 10) {
+            const { data, error } = await supabase
+                .from(env_1.env.supabaseProfileTable)
+                .select('id')
+                .eq('username', candidate)
+                .limit(1);
+            if (error) {
+                throw error;
+            }
+            const existingId = data?.[0]?.id;
+            if (!existingId || existingId === userId) {
+                return candidate;
+            }
+            const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+            candidate = `${normalizedBase}_${randomSuffix}`.slice(0, 32);
+            attempts += 1;
+        }
+        return `${normalizedBase}_${Date.now().toString(36)}`.slice(0, 32);
+    }
     async signUp(email, password, metadata) {
         const client = this.getClient();
         const { data, error } = await client.auth.admin.createUser({
@@ -119,9 +155,22 @@ let SupabaseService = class SupabaseService {
         if (!user.email) {
             throw new Error('Supabase user does not contain an email');
         }
-        const username = user.user_metadata?.username ??
+        const client = this.getClient();
+        const { data: existingProfile, error: existingProfileError } = await client
+            .from(env_1.env.supabaseProfileTable)
+            .select('username')
+            .eq('id', user.id)
+            .limit(1)
+            .maybeSingle();
+        if (existingProfileError) {
+            throw existingProfileError;
+        }
+        const existingProfileUsername = existingProfile?.username ?? null;
+        const proposedUsername = user.user_metadata?.username ??
             user.email.split('@')[0] ??
             user.id;
+        const username = existingProfileUsername ??
+            (await this.ensureUniqueUsername(proposedUsername, user.id, client));
         const metadata = user.user_metadata ?? {};
         const displayName = metadata.display_name ?? null;
         const standardName = metadata.name ??
