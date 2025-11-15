@@ -29,6 +29,14 @@ export class AuthService {
   private readonly identifierCache = new Map<string, { email: string; expiresAt: number }>();
   private readonly IDENTIFIER_CACHE_TTL = 5 * 60 * 1000;
 
+  // 성공한 로그인에 대한 bcrypt 캐시 (5분 TTL)
+  private readonly bcryptCache = new Map<string, { hash: string; expiresAt: number }>();
+  private readonly BCRYPT_CACHE_TTL = 5 * 60 * 1000; // 5분
+
+  // 사용자 정보 캐시 (2분 TTL, 빠른 재로그인)
+  private readonly userCache = new Map<string, { user: UserRecord; expiresAt: number }>();
+  private readonly USER_CACHE_TTL = 2 * 60 * 1000; // 2분
+
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly jwtTokenService: JwtTokenService,
@@ -60,6 +68,66 @@ export class AuthService {
     }
   }
 
+  // bcrypt 캐시 관리 (성능 최적화)
+  private getCachedBcryptResult(email: string, password: string): boolean | null {
+    const cacheKey = `${email}:${password.substring(0, 8)}`;
+    const cached = this.bcryptCache.get(cacheKey);
+    if (!cached) return null;
+
+    if (Date.now() > cached.expiresAt) {
+      this.bcryptCache.delete(cacheKey);
+      return null;
+    }
+
+    return cached.hash === password;
+  }
+
+  private setCachedBcryptResult(email: string, password: string, isValid: boolean): void {
+    if (!isValid) return; // 실패한 로그인은 캐시하지 않음
+
+    const cacheKey = `${email}:${password.substring(0, 8)}`;
+    this.bcryptCache.set(cacheKey, {
+      hash: password,
+      expiresAt: Date.now() + this.BCRYPT_CACHE_TTL,
+    });
+
+    // 캐시 크기 제한
+    if (this.bcryptCache.size > 500) {
+      const oldestKey = this.bcryptCache.keys().next().value;
+      if (oldestKey) {
+        this.bcryptCache.delete(oldestKey);
+      }
+    }
+  }
+
+  // 사용자 캐시 관리 (재로그인 최적화)
+  private getCachedUser(email: string): UserRecord | null {
+    const cached = this.userCache.get(email);
+    if (!cached) return null;
+
+    if (Date.now() > cached.expiresAt) {
+      this.userCache.delete(email);
+      return null;
+    }
+
+    return cached.user;
+  }
+
+  private setCachedUser(email: string, user: UserRecord): void {
+    this.userCache.set(email, {
+      user: { ...user, password_hash: '' }, // 보안상 패스워드 해시는 캐시하지 않음
+      expiresAt: Date.now() + this.USER_CACHE_TTL,
+    });
+
+    // 캐시 크기 제한
+    if (this.userCache.size > 200) {
+      const oldestKey = this.userCache.keys().next().value;
+      if (oldestKey) {
+        this.userCache.delete(oldestKey);
+      }
+    }
+  }
+
   private async lookupEmailByIdentifier(identifier: string): Promise<string | null> {
     const pool = await getPool();
     const result = await pool.query(
@@ -74,9 +142,21 @@ export class AuthService {
     return result.rows[0]?.email?.toLowerCase() ?? null;
   }
 
-  // 고성능 직접 인증: 단일 쿼리로 사용자 정보 조회 및 비밀번호 확인
+  // 고성능 직접 인증: 캐시 우선 + 단일 쿼리로 사용자 정보 조회 및 비밀번호 확인
   private async authenticateUserDirect(email: string, password: string): Promise<UserRecord | null> {
     const authStartTime = Date.now();
+
+    // 사용자 정보 캐시 확인 (초고속)
+    const cachedUser = this.getCachedUser(email);
+    if (cachedUser) {
+      // 캐시된 사용자로 비밀번호 검증
+      const cachedBcryptResult = this.getCachedBcryptResult(email, password);
+      if (cachedBcryptResult === true) {
+        this.logger.debug(`Full cache hit for ${email} - ultra fast auth`);
+        return cachedUser;
+      }
+    }
+
     const pool = await getPool();
 
     // 최적화된 단일 쿼리 (서브쿼리 제거, 더 빠름)
@@ -127,8 +207,16 @@ export class AuthService {
     let isValidPassword = false;
 
     if (row.password_hash) {
-      // bcrypt 검증 (가장 빠른 방법)
-      isValidPassword = await bcrypt.compare(password, row.password_hash);
+      // bcrypt 캐시 확인 (초고속)
+      const cachedResult = this.getCachedBcryptResult(email, password);
+      if (cachedResult !== null) {
+        isValidPassword = cachedResult;
+        this.logger.debug(`bcrypt cache hit for ${email}`);
+      } else {
+        // bcrypt 검증 (캐시 미스 시)
+        isValidPassword = await bcrypt.compare(password, row.password_hash);
+        this.setCachedBcryptResult(email, password, isValidPassword);
+      }
     } else {
       // Supabase 인증으로 폴백 (password_hash가 없는 경우)
       try {
@@ -144,7 +232,7 @@ export class AuthService {
     const authDuration = Date.now() - authStartTime;
     this.logger.debug(`Fast auth completed in ${authDuration}ms for ${email}`);
 
-    return {
+    const userRecord: UserRecord = {
       id: row.id,
       email: row.email,
       name: row.name,
@@ -154,6 +242,11 @@ export class AuthService {
       updated_at: row.updated_at,
       password_hash: '', // 보안상 빈 값으로 설정
     };
+
+    // 성공한 인증 후 사용자 정보를 캐시에 저장
+    this.setCachedUser(email, userRecord);
+
+    return userRecord;
   }
 
   async createAuthSession(user: UserRecord, loginType: LoginType): Promise<AuthSessionPayload> {
@@ -182,7 +275,7 @@ export class AuthService {
       this.supabaseService.signUp(lowerEmail, input.password, {
         name: input.name,
       }),
-      bcrypt.hash(input.password, 6) // 8 -> 6으로 더 단축 (회원가입 속도 우선)
+      bcrypt.hash(input.password, 4) // 6 -> 4로 더 단축 (로그인 성능 우선)
     ]);
 
     if (!supabaseUser) {
@@ -254,13 +347,17 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // 캐시 업데이트 (다음 로그인 시 더 빠르게)
-    this.setCachedEmail(user.email.toLowerCase(), user.email.toLowerCase());
-    if (user.username) {
-      this.setCachedEmail(user.username.toLowerCase(), user.email.toLowerCase());
-    }
-
-    const result = await this.createAuthSession(user, loginType);
+    // 세션 생성과 캐시 업데이트를 병렬로 처리 (성능 최적화)
+    const [result] = await Promise.all([
+      this.createAuthSession(user, loginType),
+      // 캐시 업데이트를 백그라운드에서 처리
+      Promise.resolve().then(() => {
+        this.setCachedEmail(user.email.toLowerCase(), user.email.toLowerCase());
+        if (user.username) {
+          this.setCachedEmail(user.username.toLowerCase(), user.email.toLowerCase());
+        }
+      })
+    ]);
 
     const duration = Date.now() - startTime;
     this.logger.debug(`Fast login completed in ${duration}ms for ${identifier}`);

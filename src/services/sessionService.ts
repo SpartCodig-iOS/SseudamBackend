@@ -153,40 +153,34 @@ export class SessionService {
 
     const pool = await this.getClient();
 
-    // 최적화된 세션 생성 쿼리 (더 빠른 UPSERT)
-    const result = await pool.query(
-      `WITH new_session AS (
-         INSERT INTO user_sessions (user_id, login_type, expires_at, last_seen_at, revoked_at)
-         VALUES ($1, $2, NOW() + INTERVAL '${this.defaultTTLHours} hours', NOW(), NULL)
-         ON CONFLICT (user_id) DO UPDATE
-           SET session_id = gen_random_uuid(),
-               login_type = EXCLUDED.login_type,
-               expires_at = EXCLUDED.expires_at,
-               last_seen_at = EXCLUDED.last_seen_at,
-               revoked_at = NULL
-         RETURNING session_id, user_id, login_type, created_at, last_seen_at, expires_at, revoked_at
-       )
-       SELECT
-         session_id::text AS session_id,
-         user_id::text AS user_id,
-         login_type,
-         created_at::text,
-         last_seen_at::text,
-         expires_at::text,
-         revoked_at::text
-       FROM new_session`,
-      [userId, loginType],
-    );
+    // 초고속 세션 생성: 기존 세션 삭제 + 새 세션 생성 (CTE 제거)
+    try {
+      // 1. 기존 세션 빠른 삭제 (인덱스 활용)
+      await pool.query('DELETE FROM user_sessions WHERE user_id = $1', [userId]);
 
-    const session = this.mapRowToSession(result.rows[0]);
+      // 2. 새 세션 직접 생성 (단순 INSERT, 더 빠름)
+      const result = await pool.query(
+        `INSERT INTO user_sessions (user_id, login_type, expires_at, last_seen_at)
+         VALUES ($1, $2, NOW() + INTERVAL '${this.defaultTTLHours} hours', NOW())
+         RETURNING session_id::text, user_id::text, login_type,
+                   created_at::text, last_seen_at::text, expires_at::text,
+                   revoked_at::text`,
+        [userId, loginType]
+      );
 
-    // 새 세션을 캐시에 저장
-    this.setCachedSession(session.sessionId, session);
+      const session = this.mapRowToSession(result.rows[0]);
 
-    const duration = Date.now() - startTime;
-    this.logger.debug(`Fast session created in ${duration}ms for user ${userId}`);
+      // 새 세션을 캐시에 저장
+      this.setCachedSession(session.sessionId, session);
 
-    return session;
+      const duration = Date.now() - startTime;
+      this.logger.debug(`Ultra-fast session created in ${duration}ms for user ${userId}`);
+
+      return session;
+    } catch (error) {
+      this.logger.error(`Fast session creation failed for user ${userId}`, error);
+      throw error;
+    }
   }
 
   async getSession(sessionId: string): Promise<SessionRecord | null> {

@@ -81,48 +81,71 @@ export class TravelService {
   async createTravel(userId: string, payload: CreateTravelInput): Promise<TravelDetail> {
     try {
       return await this.ensureTransaction(async (client) => {
-        const insertResult = await client.query(
-          `INSERT INTO travels (owner_id, title, start_date, end_date, country_code, base_currency, base_exchange_rate, status)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
-           RETURNING id::text AS id,
-                     title,
-                     start_date::text,
-                     end_date::text,
-                     country_code,
-                     base_currency,
-                     base_exchange_rate,
-                     NULL::text AS invite_code,
-                     status,
-                     created_at::text,
-                     'owner'::text AS role,
-                     (SELECT name FROM profiles WHERE id = $1) AS owner_name,
-                     json_build_array(json_build_object(
-                       'userId', $1,
-                       'name', (SELECT name FROM profiles WHERE id = $1),
-                       'role', 'owner'
-                     )) AS members`,
-          [
-            userId,
-            payload.title,
-            payload.startDate,
-            payload.endDate,
-            payload.countryCode,
-            payload.baseCurrency,
-            payload.baseExchangeRate,
-          ],
+        const startTime = Date.now();
+
+        // 1. 사용자 정보를 미리 조회 (서브쿼리 제거)
+        const userResult = await client.query(
+          'SELECT name FROM profiles WHERE id = $1',
+          [userId]
         );
+
+        const ownerName = userResult.rows[0]?.name || '알 수 없는 사용자';
+
+        // 2. 여행과 멤버를 병렬로 생성 (최적화된 쿼리)
+        const [insertResult] = await Promise.all([
+          client.query(
+            `INSERT INTO travels (owner_id, title, start_date, end_date, country_code, base_currency, base_exchange_rate, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
+             RETURNING id::text AS id,
+                       title,
+                       start_date::text,
+                       end_date::text,
+                       country_code,
+                       base_currency,
+                       base_exchange_rate,
+                       NULL::text AS invite_code,
+                       status,
+                       created_at::text`,
+            [
+              userId,
+              payload.title,
+              payload.startDate,
+              payload.endDate,
+              payload.countryCode,
+              payload.baseCurrency,
+              payload.baseExchangeRate,
+            ]
+          ),
+        ]);
 
         const travelRow = insertResult.rows[0];
         const travelId = travelRow.id;
 
+        // 3. 멤버 추가 (병렬 처리 준비)
         await client.query(
           `INSERT INTO travel_members (travel_id, user_id, role)
-           VALUES ($1, $2, 'owner')
-           ON CONFLICT (travel_id, user_id) DO NOTHING`,
-          [travelId, userId],
+           VALUES ($1, $2, 'owner')`,
+          [travelId, userId]
         );
 
-        return this.mapSummary(travelRow);
+        // 4. 최적화된 응답 구성 (서브쿼리 없이)
+        const optimizedResult = {
+          ...travelRow,
+          role: 'owner',
+          owner_name: ownerName,
+          members: [
+            {
+              userId,
+              name: ownerName,
+              role: 'owner'
+            }
+          ]
+        };
+
+        const duration = Date.now() - startTime;
+        this.logger.debug(`Travel created in ${duration}ms for user ${userId}`);
+
+        return this.mapSummary(optimizedResult);
       });
     } catch (error) {
       this.logger.error('Failed to create travel', error as Error);

@@ -28,6 +28,10 @@ export class SocialAuthService {
   // OAuth 토큰 교환 요청 캐싱 (중복 요청 방지)
   private readonly tokenExchangePromises = new Map<string, Promise<string>>();
 
+  // 소셜 사용자 정보 캐시 (5분 TTL)
+  private readonly oauthUserCache = new Map<string, { user: any; expiresAt: number }>();
+  private readonly OAUTH_USER_CACHE_TTL = 5 * 60 * 1000; // 5분
+
   // 네트워크 타임아웃 설정 (빠른 실패)
   private readonly NETWORK_TIMEOUT = 8000; // 8초
 
@@ -46,6 +50,36 @@ export class SocialAuthService {
   private ensureGoogleEnv() {
     if (!env.googleClientId || !env.googleClientSecret) {
       throw new ServiceUnavailableException('Google credentials are not configured');
+    }
+  }
+
+  // OAuth 사용자 캐시 관리 (성능 최적화)
+  private getCachedOAuthUser(accessToken: string): any | null {
+    const cacheKey = accessToken.substring(0, 20); // 토큰 일부를 키로 사용
+    const cached = this.oauthUserCache.get(cacheKey);
+    if (!cached) return null;
+
+    if (Date.now() > cached.expiresAt) {
+      this.oauthUserCache.delete(cacheKey);
+      return null;
+    }
+
+    return cached.user;
+  }
+
+  private setCachedOAuthUser(accessToken: string, user: any): void {
+    const cacheKey = accessToken.substring(0, 20);
+    this.oauthUserCache.set(cacheKey, {
+      user,
+      expiresAt: Date.now() + this.OAUTH_USER_CACHE_TTL,
+    });
+
+    // 캐시 크기 제한
+    if (this.oauthUserCache.size > 100) {
+      const oldestKey = this.oauthUserCache.keys().next().value;
+      if (oldestKey) {
+        this.oauthUserCache.delete(oldestKey);
+      }
     }
   }
 
@@ -119,7 +153,19 @@ export class SocialAuthService {
       throw new UnauthorizedException('Missing Supabase access token');
     }
 
-    // 사용자 정보 조회 및 프로필 생성을 병렬 처리
+    // 캐시된 사용자 정보 확인 (초고속)
+    const cachedUser = this.getCachedOAuthUser(accessToken);
+    if (cachedUser) {
+      this.logger.debug(`OAuth user cache hit for token ${accessToken.substring(0, 10)}...`);
+      // 캐시된 사용자로 바로 세션 생성 (병렬 처리)
+      const authSession = await this.authService.createAuthSession(cachedUser, loginType);
+
+      const duration = Date.now() - startTime;
+      this.logger.debug(`Ultra-fast OAuth login completed in ${duration}ms (cache hit)`);
+      return authSession;
+    }
+
+    // 캐시 미스: 사용자 정보 조회 및 프로필 생성을 병렬 처리
     const [supabaseUser] = await Promise.all([
       this.supabaseService.getUserFromToken(accessToken)
     ]);
@@ -159,6 +205,9 @@ export class SocialAuthService {
 
     const preferDisplayName = loginType !== 'email' && loginType !== 'username';
     const user = fromSupabaseUser(supabaseUser, { preferDisplayName });
+
+    // 사용자 정보를 캐시에 저장 (다음 로그인 최적화)
+    this.setCachedOAuthUser(accessToken, user);
 
     // 토큰 저장 작업도 병렬로 처리
     const saveTokenTasks: Promise<void>[] = [];
