@@ -70,20 +70,20 @@ export const getPool = async (): Promise<Pool> => {
     pool = new Pool(config);
 
     // 커넥션 풀 성능 모니터링 이벤트 리스너 추가
-    pool.on('connect', (client) => {
-      console.debug(`📡 DB Connection opened. Total: ${pool?.totalCount}, Idle: ${pool?.idleCount}, Waiting: ${pool?.waitingCount}`);
+    pool.on('connect', () => {
+      console.debug(`DB connection opened. Total: ${pool?.totalCount}, Idle: ${pool?.idleCount}, Waiting: ${pool?.waitingCount}`);
     });
 
     pool.on('acquire', () => {
-      console.debug(`🔄 DB Connection acquired. Active: ${pool?.totalCount! - pool?.idleCount!}`);
+      console.debug(`DB connection acquired. Active: ${pool?.totalCount! - pool?.idleCount!}`);
     });
 
     pool.on('release', () => {
-      console.debug(`✅ DB Connection released. Idle: ${pool?.idleCount}`);
+      console.debug(`DB connection released. Idle: ${pool?.idleCount}`);
     });
 
     pool.on('error', (err) => {
-      console.error('❌ Unexpected DB pool error:', err);
+      console.error('Unexpected DB pool error:', err);
     });
 
     // 풀 워밍업: 최소 연결 수만큼 미리 연결 생성
@@ -94,9 +94,9 @@ export const getPool = async (): Promise<Pool> => {
         client.release();
       });
       await Promise.all(warmupPromises);
-      console.log(`🔥 DB Pool warmed up with ${minConnections} connections`);
+      console.log(`DB pool warmed up with ${minConnections} connections`);
     } catch (err) {
-      console.warn('⚠️ Pool warmup failed:', err);
+      console.warn('Pool warmup failed:', err);
     }
   }
   return pool;

@@ -151,6 +151,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             this.logger.debug(`OAuth user cache hit for token ${accessToken.substring(0, 10)}...`);
             // 캐시된 사용자로 바로 세션 생성 (병렬 처리)
             const authSession = await this.authService.createAuthSession(cachedUser, loginType);
+            this.authService.warmAuthCaches(cachedUser);
             const duration = Date.now() - startTime;
             this.logger.debug(`Ultra-fast OAuth login completed in ${duration}ms (cache hit)`);
             return authSession;
@@ -202,6 +203,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             this.authService.createAuthSession(user, loginType),
             ...saveTokenTasks
         ]);
+        this.authService.warmAuthCaches(user);
         const duration = Date.now() - startTime;
         this.logger.debug(`OAuth login completed in ${duration}ms for ${user.email}`);
         return authSession;

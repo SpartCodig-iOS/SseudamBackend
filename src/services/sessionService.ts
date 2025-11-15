@@ -140,6 +140,12 @@ export class SessionService {
     }
   }
 
+  private scheduleCleanup(force = false): void {
+    this.cleanupExpiredSessions(force).catch((err) =>
+      this.logger.warn('Background session cleanup failed', err),
+    );
+  }
+
   async createSession(userId: string, loginType: LoginType): Promise<SessionRecord> {
     const startTime = Date.now();
 
@@ -147,25 +153,26 @@ export class SessionService {
     this.clearUserSessions(userId);
 
     // 만료 세션 정리는 백그라운드로 (첫 로그인 속도 향상)
-    this.cleanupExpiredSessions().catch(err =>
-      this.logger.warn('Background session cleanup failed', err)
-    );
+    this.scheduleCleanup();
 
     const pool = await this.getClient();
+    const ttlHours = this.defaultTTLHours;
 
-    // 초고속 세션 생성: 기존 세션 삭제 + 새 세션 생성 (CTE 제거)
+    // 초고속 세션 생성: 기존 세션 삭제 + 새 세션 생성 (단일 CTE)
     try {
-      // 1. 기존 세션 빠른 삭제 (인덱스 활용)
-      await pool.query('DELETE FROM user_sessions WHERE user_id = $1', [userId]);
-
-      // 2. 새 세션 직접 생성 (단순 INSERT, 더 빠름)
       const result = await pool.query(
-        `INSERT INTO user_sessions (user_id, login_type, expires_at, last_seen_at)
-         VALUES ($1, $2, NOW() + INTERVAL '${this.defaultTTLHours} hours', NOW())
-         RETURNING session_id::text, user_id::text, login_type,
-                   created_at::text, last_seen_at::text, expires_at::text,
-                   revoked_at::text`,
-        [userId, loginType]
+        `WITH deleted AS (
+           DELETE FROM user_sessions WHERE user_id = $1
+         ),
+         inserted AS (
+           INSERT INTO user_sessions (user_id, login_type, expires_at, last_seen_at)
+           VALUES ($1, $2, NOW() + make_interval(hours => $3), NOW())
+           RETURNING session_id::text, user_id::text, login_type,
+                     created_at::text, last_seen_at::text, expires_at::text,
+                     revoked_at::text
+         )
+         SELECT * FROM inserted`,
+        [userId, loginType, ttlHours]
       );
 
       const session = this.mapRowToSession(result.rows[0]);
@@ -184,7 +191,7 @@ export class SessionService {
   }
 
   async getSession(sessionId: string): Promise<SessionRecord | null> {
-    await this.cleanupExpiredSessions();
+    this.scheduleCleanup();
 
     // 캐시에서 먼저 확인
     const cachedSession = this.getCachedSession(sessionId);
@@ -219,7 +226,7 @@ export class SessionService {
   }
 
   async touchSession(sessionId: string): Promise<void> {
-    await this.cleanupExpiredSessions();
+    this.scheduleCleanup();
 
     const pool = await this.getClient();
     await pool.query(

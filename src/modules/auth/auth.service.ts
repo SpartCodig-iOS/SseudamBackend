@@ -29,6 +29,7 @@ export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private readonly identifierCache = new Map<string, { email: string; expiresAt: number }>();
   private readonly IDENTIFIER_CACHE_TTL = 5 * 60 * 1000;
+  private readonly IDENTIFIER_CACHE_REDIS_PREFIX = 'identifier';
 
   // 성공한 로그인에 대한 bcrypt 캐시 (5분 TTL)
   private readonly bcryptCache = new Map<string, { hash: string; expiresAt: number }>();
@@ -68,6 +69,40 @@ export class AuthService {
         this.identifierCache.delete(oldestKey);
       }
     }
+  }
+
+  private async getIdentifierFromSharedCache(identifier: string): Promise<string | null> {
+    const normalizedIdentifier = identifier.toLowerCase();
+    const cached = this.getCachedEmail(normalizedIdentifier);
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      const sharedCache = await this.cacheService.get<string>(normalizedIdentifier, {
+        prefix: this.IDENTIFIER_CACHE_REDIS_PREFIX,
+      });
+      if (sharedCache) {
+        this.setCachedEmail(normalizedIdentifier, sharedCache);
+        return sharedCache;
+      }
+    } catch (error) {
+      this.logger.debug('Identifier cache lookup failed, continuing without shared cache', error as Error);
+    }
+
+    return null;
+  }
+
+  private rememberIdentifier(identifier: string, email: string): void {
+    const normalizedIdentifier = identifier.toLowerCase();
+    const normalizedEmail = email.toLowerCase();
+    this.setCachedEmail(normalizedIdentifier, normalizedEmail);
+    void this.cacheService.set(normalizedIdentifier, normalizedEmail, {
+      prefix: this.IDENTIFIER_CACHE_REDIS_PREFIX,
+      ttl: Math.floor(this.IDENTIFIER_CACHE_TTL / 1000),
+    }).catch(() => {
+      // Shared cache storing failure isn't critical; rely on in-memory cache.
+    });
   }
 
   // bcrypt 캐시 관리 (성능 최적화)
@@ -128,43 +163,46 @@ export class AuthService {
     }
   }
 
-  private async lookupEmailByIdentifier(identifier: string): Promise<string | null> {
-    const pool = await getPool();
-    const result = await pool.query(
-      `SELECT email
-       FROM profiles
-       WHERE username = $1
-          OR email ILIKE $2
-       ORDER BY CASE WHEN username = $1 THEN 0 ELSE 1 END
-       LIMIT 1`,
-      [identifier, `${identifier}@%`],
-    );
-    return result.rows[0]?.email?.toLowerCase() ?? null;
+  public warmAuthCaches(user: UserRecord): void {
+    const normalizedEmail = user.email.toLowerCase();
+    this.rememberIdentifier(normalizedEmail, normalizedEmail);
+    if (user.username) {
+      this.rememberIdentifier(user.username.toLowerCase(), normalizedEmail);
+    }
+    const sanitizedUser = { ...user, password_hash: '' };
+    void this.setCachedUser(normalizedEmail, sanitizedUser);
   }
 
   // 고성능 직접 인증: 캐시 우선 + 단일 쿼리로 사용자 정보 조회 및 비밀번호 확인
-  private async authenticateUserDirect(email: string, password: string): Promise<UserRecord | null> {
+  private async authenticateUserDirect(
+    identifier: string,
+    password: string,
+    options: { lookupType?: 'email' | 'username' | 'auto'; emailHint?: string } = {},
+  ): Promise<UserRecord | null> {
     const authStartTime = Date.now();
+    const lookupMode = options.lookupType ?? 'email';
+    const cacheEmail =
+      options.emailHint ??
+      (identifier.includes('@') ? identifier.toLowerCase() : null);
 
     // 사용자 정보 캐시 확인 (Redis 기반 초고속)
-    const cachedUser = await this.getCachedUser(email);
-    if (cachedUser) {
-      // 캐시된 사용자로 비밀번호 검증
-      const cachedBcryptResult = this.getCachedBcryptResult(email, password);
-      if (cachedBcryptResult === true) {
-        this.logger.debug(`Full Redis cache hit for ${email} - ultra fast auth`);
-        return cachedUser;
+    if (cacheEmail) {
+      const cachedUser = await this.getCachedUser(cacheEmail);
+      if (cachedUser) {
+        // 캐시된 사용자로 비밀번호 검증
+        const cachedBcryptResult = this.getCachedBcryptResult(cacheEmail, password);
+        if (cachedBcryptResult === true) {
+          this.logger.debug(`Full Redis cache hit for ${cacheEmail} - ultra fast auth`);
+          return cachedUser;
+        }
       }
     }
 
     const pool = await getPool();
-
-    // 최적화된 단일 쿼리 (서브쿼리 제거, 더 빠름)
-    // password_hash 컬럼이 존재하지 않을 수 있으므로 안전하게 처리
-    let result;
-    try {
-      result = await pool.query(
-        `SELECT
+    const shouldUseEmailLookup =
+      lookupMode === 'email' || (lookupMode === 'auto' && identifier.includes('@'));
+    const queryParam = shouldUseEmailLookup ? identifier.toLowerCase() : identifier;
+    const selectWithPassword = `SELECT
            id::text,
            email,
            name,
@@ -174,53 +212,56 @@ export class AuthService {
            updated_at,
            password_hash
          FROM profiles
-         WHERE email = $1
-         LIMIT 1`,
-        [email.toLowerCase()]
-      );
+         WHERE ${shouldUseEmailLookup ? 'email = $1' : 'username = $1'}
+         LIMIT 1`;
+    const selectFallback = `SELECT
+           id::text,
+           email,
+           name,
+           username,
+           avatar_url,
+           created_at,
+           updated_at
+         FROM profiles
+         WHERE ${shouldUseEmailLookup ? 'email = $1' : 'username = $1'}
+         LIMIT 1`;
+
+    let result;
+    try {
+      result = await pool.query(selectWithPassword, [queryParam]);
     } catch (error) {
-      // password_hash 컬럼이 없는 경우 없이 조회
-      if (error instanceof Error && error.message.includes('password_hash')) {
-        result = await pool.query(
-          `SELECT
-             id::text,
-             email,
-             name,
-             username,
-             avatar_url,
-             created_at,
-             updated_at
-           FROM profiles
-           WHERE email = $1
-           LIMIT 1`,
-          [email.toLowerCase()]
-        );
-      } else {
+      if (!(error instanceof Error) || !error.message.includes('password_hash')) {
         throw error;
       }
+      result = await pool.query(selectFallback, [queryParam]);
     }
 
     const row = result.rows[0];
     if (!row) return null;
+    const resolvedEmail = row.email?.toLowerCase();
+    if (!resolvedEmail) {
+      this.logger.warn('Profile row missing email, aborting authentication');
+      return null;
+    }
 
     // 비밀번호 확인을 병렬로 처리할 수 있도록 준비
     let isValidPassword = false;
 
     if (row.password_hash) {
       // bcrypt 캐시 확인 (초고속)
-      const cachedResult = this.getCachedBcryptResult(email, password);
+      const cachedResult = this.getCachedBcryptResult(resolvedEmail, password);
       if (cachedResult !== null) {
         isValidPassword = cachedResult;
-        this.logger.debug(`bcrypt cache hit for ${email}`);
+        this.logger.debug(`bcrypt cache hit for ${resolvedEmail}`);
       } else {
         // bcrypt 검증 (캐시 미스 시)
         isValidPassword = await bcrypt.compare(password, row.password_hash);
-        this.setCachedBcryptResult(email, password, isValidPassword);
+        this.setCachedBcryptResult(resolvedEmail, password, isValidPassword);
       }
     } else {
       // Supabase 인증으로 폴백 (password_hash가 없는 경우)
       try {
-        await this.supabaseService.signIn(email, password);
+        await this.supabaseService.signIn(resolvedEmail, password);
         isValidPassword = true;
       } catch {
         isValidPassword = false;
@@ -230,11 +271,11 @@ export class AuthService {
     if (!isValidPassword) return null;
 
     const authDuration = Date.now() - authStartTime;
-    this.logger.debug(`Fast auth completed in ${authDuration}ms for ${email}`);
+    this.logger.debug(`Fast auth completed in ${authDuration}ms for ${resolvedEmail}`);
 
     const userRecord: UserRecord = {
       id: row.id,
-      email: row.email,
+      email: resolvedEmail,
       name: row.name,
       username: row.username,
       avatar_url: row.avatar_url,
@@ -244,7 +285,7 @@ export class AuthService {
     };
 
     // 성공한 인증 후 사용자 정보를 Redis 캐시에 저장
-    await this.setCachedUser(email, userRecord);
+    void this.setCachedUser(resolvedEmail, userRecord);
 
     return userRecord;
   }
@@ -303,8 +344,7 @@ export class AuthService {
       this.createAuthSession(newUser, 'signup'),
       // 캐시 업데이트는 동기적으로 빠르므로 Promise로 감쌀 필요 없음
       Promise.resolve().then(() => {
-        this.setCachedEmail(lowerEmail, lowerEmail);
-        this.setCachedEmail(username, lowerEmail);
+        this.warmAuthCaches(newUser);
       })
     ]);
 
@@ -321,28 +361,24 @@ export class AuthService {
       throw new UnauthorizedException('identifier is required');
     }
 
-    let emailToUse = identifier;
-    let loginType: LoginType = 'email';
+    let loginType: LoginType = identifier.includes('@') ? 'email' : 'username';
+    let lookupValue = identifier;
+    let emailHint: string | undefined = loginType === 'email' ? identifier : undefined;
 
-    // 이메일이 아닌 경우 (username) 캐시에서 먼저 확인
-    if (!identifier.includes('@')) {
-      const cachedEmail = this.getCachedEmail(identifier);
+    // username 로그인 시 캐시 기반으로 이메일 힌트 확보 (없으면 username으로 직접 조회)
+    if (loginType === 'username') {
+      const cachedEmail = await this.getIdentifierFromSharedCache(identifier);
       if (cachedEmail) {
-        emailToUse = cachedEmail;
-        loginType = 'username';
-      } else {
-        const lookedUpEmail = await this.lookupEmailByIdentifier(identifier);
-        if (!lookedUpEmail) {
-          throw new UnauthorizedException('Invalid credentials');
-        }
-        emailToUse = lookedUpEmail;
-        loginType = 'username';
-        this.setCachedEmail(identifier, emailToUse);
+        lookupValue = cachedEmail;
+        emailHint = cachedEmail;
       }
     }
 
     // 고성능 직접 인증: Supabase 대신 직접 DB 쿼리 (더 빠름)
-    const user = await this.authenticateUserDirect(emailToUse, input.password);
+    const user = await this.authenticateUserDirect(lookupValue, input.password, {
+      lookupType: loginType === 'username' && !emailHint ? 'username' : 'email',
+      emailHint,
+    });
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
     }
@@ -352,10 +388,7 @@ export class AuthService {
       this.createAuthSession(user, loginType),
       // 캐시 업데이트를 백그라운드에서 처리
       Promise.resolve().then(() => {
-        this.setCachedEmail(user.email.toLowerCase(), user.email.toLowerCase());
-        if (user.username) {
-          this.setCachedEmail(user.username.toLowerCase(), user.email.toLowerCase());
-        }
+        this.warmAuthCaches(user);
       })
     ]);
 
@@ -408,30 +441,38 @@ export class AuthService {
       this.logger.warn('[deleteAccount] Failed to fetch profile for login type', error as Error);
     }
 
-    // 1) 지출/참여 기록 제거
-    await pool.query('DELETE FROM travel_expense_participants WHERE member_id = $1', [user.id]);
-    await pool.query('DELETE FROM travel_expenses WHERE payer_id = $1', [user.id]);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      // 1) 지출/참여 기록 제거
+      await client.query(
+        `DELETE FROM travel_expense_participants
+         WHERE member_id = $1
+            OR expense_id IN (
+              SELECT id FROM travel_expenses WHERE payer_id = $1
+            )`,
+        [user.id],
+      );
+      await client.query('DELETE FROM travel_expenses WHERE payer_id = $1', [user.id]);
 
-    // 2) 여행 멤버/초대/세션 제거
-    await pool.query('DELETE FROM travel_members WHERE user_id = $1', [user.id]);
-    await pool.query('DELETE FROM travel_invites WHERE created_by = $1', [user.id]);
-    await pool.query('DELETE FROM user_sessions WHERE user_id = $1', [user.id]);
+      // 2) 여행 관련 엔터티 제거
+      await client.query('DELETE FROM travel_members WHERE user_id = $1', [user.id]);
+      await client.query('DELETE FROM travel_invites WHERE created_by = $1', [user.id]);
+      await client.query('DELETE FROM travel_settlements WHERE from_member = $1 OR to_member = $1', [user.id]);
+      await client.query('DELETE FROM user_sessions WHERE user_id = $1', [user.id]);
 
-    // 3) 소셜 연결 해제
-    if (profileLoginType === 'apple') {
-      await this.socialAuthService
-        .revokeAppleConnection(user.id)
-        .catch((error) => this.logger.warn('[deleteAccount] Apple revoke failed', error));
-    } else if (profileLoginType === 'google') {
-      await this.socialAuthService
-        .revokeGoogleConnection(user.id)
-        .catch((error) => this.logger.warn('[deleteAccount] Google revoke failed', error));
+      // 3) 프로필 삭제
+      await client.query('DELETE FROM profiles WHERE id = $1', [user.id]);
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
 
-    // 4) 프로필 삭제
-    await pool.query('DELETE FROM profiles WHERE id = $1', [user.id]);
-
-    // 5) Supabase 사용자 삭제
+    // 4) Supabase 사용자 삭제
     let supabaseDeleted = false;
     try {
       await this.supabaseService.deleteUser(user.id);
@@ -451,9 +492,22 @@ export class AuthService {
       this.identifierCache.delete(user.username.toLowerCase());
     }
 
-    await this.socialAuthService
+    const socialRevokePromise =
+      profileLoginType === 'apple'
+        ? this.socialAuthService
+            .revokeAppleConnection(user.id)
+            .catch((error) => this.logger.warn('[deleteAccount] Apple revoke failed', error))
+        : profileLoginType === 'google'
+          ? this.socialAuthService
+              .revokeGoogleConnection(user.id)
+              .catch((error) => this.logger.warn('[deleteAccount] Google revoke failed', error))
+          : Promise.resolve();
+
+    const oauthCacheCleanup = this.socialAuthService
       .invalidateOAuthCacheByUser(user.id)
       .catch((error) => this.logger.warn('[deleteAccount] OAuth cache cleanup failed', error as Error));
+
+    await Promise.all([socialRevokePromise, oauthCacheCleanup]);
 
     const duration = Date.now() - startTime;
     this.logger.debug(`Fast account deletion completed in ${duration}ms for ${user.email}`);

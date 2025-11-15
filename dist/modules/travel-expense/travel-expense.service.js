@@ -22,23 +22,35 @@ let TravelExpenseService = class TravelExpenseService {
         const result = await pool.query(`SELECT
          t.id::text,
          t.base_currency,
-         array_agg(tm.user_id) AS member_ids
+         json_agg(
+           json_build_object(
+             'id', tm.user_id::text,
+             'name', p.name
+           )
+         ) AS member_data
        FROM travels t
        INNER JOIN travel_members tm ON tm.travel_id = t.id
+       LEFT JOIN profiles p ON p.id = tm.user_id
        WHERE t.id = $1
        GROUP BY t.id`, [travelId]);
         const row = result.rows[0];
         if (!row) {
             throw new common_1.NotFoundException('여행을 찾을 수 없습니다.');
         }
-        const memberIds = row.member_ids ?? [];
+        const rawMembers = row.member_data ?? [];
+        const memberIds = rawMembers.map((member) => member.id);
         if (!memberIds.includes(userId)) {
             throw new common_1.BadRequestException('해당 여행에 접근 권한이 없습니다.');
         }
+        const memberNameMap = new Map();
+        rawMembers.forEach((member) => {
+            memberNameMap.set(member.id, member.name ?? null);
+        });
         return {
             id: row.id,
             baseCurrency: row.base_currency,
             memberIds,
+            memberNameMap,
         };
     }
     async convertAmount(amount, currency, targetCurrency) {
@@ -62,6 +74,9 @@ let TravelExpenseService = class TravelExpenseService {
         if (!memberIds.includes(payerId)) {
             throw new common_1.BadRequestException('결제자는 여행 멤버여야 합니다.');
         }
+    }
+    getMemberName(context, memberId) {
+        return context.memberNameMap.get(memberId) ?? null;
     }
     async createExpense(travelId, userId, payload) {
         const context = await this.getTravelContext(travelId, userId);
@@ -104,18 +119,15 @@ let TravelExpenseService = class TravelExpenseService {
             const expense = expenseResult.rows[0];
             // 배치 INSERT로 성능 최적화
             if (participantIds.length > 0) {
-                const values = participantIds.map((memberId, index) => `($1, $${index + 2}, $${participantIds.length + 2})`).join(', ');
                 await client.query(`INSERT INTO travel_expense_participants (expense_id, member_id, split_amount)
-           VALUES ${values}`, [expense.id, ...participantIds, splitAmount]);
+           SELECT $1, unnest($2::uuid[]), $3`, [expense.id, participantIds, splitAmount]);
             }
-            const participantsResult = await client.query(`SELECT
-           tep.member_id::text,
-           p.name
-         FROM travel_expense_participants tep
-         LEFT JOIN profiles p ON p.id = tep.member_id
-         WHERE tep.expense_id = $1`, [expense.id]);
-            const payerResult = await client.query(`SELECT name FROM profiles WHERE id = $1`, [payerId]);
             await client.query('COMMIT');
+            const payerName = this.getMemberName(context, payerId);
+            const participants = participantIds.map((memberId) => ({
+                memberId,
+                name: this.getMemberName(context, memberId),
+            }));
             return {
                 id: expense.id,
                 title: expense.title,
@@ -126,11 +138,8 @@ let TravelExpenseService = class TravelExpenseService {
                 expenseDate: expense.expense_date,
                 category: expense.category,
                 payerId: expense.payer_id,
-                payerName: payerResult.rows[0]?.name ?? null,
-                participants: participantsResult.rows.map((row) => ({
-                    memberId: row.member_id,
-                    name: row.name ?? null,
-                })),
+                payerName,
+                participants,
             };
         }
         catch (error) {

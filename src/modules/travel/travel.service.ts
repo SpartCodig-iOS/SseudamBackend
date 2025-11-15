@@ -7,9 +7,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
-import { PoolClient } from 'pg';
+import { Pool, PoolClient } from 'pg';
 import { getPool } from '../../db/pool';
 import { CreateTravelInput } from '../../validators/travelSchemas';
+import { UserRecord } from '../../types/user';
 
 export interface TravelSummary {
   id: string;
@@ -42,6 +43,74 @@ export interface TravelMember {
 @Injectable()
 export class TravelService {
   private readonly logger = new Logger(TravelService.name);
+
+  private async ensureOwner(travelId: string, userId: string, runner?: Pool | PoolClient): Promise<void> {
+    const executor = runner ?? (await getPool());
+    const result = await executor.query(
+      `SELECT owner_id FROM travels WHERE id = $1`,
+      [travelId],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new NotFoundException('여행을 찾을 수 없습니다.');
+    }
+    if (row.owner_id !== userId) {
+      throw new ForbiddenException('여행 호스트만 수행할 수 있는 작업입니다.');
+    }
+  }
+
+  private async isMember(travelId: string, userId: string, runner?: Pool | PoolClient): Promise<boolean> {
+    const executor = runner ?? (await getPool());
+    const result = await executor.query(
+      `SELECT 1 FROM travel_members WHERE travel_id = $1 AND user_id = $2 LIMIT 1`,
+      [travelId, userId],
+    );
+    return Boolean(result.rows[0]);
+  }
+
+  private async fetchSummaryForMember(travelId: string, userId: string): Promise<TravelSummary> {
+    const pool = await getPool();
+    const result = await pool.query(
+      `SELECT
+         t.id::text AS id,
+         t.title,
+         t.start_date::text,
+         t.end_date::text,
+         t.country_code,
+         t.base_currency,
+         t.base_exchange_rate,
+         t.invite_code,
+         t.status,
+         t.created_at::text,
+         tm.role,
+         owner_profile.name AS owner_name,
+         COALESCE(members.members, '[]'::json) AS members
+       FROM travels t
+       INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $2
+       LEFT JOIN profiles owner_profile ON owner_profile.id = t.owner_id
+       LEFT JOIN LATERAL (
+         SELECT json_agg(
+                  json_build_object(
+                    'userId', tm2.user_id,
+                    'name', p.name,
+                    'role', tm2.role
+                  )
+                  ORDER BY tm2.joined_at
+                ) AS members
+         FROM travel_members tm2
+         LEFT JOIN profiles p ON p.id = tm2.user_id
+         WHERE tm2.travel_id = t.id
+       ) AS members ON TRUE
+       WHERE t.id = $1
+       LIMIT 1`,
+      [travelId, userId],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new NotFoundException('여행을 찾을 수 없거나 접근 권한이 없습니다.');
+    }
+    return this.mapSummary(row);
+  }
 
   private mapSummary(row: any): TravelSummary {
     return {
@@ -78,64 +147,66 @@ export class TravelService {
     }
   }
 
-  async createTravel(userId: string, payload: CreateTravelInput): Promise<TravelDetail> {
+  async createTravel(currentUser: UserRecord, payload: CreateTravelInput): Promise<TravelDetail> {
     try {
       return await this.ensureTransaction(async (client) => {
         const startTime = Date.now();
+        const ownerName = currentUser.name ?? currentUser.email ?? '알 수 없는 사용자';
 
-        // 1. 사용자 정보를 미리 조회 (서브쿼리 제거)
-        const userResult = await client.query(
-          'SELECT name FROM profiles WHERE id = $1',
-          [userId]
-        );
-
-        const ownerName = userResult.rows[0]?.name || '알 수 없는 사용자';
-
-        // 2. 여행과 멤버를 병렬로 생성 (최적화된 쿼리)
-        const [insertResult] = await Promise.all([
-          client.query(
-            `INSERT INTO travels (owner_id, title, start_date, end_date, country_code, base_currency, base_exchange_rate, status)
+        const insertResult = await client.query(
+          `WITH new_travel AS (
+             INSERT INTO travels (owner_id, title, start_date, end_date, country_code, base_currency, base_exchange_rate, status)
              VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
-             RETURNING id::text AS id,
+             RETURNING id,
                        title,
-                       start_date::text,
-                       end_date::text,
+                       start_date,
+                       end_date,
                        country_code,
                        base_currency,
                        base_exchange_rate,
                        NULL::text AS invite_code,
                        status,
-                       created_at::text`,
-            [
-              userId,
-              payload.title,
-              payload.startDate,
-              payload.endDate,
-              payload.countryCode,
-              payload.baseCurrency,
-              payload.baseExchangeRate,
-            ]
-          ),
-        ]);
-
-        const travelRow = insertResult.rows[0];
-        const travelId = travelRow.id;
-
-        // 3. 멤버 추가 (병렬 처리 준비)
-        await client.query(
-          `INSERT INTO travel_members (travel_id, user_id, role)
-           VALUES ($1, $2, 'owner')`,
-          [travelId, userId]
+                       created_at
+           ),
+           owner_member AS (
+             INSERT INTO travel_members (travel_id, user_id, role)
+             SELECT new_travel.id, $1, 'owner'
+             FROM new_travel
+             ON CONFLICT (travel_id, user_id) DO UPDATE
+             SET role = EXCLUDED.role
+             RETURNING travel_id
+           )
+           SELECT new_travel.id::text AS id,
+                  new_travel.title,
+                  new_travel.start_date::text,
+                  new_travel.end_date::text,
+                  new_travel.country_code,
+                  new_travel.base_currency,
+                  new_travel.base_exchange_rate,
+                  new_travel.invite_code,
+                  new_travel.status,
+                  new_travel.created_at::text
+           FROM new_travel`,
+          [
+            currentUser.id,
+            payload.title,
+            payload.startDate,
+            payload.endDate,
+            payload.countryCode,
+            payload.baseCurrency,
+            payload.baseExchangeRate,
+          ]
         );
 
-        // 4. 최적화된 응답 구성 (서브쿼리 없이)
+        const travelRow = insertResult.rows[0];
+
         const optimizedResult = {
           ...travelRow,
           role: 'owner',
           owner_name: ownerName,
           members: [
             {
-              userId,
+              userId: currentUser.id,
               name: ownerName,
               role: 'owner'
             }
@@ -143,7 +214,7 @@ export class TravelService {
         };
 
         const duration = Date.now() - startTime;
-        this.logger.debug(`Travel created in ${duration}ms for user ${userId}`);
+        this.logger.debug(`Travel created in ${duration}ms for user ${currentUser.id}`);
 
         return this.mapSummary(optimizedResult);
       });
@@ -219,36 +290,13 @@ export class TravelService {
     };
   }
 
-  private async getMemberRole(travelId: string, userId: string): Promise<string | null> {
-    const pool = await getPool();
-    const result = await pool.query(
-      `SELECT role FROM travel_members WHERE travel_id = $1 AND user_id = $2 LIMIT 1`,
-      [travelId, userId],
-    );
-    return result.rows[0]?.role ?? null;
-  }
-
   private generateInviteCode(): string {
     return randomBytes(5).toString('hex');
   }
 
   async createInvite(travelId: string, userId: string): Promise<TravelInvitePayload> {
-    const role = await this.getMemberRole(travelId, userId);
-    if (!role) {
-      throw new ForbiddenException('해당 여행에 대한 권한이 없습니다.');
-    }
-    if (role !== 'owner') {
-      throw new ForbiddenException('초대 코드는 호스트만 생성할 수 있습니다.');
-    }
-
     const pool = await getPool();
-    const travelResult = await pool.query(
-      `SELECT id FROM travels WHERE id = $1 LIMIT 1`,
-      [travelId],
-    );
-    if (!travelResult.rows[0]) {
-      throw new NotFoundException('여행을 찾을 수 없습니다.');
-    }
+    await this.ensureOwner(travelId, userId, pool);
 
     const inviteCode = this.generateInviteCode();
     await this.ensureTransaction(async (client) => {
@@ -271,19 +319,18 @@ export class TravelService {
 
   async deleteTravel(travelId: string, userId: string): Promise<void> {
     const pool = await getPool();
-    const travelResult = await pool.query(
-      `SELECT owner_id FROM travels WHERE id = $1 LIMIT 1`,
-      [travelId],
-    );
-    const travel = travelResult.rows[0];
-    if (!travel) {
-      throw new NotFoundException('여행을 찾을 수 없습니다.');
-    }
-    if (travel.owner_id !== userId) {
-      throw new ForbiddenException('여행 삭제 권한이 없습니다.');
-    }
+    await this.ensureOwner(travelId, userId, pool);
 
     await this.ensureTransaction(async (client) => {
+      await client.query(
+        `DELETE FROM travel_expense_participants
+         WHERE expense_id IN (
+           SELECT id FROM travel_expenses WHERE travel_id = $1
+         )`,
+        [travelId],
+      );
+      await client.query(`DELETE FROM travel_expenses WHERE travel_id = $1`, [travelId]);
+      await client.query(`DELETE FROM travel_settlements WHERE travel_id = $1`, [travelId]);
       await client.query(`DELETE FROM travel_invites WHERE travel_id = $1`, [travelId]);
       await client.query(`DELETE FROM travel_members WHERE travel_id = $1`, [travelId]);
       await client.query(`DELETE FROM travels WHERE id = $1`, [travelId]);
@@ -298,30 +345,9 @@ export class TravelService {
               ti.used_count,
               ti.max_uses,
               ti.expires_at,
-              t.title,
-              t.start_date::text,
-              t.end_date::text,
-              t.country_code,
-              t.base_currency,
-              t.base_exchange_rate,
-              t.invite_code,
-              t.status AS travel_status,
-              t.created_at::text,
-              owner_profile.name AS owner_name,
-              COALESCE(members.members, '[]'::json) AS members
+              t.status AS travel_status
        FROM travel_invites ti
        INNER JOIN travels t ON t.id = ti.travel_id
-       INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
-       LEFT JOIN LATERAL (
-         SELECT json_agg(json_build_object(
-           'userId', tm.user_id,
-           'name', p.name,
-           'role', tm.role
-         )) AS members
-         FROM travel_members tm
-         LEFT JOIN profiles p ON p.id = tm.user_id
-         WHERE tm.travel_id = t.id
-       ) AS members ON TRUE
        WHERE ti.invite_code = $1
        ORDER BY ti.created_at DESC
        LIMIT 1`,
@@ -342,29 +368,16 @@ export class TravelService {
       throw new BadRequestException('모집 인원을 초과한 초대 코드입니다.');
     }
 
-    const existingRole = await this.getMemberRole(inviteRow.travel_id, userId);
-    if (existingRole) {
+    if (await this.isMember(inviteRow.travel_id, userId, pool)) {
       throw new BadRequestException('이미 참여 중인 여행입니다.');
     }
 
-    const members = await this.ensureTransaction(async (client) => {
+    await this.ensureTransaction(async (client) => {
       await client.query(
         `INSERT INTO travel_members (travel_id, user_id, role)
          VALUES ($1, $2, 'member')
          ON CONFLICT (travel_id, user_id) DO NOTHING`,
         [inviteRow.travel_id, userId],
-      );
-
-      const membersResult = await client.query(
-        `SELECT json_agg(json_build_object(
-            'userId', tm.user_id,
-            'name', p.name,
-            'role', tm.role
-          )) AS members
-         FROM travel_members tm
-         LEFT JOIN profiles p ON p.id = tm.user_id
-         WHERE tm.travel_id = $1`,
-        [inviteRow.travel_id],
       );
 
       await client.query(
@@ -373,25 +386,9 @@ export class TravelService {
          WHERE invite_code = $1`,
         [inviteCode],
       );
-
-      return membersResult.rows[0]?.members ?? [];
     });
 
-    return this.mapSummary({
-      id: inviteRow.travel_id,
-      title: inviteRow.title,
-      start_date: inviteRow.start_date,
-      end_date: inviteRow.end_date,
-      country_code: inviteRow.country_code,
-      base_currency: inviteRow.base_currency,
-      base_exchange_rate: inviteRow.base_exchange_rate,
-      invite_code: inviteRow.invite_code,
-      status: inviteRow.travel_status,
-      role: 'member',
-      created_at: inviteRow.created_at,
-      owner_name: inviteRow.owner_name,
-      members,
-    });
+    return this.fetchSummaryForMember(inviteRow.travel_id, userId);
   }
 
   async updateTravel(
@@ -399,22 +396,17 @@ export class TravelService {
     userId: string,
     payload: CreateTravelInput,
   ): Promise<TravelSummary> {
-    const ownerRole = await this.getMemberRole(travelId, userId);
-    if (ownerRole !== 'owner') {
-      throw new ForbiddenException('여행 수정 권한이 없습니다.');
-    }
-
     const pool = await getPool();
     const result = await pool.query(
       `UPDATE travels
-       SET title = $2,
-           start_date = $3,
-           end_date = $4,
-           country_code = $5,
-           base_currency = $6,
-           base_exchange_rate = $7,
+       SET title = $3,
+           start_date = $4,
+           end_date = $5,
+           country_code = $6,
+           base_currency = $7,
+           base_exchange_rate = $8,
            updated_at = NOW()
-       WHERE id = $1
+       WHERE id = $1 AND owner_id = $2
        RETURNING
          id::text AS id,
          title,
@@ -428,6 +420,7 @@ export class TravelService {
          created_at::text`,
       [
         travelId,
+        userId,
         payload.title,
         payload.startDate,
         payload.endDate,
@@ -438,29 +431,23 @@ export class TravelService {
     );
     const travelRow = result.rows[0];
     if (!travelRow) {
-      throw new NotFoundException('여행을 찾을 수 없습니다.');
+      const exists = await pool.query(`SELECT 1 FROM travels WHERE id = $1 LIMIT 1`, [travelId]);
+      if (!exists.rows[0]) {
+        throw new NotFoundException('여행을 찾을 수 없습니다.');
+      }
+      throw new ForbiddenException('여행 수정 권한이 없습니다.');
     }
 
-    const ownerProfile = await pool.query(`SELECT name FROM profiles WHERE id = $1`, [userId]);
-
-    return this.mapSummary({
-      ...travelRow,
-      role: 'owner',
-      owner_name: ownerProfile.rows[0]?.name ?? null,
-      members: undefined,
-    });
+    return this.fetchSummaryForMember(travelId, userId);
   }
 
   async removeMember(travelId: string, ownerId: string, memberId: string): Promise<void> {
-    const ownerRole = await this.getMemberRole(travelId, ownerId);
-    if (ownerRole !== 'owner') {
-      throw new ForbiddenException('호스트만 멤버를 삭제할 수 있습니다.');
-    }
+    const pool = await getPool();
+    await this.ensureOwner(travelId, ownerId, pool);
     if (ownerId === memberId) {
       throw new BadRequestException('호스트는 스스로를 삭제할 수 없습니다.');
     }
 
-    const pool = await getPool();
     await pool.query(
       `DELETE FROM travel_members WHERE travel_id = $1 AND user_id = $2`,
       [travelId, memberId],

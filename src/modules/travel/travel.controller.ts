@@ -86,7 +86,11 @@ export class TravelController {
       throw new UnauthorizedException('Unauthorized');
     }
     const payload = createTravelSchema.parse(body);
-    const travel = await this.travelService.createTravel(req.currentUser.id, payload);
+    const currentUser = req.currentUser;
+    if (!currentUser) {
+      throw new Error('Authenticated user not found in request');
+    }
+    const travel = await this.travelService.createTravel(currentUser, payload);
     return success(travel, 'Travel created');
   }
 

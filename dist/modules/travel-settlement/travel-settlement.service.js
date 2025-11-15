@@ -28,16 +28,16 @@ let TravelSettlementService = class TravelSettlementService {
             client.release();
         }
     }
-    async ensureMember(travelId, userId) {
-        const pool = await (0, pool_1.getPool)();
-        const result = await pool.query(`SELECT 1 FROM travel_members WHERE travel_id = $1 AND user_id = $2 LIMIT 1`, [travelId, userId]);
+    async ensureMember(travelId, userId, pool) {
+        const targetPool = pool ?? (await (0, pool_1.getPool)());
+        const result = await targetPool.query(`SELECT 1 FROM travel_members WHERE travel_id = $1 AND user_id = $2 LIMIT 1`, [travelId, userId]);
         if (!result.rows[0]) {
             throw new common_1.BadRequestException('해당 여행에 대한 접근 권한이 없습니다.');
         }
     }
-    async fetchBalances(travelId) {
-        const pool = await (0, pool_1.getPool)();
-        const result = await pool.query(`WITH paid AS (
+    async fetchBalances(travelId, pool) {
+        const targetPool = pool ?? (await (0, pool_1.getPool)());
+        const result = await targetPool.query(`WITH paid AS (
          SELECT payer_id AS member_id, SUM(converted_amount) AS total_paid
          FROM travel_expenses
          WHERE travel_id = $1
@@ -91,24 +91,27 @@ let TravelSettlementService = class TravelSettlementService {
         return settlements;
     }
     async getSettlementSummary(travelId, userId) {
-        await this.ensureMember(travelId, userId);
-        const balances = await this.fetchBalances(travelId);
-        const nameMap = new Map(balances.map((b) => [b.memberId, b.name ?? '알 수 없음']));
         const pool = await (0, pool_1.getPool)();
-        const storedSettlements = await pool.query(`SELECT
-         ts.id::text,
-         ts.from_member::text,
-         ts.to_member::text,
-         ts.amount,
-         ts.status,
-         ts.updated_at::text,
-         from_profile.name AS from_name,
-         to_profile.name AS to_name
-       FROM travel_settlements ts
-       LEFT JOIN profiles from_profile ON from_profile.id = ts.from_member
-       LEFT JOIN profiles to_profile ON to_profile.id = ts.to_member
-       WHERE ts.travel_id = $1
-       ORDER BY ts.created_at ASC`, [travelId]);
+        await this.ensureMember(travelId, userId, pool);
+        const [balances, storedSettlements] = await Promise.all([
+            this.fetchBalances(travelId, pool),
+            pool.query(`SELECT
+           ts.id::text,
+           ts.from_member::text,
+           ts.to_member::text,
+           ts.amount,
+           ts.status,
+           ts.updated_at::text,
+           from_profile.name AS from_name,
+           to_profile.name AS to_name
+         FROM travel_settlements ts
+         LEFT JOIN profiles from_profile ON from_profile.id = ts.from_member
+         LEFT JOIN profiles to_profile ON to_profile.id = ts.to_member
+         WHERE ts.travel_id = $1
+         ORDER BY ts.created_at ASC`, [travelId]),
+        ]);
+        const nameMap = new Map(balances.map((b) => [b.memberId, b.name ?? '알 수 없음']));
+        const storedRows = storedSettlements.rows;
         const computedSettlements = this.calculateSettlements(balances);
         const savedSettlements = storedSettlements.rows.map((row) => ({
             id: row.id,
@@ -133,13 +136,13 @@ let TravelSettlementService = class TravelSettlementService {
         };
     }
     async saveComputedSettlements(travelId, userId) {
-        await this.ensureMember(travelId, userId);
-        const balances = await this.fetchBalances(travelId);
+        const pool = await (0, pool_1.getPool)();
+        await this.ensureMember(travelId, userId, pool);
+        const balances = await this.fetchBalances(travelId, pool);
         const computedSettlements = this.calculateSettlements(balances);
         if (computedSettlements.length === 0) {
             throw new common_1.BadRequestException('정산할 항목이 없습니다.');
         }
-        const pool = await (0, pool_1.getPool)();
         await this.ensureTransaction(async (client) => {
             await client.query(`DELETE FROM travel_settlements WHERE travel_id = $1`, [travelId]);
             // 배치 INSERT로 성능 최적화 (100개 정산 = 1번 쿼리)
@@ -157,8 +160,8 @@ let TravelSettlementService = class TravelSettlementService {
         return this.getSettlementSummary(travelId, userId);
     }
     async markSettlementCompleted(travelId, userId, settlementId) {
-        await this.ensureMember(travelId, userId);
         const pool = await (0, pool_1.getPool)();
+        await this.ensureMember(travelId, userId, pool);
         const result = await pool.query(`UPDATE travel_settlements
        SET status = 'completed', completed_at = NOW(), updated_at = NOW()
        WHERE id = $1 AND travel_id = $2
