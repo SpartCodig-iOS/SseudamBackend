@@ -41,6 +41,7 @@ const node_dns_1 = __importDefault(require("node:dns"));
 node_dns_1.default.setDefaultResultOrder('ipv4first');
 const node_path_1 = __importDefault(require("node:path"));
 const express_1 = require("express");
+const compression_1 = __importDefault(require("compression"));
 const helmet_1 = __importDefault(require("helmet"));
 const core_1 = require("@nestjs/core");
 const swagger_1 = require("@nestjs/swagger");
@@ -50,15 +51,19 @@ const env_1 = require("./config/env");
 const logger_1 = require("./utils/logger");
 const all_exceptions_filter_1 = require("./common/filters/all-exceptions.filter");
 async function bootstrap() {
-    const app = await core_1.NestFactory.create(app_module_1.AppModule);
     if (env_1.env.sentryDsn) {
-        Sentry.init({
+        const client = Sentry.init({
             dsn: env_1.env.sentryDsn,
             environment: env_1.env.nodeEnv,
             tracesSampleRate: env_1.env.sentryTracesSampleRate,
+            profilesSampleRate: env_1.env.sentryProfilesSampleRate,
             integrations: [Sentry.expressIntegration()],
         });
+        if (client) {
+            Sentry.initOpenTelemetry(client);
+        }
     }
+    const app = await core_1.NestFactory.create(app_module_1.AppModule);
     const resolvedLogLevel = env_1.env.logLevel?.toLowerCase() ?? 'info';
     const loggerLevels = {
         silent: [],
@@ -79,6 +84,15 @@ async function bootstrap() {
         contentSecurityPolicy: false,
     };
     app.use((0, helmet_1.default)(helmetOptions));
+    app.use((0, compression_1.default)({
+        threshold: 1024,
+        filter: (req, res) => {
+            if (req.headers['x-no-compression']) {
+                return false;
+            }
+            return compression_1.default.filter(req, res);
+        },
+    }));
     const allowedOrigins = new Set(env_1.env.corsOrigins);
     const allowAll = allowedOrigins.has('*');
     const localOrigins = [

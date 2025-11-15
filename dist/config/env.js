@@ -46,6 +46,8 @@ exports.env = {
     applePrivateKey: process.env.APPLE_PRIVATE_KEY ?? null,
     googleClientId: process.env.GOOGLE_CLIENT_ID ?? null,
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? null,
+    // Redis 설정 (선택적)
+    redisUrl: process.env.REDIS_URL ?? process.env.REDIS_URI ?? null,
     googleRedirectUri: process.env.GOOGLE_REDIRECT_URI ?? null,
     corsOrigins: (process.env.CORS_ALLOWED_ORIGINS ??
         process.env.CORS_ORIGINS ??
@@ -55,6 +57,7 @@ exports.env = {
         .filter((origin) => origin.length > 0),
     sentryDsn: process.env.SENTRY_DSN ?? null,
     sentryTracesSampleRate: optionalNumber(process.env.SENTRY_TRACES_SAMPLE_RATE, 0.1) ?? 0.1,
+    sentryProfilesSampleRate: optionalNumber(process.env.SENTRY_PROFILES_SAMPLE_RATE, 0.1) ?? 0.1,
 };
 exports.isProduction = exports.env.nodeEnv === 'production';
 if (exports.env.corsOrigins.length === 0) {

@@ -22,14 +22,16 @@ const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jwtService_1 = require("../../services/jwtService");
 const sessionService_1 = require("../../services/sessionService");
 const supabaseService_1 = require("../../services/supabaseService");
+const cacheService_1 = require("../../services/cacheService");
 const mappers_1 = require("../../utils/mappers");
 const social_auth_service_1 = require("../oauth/social-auth.service");
 const pool_1 = require("../../db/pool");
 let AuthService = AuthService_1 = class AuthService {
-    constructor(supabaseService, jwtTokenService, sessionService, socialAuthService) {
+    constructor(supabaseService, jwtTokenService, sessionService, cacheService, socialAuthService) {
         this.supabaseService = supabaseService;
         this.jwtTokenService = jwtTokenService;
         this.sessionService = sessionService;
+        this.cacheService = cacheService;
         this.socialAuthService = socialAuthService;
         this.logger = new common_1.Logger(AuthService_1.name);
         this.identifierCache = new Map();
@@ -91,28 +93,30 @@ let AuthService = AuthService_1 = class AuthService {
             }
         }
     }
-    // 사용자 캐시 관리 (재로그인 최적화)
-    getCachedUser(email) {
-        const cached = this.userCache.get(email);
-        if (!cached)
-            return null;
-        if (Date.now() > cached.expiresAt) {
-            this.userCache.delete(email);
+    // 사용자 캐시 관리 (Redis 기반 재로그인 최적화)
+    async getCachedUser(email) {
+        try {
+            return await this.cacheService.get(email, {
+                prefix: 'user',
+                ttl: 120, // 2분
+            });
+        }
+        catch (error) {
+            this.logger.warn('Failed to get cached user, continuing without cache', error);
             return null;
         }
-        return cached.user;
     }
-    setCachedUser(email, user) {
-        this.userCache.set(email, {
-            user: { ...user, password_hash: '' }, // 보안상 패스워드 해시는 캐시하지 않음
-            expiresAt: Date.now() + this.USER_CACHE_TTL,
-        });
-        // 캐시 크기 제한
-        if (this.userCache.size > 200) {
-            const oldestKey = this.userCache.keys().next().value;
-            if (oldestKey) {
-                this.userCache.delete(oldestKey);
-            }
+    async setCachedUser(email, user) {
+        try {
+            // 보안상 패스워드 해시는 캐시하지 않음
+            const sanitizedUser = { ...user, password_hash: '' };
+            await this.cacheService.set(email, sanitizedUser, {
+                prefix: 'user',
+                ttl: 120, // 2분
+            });
+        }
+        catch (error) {
+            this.logger.warn('Failed to cache user, continuing without cache', error);
         }
     }
     async lookupEmailByIdentifier(identifier) {
@@ -128,13 +132,13 @@ let AuthService = AuthService_1 = class AuthService {
     // 고성능 직접 인증: 캐시 우선 + 단일 쿼리로 사용자 정보 조회 및 비밀번호 확인
     async authenticateUserDirect(email, password) {
         const authStartTime = Date.now();
-        // 사용자 정보 캐시 확인 (초고속)
-        const cachedUser = this.getCachedUser(email);
+        // 사용자 정보 캐시 확인 (Redis 기반 초고속)
+        const cachedUser = await this.getCachedUser(email);
         if (cachedUser) {
             // 캐시된 사용자로 비밀번호 검증
             const cachedBcryptResult = this.getCachedBcryptResult(email, password);
             if (cachedBcryptResult === true) {
-                this.logger.debug(`Full cache hit for ${email} - ultra fast auth`);
+                this.logger.debug(`Full Redis cache hit for ${email} - ultra fast auth`);
                 return cachedUser;
             }
         }
@@ -217,8 +221,8 @@ let AuthService = AuthService_1 = class AuthService {
             updated_at: row.updated_at,
             password_hash: '', // 보안상 빈 값으로 설정
         };
-        // 성공한 인증 후 사용자 정보를 캐시에 저장
-        this.setCachedUser(email, userRecord);
+        // 성공한 인증 후 사용자 정보를 Redis 캐시에 저장
+        await this.setCachedUser(email, userRecord);
         return userRecord;
     }
     async createAuthSession(user, loginType) {
@@ -395,6 +399,9 @@ let AuthService = AuthService_1 = class AuthService {
         if (user.username) {
             this.identifierCache.delete(user.username.toLowerCase());
         }
+        await this.socialAuthService
+            .invalidateOAuthCacheByUser(user.id)
+            .catch((error) => this.logger.warn('[deleteAccount] OAuth cache cleanup failed', error));
         const duration = Date.now() - startTime;
         this.logger.debug(`Fast account deletion completed in ${duration}ms for ${user.email}`);
         return { supabaseDeleted };
@@ -410,9 +417,10 @@ let AuthService = AuthService_1 = class AuthService {
 exports.AuthService = AuthService;
 exports.AuthService = AuthService = AuthService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __param(3, (0, common_1.Inject)((0, common_1.forwardRef)(() => social_auth_service_1.SocialAuthService))),
+    __param(4, (0, common_1.Inject)((0, common_1.forwardRef)(() => social_auth_service_1.SocialAuthService))),
     __metadata("design:paramtypes", [supabaseService_1.SupabaseService,
         jwtService_1.JwtTokenService,
         sessionService_1.SessionService,
+        cacheService_1.CacheService,
         social_auth_service_1.SocialAuthService])
 ], AuthService);

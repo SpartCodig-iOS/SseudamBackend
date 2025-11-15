@@ -82,6 +82,14 @@ APPLE_CLIENT_ID=your_apple_client_id
 APPLE_TEAM_ID=your_apple_team_id
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
+
+# Redis (선택)
+REDIS_URL=redis://localhost:6379
+
+# Observability / APM
+SENTRY_DSN=https://xxx.ingest.sentry.io/123
+SENTRY_TRACES_SAMPLE_RATE=0.2
+SENTRY_PROFILES_SAMPLE_RATE=0.1
 ```
 
 ### 3. 개발 서버 실행
@@ -183,12 +191,18 @@ src/
 
 - **배치 INSERT**: 여러 참가자 데이터를 한 번에 처리
 - **토큰 캐싱**: Supabase 인증 호출 95% 감소
-- **연결 풀 최적화**: 프로덕션 환경 20개 연결 풀
+- **연결 풀 최적화**: 프로덕션 환경 25개 연결 풀
 - **환율 API 캐싱**: 10분 TTL로 외부 API 호출 최소화
 - **미들웨어 최적화**: 헬스체크 경로 로깅 제외
 - **N+1 쿼리 해결**: LATERAL JOIN으로 단일 쿼리 처리
 - **로그 레벨 제어**: `LOG_LEVEL` 로 Nest 로거 단계 제한 (prod에서는 `warn` 권장)
-- **DB 인덱스**: `profiles`, `travel_members`, `travel_expenses`, `user_sessions` 의 자주 쓰는 컬럼에 최적화 인덱스 적용 (SQL 아래)
+- **회원가입 최적화**: 직접 DB 프로필 생성으로 안정성 향상
+- **사용자명 생성**: 고유성 보장 및 충돌 방지 알고리즘
+- **OAuth Redis 캐싱**: Access Token → 사용자 조회를 Redis + fallback 메모리 캐시로 5분간 유지
+- **정교한 캐시 무효화**: 사용자 ID 기반 토큰 인덱스를 유지해 소셜 연결 해제/계정 삭제 시 즉시 캐시 제거
+- **HTTP Response 압축**: `compression` 미들웨어로 1KB 이상 응답을 gzip하여 전송
+- **APM/프로파일링**: Sentry + OpenTelemetry 연동으로 트레이스/프로파일 데이터 자동 수집
+- **DB 인덱스 최적화**: 핵심 테이블 성능 인덱스 적용 (아래 SQL 참조)
 
 ### 📈 성능 개선 결과
 

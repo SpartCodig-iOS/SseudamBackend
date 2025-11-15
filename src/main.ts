@@ -4,6 +4,7 @@ dns.setDefaultResultOrder('ipv4first');
 
 import path from 'node:path';
 import { json, urlencoded } from 'express';
+import compression from 'compression';
 import helmet, { HelmetOptions } from 'helmet';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
@@ -15,16 +16,20 @@ import { logger } from './utils/logger';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
-
   if (env.sentryDsn) {
-    Sentry.init({
+    const client = Sentry.init({
       dsn: env.sentryDsn,
       environment: env.nodeEnv,
       tracesSampleRate: env.sentryTracesSampleRate,
+      profilesSampleRate: env.sentryProfilesSampleRate,
       integrations: [Sentry.expressIntegration()],
     });
+    if (client) {
+      Sentry.initOpenTelemetry(client);
+    }
   }
+
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   const resolvedLogLevel = env.logLevel?.toLowerCase() ?? 'info';
   const loggerLevels: Record<string, ('log' | 'error' | 'warn' | 'debug' | 'verbose')[]> = {
@@ -47,6 +52,17 @@ async function bootstrap() {
   };
 
   app.use(helmet(helmetOptions));
+  app.use(
+    compression({
+      threshold: 1024,
+      filter: (req, res) => {
+        if (req.headers['x-no-compression']) {
+          return false;
+        }
+        return compression.filter(req, res);
+      },
+    }),
+  );
   const allowedOrigins = new Set(env.corsOrigins);
   const allowAll = allowedOrigins.has('*');
   const localOrigins = [

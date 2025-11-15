@@ -1,7 +1,10 @@
+import { createHash } from 'node:crypto';
 import { Injectable, ServiceUnavailableException, UnauthorizedException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
 import jwt from 'jsonwebtoken';
 import { LoginType } from '../../types/auth';
+import { UserRecord } from '../../types/user';
 import { SupabaseService } from '../../services/supabaseService';
+import { CacheService } from '../../services/cacheService';
 import { AuthService, AuthSessionPayload } from '../auth/auth.service';
 import { fromSupabaseUser } from '../../utils/mappers';
 import { env } from '../../config/env';
@@ -28,15 +31,18 @@ export class SocialAuthService {
   // OAuth 토큰 교환 요청 캐싱 (중복 요청 방지)
   private readonly tokenExchangePromises = new Map<string, Promise<string>>();
 
-  // 소셜 사용자 정보 캐시 (5분 TTL)
-  private readonly oauthUserCache = new Map<string, { user: any; expiresAt: number }>();
-  private readonly OAUTH_USER_CACHE_TTL = 5 * 60 * 1000; // 5분
+  private readonly OAUTH_USER_CACHE_TTL_SECONDS = 5 * 60;
+  private readonly OAUTH_TOKEN_CACHE_PREFIX = 'oauth:token';
+  private readonly OAUTH_USER_INDEX_PREFIX = 'oauth:user-index';
+  private readonly OAUTH_USER_INDEX_TTL_SECONDS = 60 * 30; // 30분
+  private readonly OAUTH_USER_INDEX_LIMIT = 12;
 
   // 네트워크 타임아웃 설정 (빠른 실패)
   private readonly NETWORK_TIMEOUT = 8000; // 8초
 
   constructor(
     private readonly supabaseService: SupabaseService,
+    private readonly cacheService: CacheService,
     @Inject(forwardRef(() => AuthService))
     private readonly authService: AuthService,
   ) {}
@@ -53,34 +59,61 @@ export class SocialAuthService {
     }
   }
 
-  // OAuth 사용자 캐시 관리 (성능 최적화)
-  private getCachedOAuthUser(accessToken: string): any | null {
-    const cacheKey = accessToken.substring(0, 20); // 토큰 일부를 키로 사용
-    const cached = this.oauthUserCache.get(cacheKey);
-    if (!cached) return null;
-
-    if (Date.now() > cached.expiresAt) {
-      this.oauthUserCache.delete(cacheKey);
-      return null;
-    }
-
-    return cached.user;
+  private getTokenCacheKey(accessToken: string): string {
+    return createHash('sha256').update(accessToken).digest('hex');
   }
 
-  private setCachedOAuthUser(accessToken: string, user: any): void {
-    const cacheKey = accessToken.substring(0, 20);
-    this.oauthUserCache.set(cacheKey, {
-      user,
-      expiresAt: Date.now() + this.OAUTH_USER_CACHE_TTL,
+  // Redis 기반 OAuth 사용자 캐시 (fallback으로 내부 CacheService 메모리 캐시 사용)
+  private async getCachedOAuthUser(accessToken: string): Promise<UserRecord | null> {
+    const cacheKey = this.getTokenCacheKey(accessToken);
+    const cached = await this.cacheService.get<UserRecord>(cacheKey, {
+      prefix: this.OAUTH_TOKEN_CACHE_PREFIX,
+    });
+    return cached ?? null;
+  }
+
+  private async setCachedOAuthUser(accessToken: string, user: UserRecord): Promise<void> {
+    const cacheKey = this.getTokenCacheKey(accessToken);
+    await this.cacheService.set(cacheKey, user, {
+      prefix: this.OAUTH_TOKEN_CACHE_PREFIX,
+      ttl: this.OAUTH_USER_CACHE_TTL_SECONDS,
     });
 
-    // 캐시 크기 제한
-    if (this.oauthUserCache.size > 100) {
-      const oldestKey = this.oauthUserCache.keys().next().value;
-      if (oldestKey) {
-        this.oauthUserCache.delete(oldestKey);
-      }
+    await this.trackTokenCacheKey(user.id, cacheKey);
+  }
+
+  private async trackTokenCacheKey(userId: string, tokenKey: string): Promise<void> {
+    const existing =
+      (await this.cacheService.get<string[]>(userId, {
+        prefix: this.OAUTH_USER_INDEX_PREFIX,
+      })) ?? [];
+
+    const deduped = [tokenKey, ...existing.filter((key) => key !== tokenKey)].slice(
+      0,
+      this.OAUTH_USER_INDEX_LIMIT,
+    );
+
+    await this.cacheService.set(userId, deduped, {
+      prefix: this.OAUTH_USER_INDEX_PREFIX,
+      ttl: this.OAUTH_USER_INDEX_TTL_SECONDS,
+    });
+  }
+
+  async invalidateOAuthCacheByUser(userId: string): Promise<void> {
+    const tokenKeys =
+      (await this.cacheService.get<string[]>(userId, {
+        prefix: this.OAUTH_USER_INDEX_PREFIX,
+      })) ?? [];
+
+    if (tokenKeys.length > 0) {
+      await Promise.all(
+        tokenKeys.map((tokenKey) =>
+          this.cacheService.del(tokenKey, { prefix: this.OAUTH_TOKEN_CACHE_PREFIX }),
+        ),
+      );
     }
+
+    await this.cacheService.del(userId, { prefix: this.OAUTH_USER_INDEX_PREFIX });
   }
 
   private buildAppleClientSecret() {
@@ -154,7 +187,7 @@ export class SocialAuthService {
     }
 
     // 캐시된 사용자 정보 확인 (초고속)
-    const cachedUser = this.getCachedOAuthUser(accessToken);
+    const cachedUser = await this.getCachedOAuthUser(accessToken);
     if (cachedUser) {
       this.logger.debug(`OAuth user cache hit for token ${accessToken.substring(0, 10)}...`);
       // 캐시된 사용자로 바로 세션 생성 (병렬 처리)
@@ -207,7 +240,7 @@ export class SocialAuthService {
     const user = fromSupabaseUser(supabaseUser, { preferDisplayName });
 
     // 사용자 정보를 캐시에 저장 (다음 로그인 최적화)
-    this.setCachedOAuthUser(accessToken, user);
+    await this.setCachedOAuthUser(accessToken, user);
 
     // 토큰 저장 작업도 병렬로 처리
     const saveTokenTasks: Promise<void>[] = [];
@@ -298,6 +331,7 @@ export class SocialAuthService {
 
       // 성공 시에만 토큰 삭제
       await this.supabaseService.saveAppleRefreshToken(userId, null);
+      await this.invalidateOAuthCacheByUser(userId);
       this.logger.debug(`[revokeAppleConnection] Successfully revoked Apple connection for user ${userId}`);
     } catch (error) {
       // Apple 연결 해제 실패는 로그만 남기고 계정 삭제는 계속 진행
@@ -350,6 +384,7 @@ export class SocialAuthService {
 
       // 성공 시에만 토큰 삭제
       await this.supabaseService.saveGoogleRefreshToken(userId, null);
+      await this.invalidateOAuthCacheByUser(userId);
       this.logger.debug(`[revokeGoogleConnection] Successfully revoked Google connection for user ${userId}`);
     } catch (error) {
       // Google 연결 해제 실패는 로그만 남기고 계정 삭제는 계속 진행
