@@ -203,7 +203,12 @@ export class MetaService {
       quoteAmount: rateData.rate * normalizedAmount,
     });
 
-    if (cached && cached.expiresAt > Date.now()) {
+    if (cached) {
+      if (cached.expiresAt > Date.now()) {
+        return computeResult(cached.data);
+      }
+      // Use stale data immediately but refresh in the background.
+      this.getOrCreateRatePromise(cacheKey, normalizedBase, normalizedQuote).catch(() => {});
       return computeResult(cached.data);
     }
 
@@ -218,75 +223,8 @@ export class MetaService {
       return computeResult(same);
     }
 
-    const existingPromise = this.ratePromiseCache.get(cacheKey);
-    if (existingPromise) {
-      const rate = await existingPromise;
-      return computeResult(rate);
-    }
-
-    const ratePromise = (async () => {
-      // Frankfurt API 사용
-      try {
-        const params = new URLSearchParams({
-          from: normalizedBase,
-          to: normalizedQuote,
-        });
-        const response = await this.fetchWithTimeout(`https://api.frankfurter.app/latest?${params.toString()}`);
-
-        const payload = (await response.json()) as { date: string; rates: Record<string, number> };
-        const rateValue = payload.rates?.[normalizedQuote];
-        if (typeof rateValue !== 'number') {
-          throw new ServiceUnavailableException('요청한 통화쌍 환율이 없습니다.');
-        }
-        return {
-          baseCurrency: normalizedBase,
-          quoteCurrency: normalizedQuote,
-          rate: rateValue,
-          date: payload.date,
-        };
-      } catch (frankfurterError) {
-        // 첫 번째 실패시에만 로그 출력 (스팸 방지)
-        if (!this.fallbackWarned) {
-          console.info('[MetaService] Using cached exchange rates (external API temporarily unavailable)');
-          this.fallbackWarned = true;
-        }
-
-        // 대체 환율 데이터 (2025년 11월 기준 근사치)
-        const fallbackRates: Record<string, Record<string, number>> = {
-          'KRW': { 'USD': 0.00075, 'JPY': 0.107, 'EUR': 0.00069, 'CNY': 0.0052 },
-          'USD': { 'KRW': 1340, 'JPY': 143, 'EUR': 0.91, 'CNY': 7.1 },
-          'JPY': { 'KRW': 9.35, 'USD': 0.007, 'EUR': 0.0064, 'CNY': 0.05 },
-          'EUR': { 'USD': 1.10, 'KRW': 1470, 'JPY': 157, 'CNY': 7.8 },
-          'CNY': { 'USD': 0.141, 'KRW': 192, 'JPY': 20.1, 'EUR': 0.128 }
-        };
-
-        const rate = fallbackRates[normalizedBase]?.[normalizedQuote];
-        if (!rate) {
-          throw new ServiceUnavailableException('환율 정보를 가져오지 못했습니다.');
-        }
-
-        return {
-          baseCurrency: normalizedBase,
-          quoteCurrency: normalizedQuote,
-          rate,
-          date: new Date().toISOString().slice(0, 10),
-        };
-      }
-    })();
-
-    this.ratePromiseCache.set(cacheKey, ratePromise);
-
-    try {
-      const baseResult = await ratePromise;
-      this.rateCache.set(cacheKey, { data: baseResult, expiresAt: Date.now() + this.rateCacheTTL });
-
-      // 캐시 정리
-      this.cleanupRateCache();
-
-      return computeResult(baseResult);
-    } finally {
-      this.ratePromiseCache.delete(cacheKey);
-    }
+    const rate = await this.getOrCreateRatePromise(cacheKey, normalizedBase, normalizedQuote);
+    return computeResult(rate);
   }
 
   // 여러 환율을 병렬로 조회 (성능 최적화)
@@ -318,6 +256,72 @@ export class MetaService {
       }
 
       return successResults;
+    }
+  }
+
+  private getOrCreateRatePromise(cacheKey: string, base: string, quote: string): Promise<CachedRate> {
+    const existing = this.ratePromiseCache.get(cacheKey);
+    if (existing) {
+      return existing;
+    }
+
+    const promise = this.fetchAndCacheRate(cacheKey, base, quote)
+      .finally(() => {
+        this.ratePromiseCache.delete(cacheKey);
+      });
+
+    this.ratePromiseCache.set(cacheKey, promise);
+    return promise;
+  }
+
+  private async fetchAndCacheRate(cacheKey: string, base: string, quote: string): Promise<CachedRate> {
+    const rate = await this.requestExchangeRate(base, quote);
+    this.rateCache.set(cacheKey, {
+      data: rate,
+      expiresAt: Date.now() + this.rateCacheTTL,
+    });
+    this.cleanupRateCache();
+    return rate;
+  }
+
+  private async requestExchangeRate(base: string, quote: string): Promise<CachedRate> {
+    try {
+      const params = new URLSearchParams({ from: base, to: quote });
+      const response = await this.fetchWithTimeout(`https://api.frankfurter.app/latest?${params.toString()}`);
+
+      const payload = (await response.json()) as { date: string; rates: Record<string, number> };
+      const rateValue = payload.rates?.[quote];
+      if (typeof rateValue !== 'number') {
+        throw new ServiceUnavailableException('요청한 통화쌍 환율이 없습니다.');
+      }
+      return {
+        baseCurrency: base,
+        quoteCurrency: quote,
+        rate: rateValue,
+        date: payload.date,
+      };
+    } catch (error) {
+      if (!this.fallbackWarned) {
+        console.info('[MetaService] Using cached exchange rates (external API temporarily unavailable)');
+        this.fallbackWarned = true;
+      }
+      const fallbackRates: Record<string, Record<string, number>> = {
+        KRW: { USD: 0.00075, JPY: 0.107, EUR: 0.00069, CNY: 0.0052 },
+        USD: { KRW: 1340, JPY: 143, EUR: 0.91, CNY: 7.1 },
+        JPY: { KRW: 9.35, USD: 0.007, EUR: 0.0064, CNY: 0.05 },
+        EUR: { USD: 1.1, KRW: 1470, JPY: 157, CNY: 7.8 },
+        CNY: { USD: 0.141, KRW: 192, JPY: 20.1, EUR: 0.128 },
+      };
+      const fallbackRate = fallbackRates[base]?.[quote];
+      if (!fallbackRate) {
+        throw error;
+      }
+      return {
+        baseCurrency: base,
+        quoteCurrency: quote,
+        rate: fallbackRate,
+        date: new Date().toISOString().slice(0, 10),
+      };
     }
   }
 }

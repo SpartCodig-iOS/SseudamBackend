@@ -273,6 +273,7 @@ export class SocialAuthService {
     // 토큰 저장과 세션 생성을 병렬로 처리
     const [authSession] = await Promise.all([
       this.authService.createAuthSession(user, loginType),
+      this.authService.markLastLogin(user.id),
       ...saveTokenTasks
     ]);
     this.authService.warmAuthCaches(user);

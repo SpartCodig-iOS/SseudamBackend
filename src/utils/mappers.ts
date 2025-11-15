@@ -1,12 +1,18 @@
 import { User } from '@supabase/supabase-js';
 import { UserRecord, UserResponseDto, UserProfileDto } from '../types/user';
 
+const formatDate = (value: Date | string | null | undefined): string | null => {
+  if (!value) return null;
+  const date = typeof value === 'string' ? new Date(value) : value;
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+
 export const toUserResponse = (user: UserRecord): UserResponseDto => ({
   id: user.id,
   email: user.email,
   name: user.name,
   avatarURL: user.avatar_url,
-  createdAt: user.created_at,
+  createdAt: formatDate(user.created_at),
   userId: user.username,
 });
 
@@ -16,8 +22,8 @@ export const toProfileResponse = (user: UserRecord): UserProfileDto => ({
   email: user.email,
   name: user.name,
   avatarURL: user.avatar_url,
-  createdAt: user.created_at,
-  updatedAt: user.updated_at,
+  createdAt: formatDate(user.created_at),
+  updatedAt: formatDate(user.updated_at),
 });
 
 interface SupabaseNameOptions {

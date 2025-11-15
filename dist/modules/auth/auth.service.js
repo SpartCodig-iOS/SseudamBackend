@@ -307,6 +307,7 @@ let AuthService = AuthService_1 = class AuthService {
         // 세션 생성과 캐시 업데이트를 병렬로 처리
         const [result] = await Promise.all([
             this.createAuthSession(newUser, 'signup'),
+            this.markLastLogin(newUser.id),
             // 캐시 업데이트는 동기적으로 빠르므로 Promise로 감쌀 필요 없음
             Promise.resolve().then(() => {
                 this.warmAuthCaches(newUser);
@@ -344,6 +345,7 @@ let AuthService = AuthService_1 = class AuthService {
         // 세션 생성과 캐시 업데이트를 병렬로 처리 (성능 최적화)
         const [result] = await Promise.all([
             this.createAuthSession(user, loginType),
+            this.markLastLogin(user.id),
             // 캐시 업데이트를 백그라운드에서 처리
             Promise.resolve().then(() => {
                 this.warmAuthCaches(user);
@@ -523,6 +525,17 @@ let AuthService = AuthService_1 = class AuthService {
         const duration = Date.now() - startTime;
         this.logger.debug(`Fast account deletion completed in ${duration}ms for ${user.email}`);
         return { supabaseDeleted };
+    }
+    async markLastLogin(userId) {
+        try {
+            const pool = await (0, pool_1.getPool)();
+            await pool.query(`UPDATE profiles
+         SET updated_at = NOW()
+         WHERE id = $1`, [userId]);
+        }
+        catch (error) {
+            this.logger.warn(`[markLastLogin] Failed to update last login for user ${userId}`, error);
+        }
     }
     async logoutBySessionId(sessionId) {
         if (!sessionId) {

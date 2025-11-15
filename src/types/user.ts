@@ -14,7 +14,7 @@ export interface UserResponseDto {
   email: string;
   name: string | null;
   avatarURL: string | null;
-  createdAt: Date | null;
+  createdAt: string | null;
   userId: string;
 }
 
@@ -24,6 +24,6 @@ export interface UserProfileDto {
   email: string;
   name: string | null;
   avatarURL: string | null;
-  createdAt: Date | null;
-  updatedAt: Date | null;
+  createdAt: string | null;
+  updatedAt: string | null;
 }

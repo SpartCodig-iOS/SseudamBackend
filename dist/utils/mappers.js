@@ -1,12 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fromSupabaseUser = exports.toProfileResponse = exports.toUserResponse = void 0;
+const formatDate = (value) => {
+    if (!value)
+        return null;
+    const date = typeof value === 'string' ? new Date(value) : value;
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
 const toUserResponse = (user) => ({
     id: user.id,
     email: user.email,
     name: user.name,
     avatarURL: user.avatar_url,
-    createdAt: user.created_at,
+    createdAt: formatDate(user.created_at),
     userId: user.username,
 });
 exports.toUserResponse = toUserResponse;
@@ -16,8 +22,8 @@ const toProfileResponse = (user) => ({
     email: user.email,
     name: user.name,
     avatarURL: user.avatar_url,
-    createdAt: user.created_at,
-    updatedAt: user.updated_at,
+    createdAt: formatDate(user.created_at),
+    updatedAt: formatDate(user.updated_at),
 });
 exports.toProfileResponse = toProfileResponse;
 const resolveUserName = (user, options) => {
