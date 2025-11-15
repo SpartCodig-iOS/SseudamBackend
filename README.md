@@ -10,8 +10,7 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-336791?style=flat-square&logo=postgresql)](https://postgresql.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-Auth-3ECF8E?style=flat-square&logo=supabase)](https://supabase.com/)
 
-[📚 API 문서](https://sseudam.up.railway.app/api-docs/) | [🔴 라이브 서버](https://sseudam.up.railway.app/) | [📖 개발 가이드](#-개발-가이드)
-
+[📚 API 문서](https://sseudam.up.railway.app/api-docs/) | [🔴 라이브 서버](https://sseudam.up.railway.app/) | 
 </div>
 
 ---
