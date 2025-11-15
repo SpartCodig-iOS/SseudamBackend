@@ -432,13 +432,24 @@ export class AuthService {
 
     const pool = await getPool();
 
-    // 프로필 타입 조회
+    // 프로필 타입 조회 (DB 우선, 실패 시 Supabase)
     let profileLoginType: LoginType | null = null;
     try {
-      const profile = await this.supabaseService.findProfileById(user.id);
-      profileLoginType = (profile?.login_type as LoginType | null) ?? null;
+      const directProfile = await pool.query(
+        `SELECT login_type FROM profiles WHERE id = $1 LIMIT 1`,
+        [user.id],
+      );
+      profileLoginType = (directProfile.rows[0]?.login_type as LoginType | null) ?? null;
     } catch (error) {
-      this.logger.warn('[deleteAccount] Failed to fetch profile for login type', error as Error);
+      this.logger.warn('[deleteAccount] Failed to fetch profile login type from DB', error as Error);
+    }
+    if (!profileLoginType) {
+      try {
+        const profile = await this.supabaseService.findProfileById(user.id);
+        profileLoginType = (profile?.login_type as LoginType | null) ?? null;
+      } catch (error) {
+        this.logger.warn('[deleteAccount] Failed to fetch profile login type via Supabase', error as Error);
+      }
     }
 
     const client = await pool.connect();
