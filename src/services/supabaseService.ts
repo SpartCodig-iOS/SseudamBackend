@@ -158,6 +158,7 @@ export class SupabaseService {
     name?: string | null;
     username: string;
     loginType?: LoginType;
+    avatarUrl?: string | null;
   }) {
     const client = this.getClient();
     const now = new Date().toISOString();
@@ -167,6 +168,7 @@ export class SupabaseService {
       name: params.name,
       username: params.username,
       login_type: params.loginType ?? null,
+      avatar_url: params.avatarUrl ?? null,
       created_at: now,
       updated_at: now,
     };
@@ -208,12 +210,20 @@ export class SupabaseService {
     const shouldUseDisplayName = loginType !== 'email' && loginType !== 'username';
     const resolvedName = shouldUseDisplayName ? displayName ?? standardName : standardName ?? displayName;
 
+    // 소셜 로그인에서 아바타 URL 추출
+    const avatarUrl =
+      (metadata.avatar_url as string | null) ??
+      (metadata.picture as string | null) ??
+      (metadata.photo as string | null) ??
+      null;
+
     await this.upsertProfile({
       id: user.id,
       email: user.email,
       name: resolvedName,
       username,
       loginType,
+      avatarUrl,
     });
   }
 
