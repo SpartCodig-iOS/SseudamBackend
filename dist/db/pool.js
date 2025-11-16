@@ -36,19 +36,17 @@ const buildPoolConfig = async () => {
         user: base.user,
         password: base.password,
         database: base.database,
-        max: env_1.env.nodeEnv === 'production' ? 30 : 15, // 더 많은 연결로 동시성 향상 (25→30, 12→15)
-        min: env_1.env.nodeEnv === 'production' ? 8 : 5, // Cold Start 최적화: 더 많은 연결 미리 유지 (5→8, 3→5)
-        idleTimeoutMillis: 180000, // 3분으로 늘려서 연결 재사용 더 향상 (120s→180s)
-        connectionTimeoutMillis: 3000, // 3초로 더 단축 (빠른 실패, 5s→3s)
-        allowExitOnIdle: true,
-        statement_timeout: 30000, // 30초로 복원 (복잡한 쿼리도 허용)
+        max: env_1.env.nodeEnv === 'production' ? 20 : 10, // Railway 친화적 연결 수 감소
+        min: env_1.env.nodeEnv === 'production' ? 2 : 0, // Sleep 모드를 위해 최소 연결 대폭 감소
+        idleTimeoutMillis: 30000, // 30초로 단축 (빠른 연결 해제로 Sleep 모드 지원)
+        connectionTimeoutMillis: 5000, // 5초 (안정성과 속도의 균형)
+        allowExitOnIdle: true, // Railway Sleep 모드 지원 활성화
+        statement_timeout: 30000,
         query_timeout: 30000,
-        // 고성능 최적화 설정들
-        application_name: 'SseudamBackend-UltraFast',
-        keepAlive: true, // TCP 연결 유지
-        keepAliveInitialDelayMillis: 5000, // 5초로 단축 (10s→5s)
-        // 추가 성능 최적화 옵션들 (적절한 타임아웃 설정)
-        options: '--default_transaction_isolation=read_committed --statement_timeout=30s --lock_timeout=15s',
+        application_name: 'SseudamBackend-Railway-Optimized',
+        keepAlive: false, // Railway Sleep 모드를 위해 Keep-Alive 비활성화
+        // Railway Sleep 친화적 최적화 설정
+        options: '--default_transaction_isolation=read_committed --statement_timeout=30s --lock_timeout=10s',
     };
     config.acquireTimeoutMillis = 2000; // 커넥션 획득 타임아웃
     if ((0, network_1.shouldUseTLS)(base.host)) {

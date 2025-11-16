@@ -15,7 +15,7 @@ let SessionService = SessionService_1 = class SessionService {
     constructor() {
         this.logger = new common_1.Logger(SessionService_1.name);
         this.defaultTTLHours = 24 * 30;
-        this.CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 10분마다 만료 세션 정리
+        this.CLEANUP_INTERVAL_MS = process.env.NODE_ENV === 'production' ? 60 * 60 * 1000 : 45 * 60 * 1000; // Railway Sleep 친화적: 운영 1시간, 개발 45분
         this.lastCleanupRun = 0;
         // 세션 캐시: 10분 TTL, 최대 2000개 세션
         this.sessionCache = new Map();
