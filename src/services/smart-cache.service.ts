@@ -33,10 +33,12 @@ export class SmartCacheService {
   private tagMap = new Map<string, Set<string>>(); // tag -> keys
 
   constructor(private readonly cacheService: CacheService) {
-    // 통계 로깅 (5분마다)
-    setInterval(() => {
-      this.logStats();
-    }, 5 * 60 * 1000);
+    // 통계 로깅 (개발환경에서만, 30분마다로 변경)
+    if (process.env.NODE_ENV === 'development' || process.env.ENABLE_CACHE_STATS === 'true') {
+      setInterval(() => {
+        this.logStats();
+      }, 30 * 60 * 1000); // 30분으로 변경
+    }
   }
 
   // 스마트 캐시 조회 (백그라운드 갱신 지원)

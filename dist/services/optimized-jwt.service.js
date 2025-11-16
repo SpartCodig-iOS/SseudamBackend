@@ -30,10 +30,11 @@ let OptimizedJwtTokenService = OptimizedJwtTokenService_1 = class OptimizedJwtTo
         // 메모리 기반 토큰 캐시 (Redis 장애 시 fallback)
         this.tokenCache = new Map();
         this.MAX_MEMORY_CACHE_SIZE = 1000;
-        // 메모리 캐시 정리 (10분마다)
+        // 메모리 캐시 정리 (운영환경에서는 1시간마다, 개발환경에서는 30분마다)
+        const cleanupInterval = process.env.NODE_ENV === 'production' ? 60 * 60 * 1000 : 30 * 60 * 1000;
         setInterval(() => {
             this.cleanupMemoryCache();
-        }, 10 * 60 * 1000);
+        }, cleanupInterval);
     }
     createAccessPayload(user, sessionId, loginType) {
         return {

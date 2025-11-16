@@ -12,7 +12,8 @@ export class MemoryOptimizer {
   }
 
   private static setupMemoryMonitoring() {
-    // 메모리 사용량을 주기적으로 체크 (5분마다)
+    // 메모리 사용량을 주기적으로 체크 (운영환경에서는 1시간마다, 개발환경에서는 15분마다)
+    const monitoringInterval = process.env.NODE_ENV === 'production' ? 60 * 60 * 1000 : 15 * 60 * 1000;
     setInterval(() => {
       const memoryUsage = process.memoryUsage();
       const heapUsedMB = Math.round(memoryUsage.heapUsed / 1024 / 1024);
@@ -38,7 +39,7 @@ export class MemoryOptimizer {
           rss: `${rssMB}MB`,
         });
       }
-    }, 5 * 60 * 1000); // 5분
+    }, monitoringInterval);
   }
 
   private static setupGCOptimization() {
@@ -57,7 +58,7 @@ export class MemoryOptimizer {
             heapUsedAfter: `${Math.round(afterGC.heapUsed / 1024 / 1024)}MB`,
           });
         }
-      }, 10 * 60 * 1000); // 10분
+      }, 60 * 60 * 1000); // 1시간으로 변경
     }
   }
 
