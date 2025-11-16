@@ -8,6 +8,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { SocialAuthService } from './social-auth.service';
+import { OptimizedOAuthService } from './optimized-oauth.service';
 import { appleRevokeSchema, oauthTokenSchema } from '../../validators/authSchemas';
 import { success } from '../../types/api';
 import { LoginResponseDto } from '../auth/dto/auth-response.dto';
@@ -19,11 +20,16 @@ import { RequestWithUser } from '../../types/request';
 @ApiTags('OAuth')
 @Controller('api/v1/oauth')
 export class OAuthController {
-  constructor(private readonly socialAuthService: SocialAuthService) {}
+  constructor(
+    private readonly socialAuthService: SocialAuthService,
+    private readonly optimizedOAuthService: OptimizedOAuthService,
+  ) {}
 
   private async handleOAuthLogin(body: unknown, message: string) {
     const payload = oauthTokenSchema.parse(body);
-    const result = await this.socialAuthService.loginWithOAuthToken(
+
+    // 최적화된 OAuth 서비스 사용
+    const result = await this.optimizedOAuthService.fastOAuthLogin(
       payload.accessToken,
       payload.loginType,
       {

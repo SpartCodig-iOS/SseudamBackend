@@ -9,6 +9,7 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
+import { OptimizedDeleteService } from './optimized-delete.service';
 import { success } from '../../types/api';
 import { loginSchema, refreshSchema, signupSchema, logoutSchema } from '../../validators/authSchemas';
 import { AuthGuard } from '../../common/guards/auth.guard';
@@ -26,7 +27,10 @@ import { RateLimit } from '../../common/decorators/rate-limit.decorator';
 @ApiTags('Auth')
 @Controller('api/v1/auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly optimizedDeleteService: OptimizedDeleteService,
+  ) {}
 
   @Post('signup')
   @HttpCode(HttpStatus.OK)
@@ -192,7 +196,8 @@ export class AuthController {
       throw new UnauthorizedException('Unauthorized');
     }
 
-    const result = await this.authService.deleteAccount(currentUser, req.loginType);
+    // 최적화된 삭제 서비스 사용
+    const result = await this.optimizedDeleteService.fastDeleteAccount(currentUser, req.loginType);
     return success(
       {
         userID: currentUser.id,

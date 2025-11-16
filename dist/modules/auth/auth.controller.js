@@ -16,6 +16,7 @@ exports.AuthController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const auth_service_1 = require("./auth.service");
+const optimized_delete_service_1 = require("./optimized-delete.service");
 const api_1 = require("../../types/api");
 const authSchemas_1 = require("../../validators/authSchemas");
 const auth_guard_1 = require("../../common/guards/auth.guard");
@@ -24,8 +25,9 @@ const auth_response_dto_1 = require("./dto/auth-response.dto");
 const auth_response_util_1 = require("./auth-response.util");
 const rate_limit_decorator_1 = require("../../common/decorators/rate-limit.decorator");
 let AuthController = class AuthController {
-    constructor(authService) {
+    constructor(authService, optimizedDeleteService) {
         this.authService = authService;
+        this.optimizedDeleteService = optimizedDeleteService;
     }
     async signup(body) {
         const payload = authSchemas_1.signupSchema.parse(body);
@@ -55,7 +57,8 @@ let AuthController = class AuthController {
         if (!currentUser) {
             throw new common_1.UnauthorizedException('Unauthorized');
         }
-        const result = await this.authService.deleteAccount(currentUser, req.loginType);
+        // 최적화된 삭제 서비스 사용
+        const result = await this.optimizedDeleteService.fastDeleteAccount(currentUser, req.loginType);
         return (0, api_1.success)({
             userID: currentUser.id,
             supabaseDeleted: result.supabaseDeleted,
@@ -238,5 +241,6 @@ __decorate([
 exports.AuthController = AuthController = __decorate([
     (0, swagger_1.ApiTags)('Auth'),
     (0, common_1.Controller)('api/v1/auth'),
-    __metadata("design:paramtypes", [auth_service_1.AuthService])
+    __metadata("design:paramtypes", [auth_service_1.AuthService,
+        optimized_delete_service_1.OptimizedDeleteService])
 ], AuthController);

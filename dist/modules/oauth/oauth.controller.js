@@ -16,6 +16,7 @@ exports.OAuthController = void 0;
 const common_1 = require("@nestjs/common");
 const swagger_1 = require("@nestjs/swagger");
 const social_auth_service_1 = require("./social-auth.service");
+const optimized_oauth_service_1 = require("./optimized-oauth.service");
 const authSchemas_1 = require("../../validators/authSchemas");
 const api_1 = require("../../types/api");
 const auth_response_dto_1 = require("../auth/dto/auth-response.dto");
@@ -23,12 +24,14 @@ const oauth_response_dto_1 = require("./dto/oauth-response.dto");
 const auth_response_util_1 = require("../auth/auth-response.util");
 const auth_guard_1 = require("../../common/guards/auth.guard");
 let OAuthController = class OAuthController {
-    constructor(socialAuthService) {
+    constructor(socialAuthService, optimizedOAuthService) {
         this.socialAuthService = socialAuthService;
+        this.optimizedOAuthService = optimizedOAuthService;
     }
     async handleOAuthLogin(body, message) {
         const payload = authSchemas_1.oauthTokenSchema.parse(body);
-        const result = await this.socialAuthService.loginWithOAuthToken(payload.accessToken, payload.loginType, {
+        // 최적화된 OAuth 서비스 사용
+        const result = await this.optimizedOAuthService.fastOAuthLogin(payload.accessToken, payload.loginType, {
             appleRefreshToken: payload.appleRefreshToken,
             googleRefreshToken: payload.googleRefreshToken,
             authorizationCode: payload.authorizationCode,
@@ -202,5 +205,6 @@ __decorate([
 exports.OAuthController = OAuthController = __decorate([
     (0, swagger_1.ApiTags)('OAuth'),
     (0, common_1.Controller)('api/v1/oauth'),
-    __metadata("design:paramtypes", [social_auth_service_1.SocialAuthService])
+    __metadata("design:paramtypes", [social_auth_service_1.SocialAuthService,
+        optimized_oauth_service_1.OptimizedOAuthService])
 ], OAuthController);

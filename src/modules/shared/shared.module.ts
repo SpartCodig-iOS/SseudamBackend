@@ -1,4 +1,4 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Module, forwardRef } from '@nestjs/common';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RateLimitGuard } from '../../common/guards/rate-limit.guard';
 import { JwtTokenService } from '../../services/jwtService';
@@ -8,6 +8,10 @@ import { SessionService } from '../../services/sessionService';
 import { RateLimitService } from '../../services/rateLimitService';
 import { SmartCacheService } from '../../services/smart-cache.service';
 import { CacheService } from '../../services/cacheService';
+import { OptimizedOAuthService } from '../oauth/optimized-oauth.service';
+import { OptimizedDeleteService } from '../auth/optimized-delete.service';
+import { SocialAuthService } from '../oauth/social-auth.service';
+import { AuthService } from '../auth/auth.service';
 
 @Global()
 @Module({
@@ -17,6 +21,10 @@ import { CacheService } from '../../services/cacheService';
     JwtTokenService,
     OptimizedJwtTokenService,
     SmartCacheService,
+    AuthService,
+    SocialAuthService,
+    OptimizedOAuthService,
+    OptimizedDeleteService,
     SessionService,
     RateLimitService,
     AuthGuard,
@@ -28,6 +36,10 @@ import { CacheService } from '../../services/cacheService';
     JwtTokenService,
     OptimizedJwtTokenService,
     SmartCacheService,
+    AuthService,
+    SocialAuthService,
+    OptimizedOAuthService,
+    OptimizedDeleteService,
     SessionService,
     RateLimitService,
     AuthGuard,
