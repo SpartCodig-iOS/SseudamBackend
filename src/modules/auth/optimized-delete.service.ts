@@ -172,7 +172,7 @@ export class OptimizedDeleteService {
           DELETE FROM travel_settlements WHERE from_member = $1 OR to_member = $1 RETURNING 1
         ),
         deleted_sessions AS (
-          DELETE FROM sessions WHERE user_id = $1 RETURNING 1
+          DELETE FROM user_sessions WHERE user_id = $1 RETURNING 1
         )
         DELETE FROM profiles WHERE id = $1
       `, [userId]);
