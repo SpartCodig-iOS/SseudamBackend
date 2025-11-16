@@ -11,6 +11,9 @@ import { SmartCacheService } from '../../services/smart-cache.service';
 @ApiTags('Health')
 @Controller()
 export class HealthController {
+  private lastHealthCheck: { result: 'ok' | 'unavailable' | 'not_configured'; timestamp: number } | null = null;
+  private readonly HEALTH_CACHE_TTL = 30 * 1000; // 30초 캐시
+
   constructor(
     private readonly supabaseService: SupabaseService,
     private readonly cacheService: CacheService,
@@ -22,7 +25,30 @@ export class HealthController {
   @ApiOperation({ summary: '서버 및 데이터베이스 상태 확인' })
   @ApiOkResponse({ type: HealthResponseDto })
   async health() {
-    const database = await this.supabaseService.checkProfilesHealth();
+    // 캐시된 헬스 체크 결과 사용 (30초 캐시)
+    const now = Date.now();
+    if (this.lastHealthCheck && (now - this.lastHealthCheck.timestamp) < this.HEALTH_CACHE_TTL) {
+      return success({
+        status: 'ok',
+        database: this.lastHealthCheck.result,
+      });
+    }
+
+    // 빠른 헬스 체크 (타임아웃 500ms)
+    let database: 'ok' | 'unavailable' | 'not_configured';
+    try {
+      database = await Promise.race([
+        this.supabaseService.checkProfilesHealth(),
+        new Promise<'unavailable'>((resolve) =>
+          setTimeout(() => resolve('unavailable'), 500)
+        )
+      ]);
+    } catch (error) {
+      database = 'unavailable';
+    }
+
+    // 결과 캐싱
+    this.lastHealthCheck = { result: database, timestamp: now };
 
     return success({
       status: 'ok',
@@ -112,8 +138,22 @@ export class HealthController {
     // 데이터베이스 커넥션 풀 상태
     const poolStats = getPoolStats();
 
-    // 캐시 상태
-    const cacheStats = await this.cacheService.getStats();
+    // 캐시 상태 (빠른 조회)
+    let cacheStats;
+    try {
+      cacheStats = await Promise.race([
+        this.cacheService.getStats(),
+        new Promise(resolve => setTimeout(() => resolve({
+          redis: { status: 'timeout' },
+          fallback: { size: 0, keys: [] }
+        }), 100))
+      ]);
+    } catch (error) {
+      cacheStats = {
+        redis: { status: 'unavailable' },
+        fallback: { size: 0, keys: [] }
+      };
+    }
 
     const endTime = process.hrtime.bigint();
     const responseTimeMs = Number(endTime - startTime) / 1000000; // 나노초를 밀리초로 변환

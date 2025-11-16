@@ -24,9 +24,31 @@ let HealthController = class HealthController {
         this.supabaseService = supabaseService;
         this.cacheService = cacheService;
         this.smartCacheService = smartCacheService;
+        this.lastHealthCheck = null;
+        this.HEALTH_CACHE_TTL = 30 * 1000; // 30초 캐시
     }
     async health() {
-        const database = await this.supabaseService.checkProfilesHealth();
+        // 캐시된 헬스 체크 결과 사용 (30초 캐시)
+        const now = Date.now();
+        if (this.lastHealthCheck && (now - this.lastHealthCheck.timestamp) < this.HEALTH_CACHE_TTL) {
+            return (0, api_1.success)({
+                status: 'ok',
+                database: this.lastHealthCheck.result,
+            });
+        }
+        // 빠른 헬스 체크 (타임아웃 500ms)
+        let database;
+        try {
+            database = await Promise.race([
+                this.supabaseService.checkProfilesHealth(),
+                new Promise((resolve) => setTimeout(() => resolve('unavailable'), 500))
+            ]);
+        }
+        catch (error) {
+            database = 'unavailable';
+        }
+        // 결과 캐싱
+        this.lastHealthCheck = { result: database, timestamp: now };
         return (0, api_1.success)({
             status: 'ok',
             database,
@@ -46,8 +68,23 @@ let HealthController = class HealthController {
         const cpuUsage = ((loadAverage.user + loadAverage.system) / 1000000) % 100;
         // 데이터베이스 커넥션 풀 상태
         const poolStats = (0, pool_1.getPoolStats)();
-        // 캐시 상태
-        const cacheStats = await this.cacheService.getStats();
+        // 캐시 상태 (빠른 조회)
+        let cacheStats;
+        try {
+            cacheStats = await Promise.race([
+                this.cacheService.getStats(),
+                new Promise(resolve => setTimeout(() => resolve({
+                    redis: { status: 'timeout' },
+                    fallback: { size: 0, keys: [] }
+                }), 100))
+            ]);
+        }
+        catch (error) {
+            cacheStats = {
+                redis: { status: 'unavailable' },
+                fallback: { size: 0, keys: [] }
+            };
+        }
         const endTime = process.hrtime.bigint();
         const responseTimeMs = Number(endTime - startTime) / 1000000; // 나노초를 밀리초로 변환
         return (0, api_1.success)({
