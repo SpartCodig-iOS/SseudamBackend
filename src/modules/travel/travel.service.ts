@@ -70,6 +70,7 @@ export class TravelService {
 
   private async fetchSummaryForMember(travelId: string, userId: string): Promise<TravelSummary> {
     const pool = await getPool();
+    await this.refreshTravelStatuses(pool, travelId);
     const result = await pool.query(
       `SELECT
          t.id::text AS id,
@@ -80,7 +81,7 @@ export class TravelService {
          t.base_currency,
          t.base_exchange_rate,
          t.invite_code,
-         t.status,
+         CASE WHEN t.end_date < CURRENT_DATE THEN 'inactive' ELSE 'active' END AS status,
          t.created_at::text,
          tm.role,
          owner_profile.name AS owner_name,
@@ -140,6 +141,26 @@ export class TravelService {
     return '';
   }
 
+  private async refreshTravelStatuses(runner?: Pool | PoolClient, travelId?: string): Promise<void> {
+    const executor = runner ?? (await getPool());
+    if (travelId) {
+      await executor.query(
+        `UPDATE travels
+         SET status = CASE WHEN end_date < CURRENT_DATE THEN 'inactive' ELSE 'active' END
+         WHERE id = $1`,
+        [travelId],
+      );
+      return;
+    }
+
+    await executor.query(
+      `UPDATE travels
+       SET status = CASE WHEN end_date < CURRENT_DATE THEN 'inactive' ELSE 'active' END
+       WHERE (status = 'active' AND end_date < CURRENT_DATE)
+          OR (status = 'inactive' AND end_date >= CURRENT_DATE)`,
+    );
+  }
+
   private async ensureTransaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
     const pool = await getPool();
     const client = await pool.connect();
@@ -166,7 +187,7 @@ export class TravelService {
         const insertResult = await client.query(
           `WITH new_travel AS (
              INSERT INTO travels (owner_id, title, start_date, end_date, country_code, base_currency, base_exchange_rate, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')
+             VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $4 < CURRENT_DATE THEN 'inactive' ELSE 'active' END)
              RETURNING id,
                        title,
                        start_date,
@@ -239,6 +260,7 @@ export class TravelService {
     pagination: { page?: number; limit?: number; status?: 'active' | 'inactive' } = {},
   ): Promise<{ total: number; page: number; limit: number; items: TravelSummary[] }> {
     const pool = await getPool();
+    await this.refreshTravelStatuses(pool);
     const page = Math.max(1, pagination.page ?? 1);
     const limit = Math.min(100, Math.max(1, pagination.limit ?? 20));
     const offset = (page - 1) * limit;
@@ -254,7 +276,7 @@ export class TravelService {
     );
 
     const listPromise = pool.query(
-      `SELECT
+       `SELECT
          ut.id::text AS id,
          ut.title,
          ut.start_date::text,
@@ -263,13 +285,14 @@ export class TravelService {
          ut.base_currency,
          ut.base_exchange_rate,
          ut.invite_code,
-         ut.status,
+         ut.computed_status AS status,
          ut.role,
          ut.created_at::text,
          owner_profile.name AS owner_name,
          COALESCE(members.members, '[]'::json) AS members
        FROM (
-         SELECT t.*, tm.role
+         SELECT t.*, tm.role,
+                CASE WHEN t.end_date < CURRENT_DATE THEN 'inactive' ELSE 'active' END AS computed_status
          FROM travels t
          INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
          WHERE 1 = 1
@@ -360,7 +383,7 @@ export class TravelService {
               ti.used_count,
               ti.max_uses,
               ti.expires_at,
-              t.status AS travel_status
+              CASE WHEN t.end_date < CURRENT_DATE THEN 'inactive' ELSE 'active' END AS travel_status
        FROM travel_invites ti
        INNER JOIN travels t ON t.id = ti.travel_id
        WHERE ti.invite_code = $1
@@ -373,6 +396,7 @@ export class TravelService {
     if (!inviteRow) {
       throw new NotFoundException('유효하지 않은 초대 코드입니다.');
     }
+    await this.refreshTravelStatuses(pool, inviteRow.travel_id);
     if (inviteRow.status !== 'active' || inviteRow.travel_status !== 'active') {
       throw new BadRequestException('만료되었거나 비활성화된 초대 코드입니다.');
     }
@@ -420,6 +444,7 @@ export class TravelService {
            country_code = $6,
            base_currency = $7,
            base_exchange_rate = $8,
+           status = CASE WHEN $5 < CURRENT_DATE THEN 'inactive' ELSE 'active' END,
            updated_at = NOW()
        WHERE id = $1 AND owner_id = $2
        RETURNING
