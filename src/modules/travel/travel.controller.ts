@@ -9,6 +9,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  ParseUUIDPipe,
   Req,
   UseGuards,
   UnauthorizedException,
@@ -128,7 +129,7 @@ export class TravelController {
   })
   @ApiOkResponse({ type: TravelSummaryDto })
   async updateTravel(
-    @Param('travelId') travelId: string,
+    @Param('travelId', new ParseUUIDPipe({ version: '4' })) travelId: string,
     @Body() body: unknown,
     @Req() req: RequestWithUser,
   ) {
@@ -144,8 +145,8 @@ export class TravelController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '여행 멤버 삭제 (호스트 전용)' })
   async removeMember(
-    @Param('travelId') travelId: string,
-    @Param('memberId') memberId: string,
+    @Param('travelId', new ParseUUIDPipe({ version: '4' })) travelId: string,
+    @Param('memberId', new ParseUUIDPipe({ version: '4' })) memberId: string,
     @Req() req: RequestWithUser,
   ) {
     if (!req.currentUser) {
@@ -159,7 +160,10 @@ export class TravelController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '여행 초대 코드 생성' })
   @ApiOkResponse({ type: TravelInviteResponseDto })
-  async createInvite(@Param('travelId') travelId: string, @Req() req: RequestWithUser) {
+  async createInvite(
+    @Param('travelId', new ParseUUIDPipe({ version: '4' })) travelId: string,
+    @Req() req: RequestWithUser,
+  ) {
     if (!req.currentUser) {
       throw new UnauthorizedException('Unauthorized');
     }
@@ -192,7 +196,10 @@ export class TravelController {
   @Delete(':travelId')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '여행 삭제 (호스트 전용)' })
-  async deleteTravel(@Param('travelId') travelId: string, @Req() req: RequestWithUser) {
+  async deleteTravel(
+    @Param('travelId', new ParseUUIDPipe({ version: '4' })) travelId: string,
+    @Req() req: RequestWithUser,
+  ) {
     if (!req.currentUser) {
       throw new UnauthorizedException('Unauthorized');
     }

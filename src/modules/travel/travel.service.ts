@@ -70,7 +70,6 @@ export class TravelService {
 
   private async fetchSummaryForMember(travelId: string, userId: string): Promise<TravelSummary> {
     const pool = await getPool();
-    await this.refreshTravelStatuses(pool, travelId);
     const result = await pool.query(
       `SELECT
          t.id::text AS id,
@@ -139,26 +138,6 @@ export class TravelService {
       return `AND ${alias}.end_date < CURRENT_DATE`;
     }
     return '';
-  }
-
-  private async refreshTravelStatuses(runner?: Pool | PoolClient, travelId?: string): Promise<void> {
-    const executor = runner ?? (await getPool());
-    if (travelId) {
-      await executor.query(
-        `UPDATE travels
-         SET status = CASE WHEN end_date < CURRENT_DATE THEN 'inactive' ELSE 'active' END
-         WHERE id = $1`,
-        [travelId],
-      );
-      return;
-    }
-
-    await executor.query(
-      `UPDATE travels
-       SET status = CASE WHEN end_date < CURRENT_DATE THEN 'inactive' ELSE 'active' END
-       WHERE (status = 'active' AND end_date < CURRENT_DATE)
-          OR (status = 'inactive' AND end_date >= CURRENT_DATE)`,
-    );
   }
 
   private async ensureTransaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
@@ -260,7 +239,6 @@ export class TravelService {
     pagination: { page?: number; limit?: number; status?: 'active' | 'inactive' } = {},
   ): Promise<{ total: number; page: number; limit: number; items: TravelSummary[] }> {
     const pool = await getPool();
-    await this.refreshTravelStatuses(pool);
     const page = Math.max(1, pagination.page ?? 1);
     const limit = Math.min(100, Math.max(1, pagination.limit ?? 20));
     const offset = (page - 1) * limit;
@@ -396,7 +374,6 @@ export class TravelService {
     if (!inviteRow) {
       throw new NotFoundException('유효하지 않은 초대 코드입니다.');
     }
-    await this.refreshTravelStatuses(pool, inviteRow.travel_id);
     if (inviteRow.status !== 'active' || inviteRow.travel_status !== 'active') {
       throw new BadRequestException('만료되었거나 비활성화된 초대 코드입니다.');
     }
