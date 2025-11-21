@@ -44,24 +44,25 @@ let TravelService = TravelService_1 = class TravelService {
          t.invite_code,
          CASE WHEN t.end_date < CURRENT_DATE THEN 'inactive' ELSE 'active' END AS status,
          t.created_at::text,
-         tm.role,
+         tm.role AS role,
          owner_profile.name AS owner_name,
          COALESCE(members.members, '[]'::json) AS members
        FROM travels t
        INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $2
+       LEFT JOIN profiles member_profile ON member_profile.id = tm.user_id
        LEFT JOIN profiles owner_profile ON owner_profile.id = t.owner_id
        LEFT JOIN LATERAL (
-         SELECT json_agg(
-                  json_build_object(
-                    'userId', tm2.user_id,
-                    'name', p.name,
-                    'role', tm2.role
-                  )
-                  ORDER BY tm2.joined_at
-                ) AS members
-         FROM travel_members tm2
-         LEFT JOIN profiles p ON p.id = tm2.user_id
-         WHERE tm2.travel_id = t.id
+        SELECT json_agg(
+                 json_build_object(
+                   'userId', tm2.user_id,
+                   'name', p.name,
+                   'role', COALESCE(tm2.role, p.role)
+                 )
+                 ORDER BY tm2.joined_at
+               ) AS members
+        FROM travel_members tm2
+        LEFT JOIN profiles p ON p.id = tm2.user_id
+        WHERE tm2.travel_id = t.id
        ) AS members ON TRUE
        WHERE t.id = $1
        LIMIT 1`, [travelId, userId]);
@@ -197,39 +198,40 @@ let TravelService = TravelService_1 = class TravelService {
        ${statusCondition}`, [userId]);
         const listPromise = pool.query(`SELECT
          ut.id::text AS id,
-         ut.title,
-         ut.start_date::text,
-         ut.end_date::text,
-         ut.country_code,
-         ut.base_currency,
-         ut.base_exchange_rate,
-         ut.invite_code,
-         ut.computed_status AS status,
-         ut.role,
-         ut.created_at::text,
-         owner_profile.name AS owner_name,
-         COALESCE(members.members, '[]'::json) AS members
-       FROM (
-         SELECT t.*, tm.role,
-                CASE WHEN t.end_date < CURRENT_DATE THEN 'inactive' ELSE 'active' END AS computed_status
-         FROM travels t
-         INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
-         WHERE 1 = 1
-         ${statusCondition}
-       ) AS ut
-       INNER JOIN profiles owner_profile ON owner_profile.id = ut.owner_id
-       LEFT JOIN LATERAL (
-         SELECT json_agg(
-                  json_build_object(
-                    'userId', tm2.user_id,
-                    'name', p.name,
-                    'role', tm2.role
-                  )
-                  ORDER BY tm2.joined_at
-                ) AS members
-         FROM travel_members tm2
-         LEFT JOIN profiles p ON p.id = tm2.user_id
-         WHERE tm2.travel_id = ut.id
+       ut.title,
+       ut.start_date::text,
+       ut.end_date::text,
+       ut.country_code,
+       ut.base_currency,
+       ut.base_exchange_rate,
+       ut.invite_code,
+       ut.computed_status AS status,
+       ut.role,
+       ut.created_at::text,
+       owner_profile.name AS owner_name,
+       COALESCE(members.members, '[]'::json) AS members
+     FROM (
+        SELECT t.*, COALESCE(tm.role, mp.role, 'member') AS role,
+               CASE WHEN t.end_date < CURRENT_DATE THEN 'inactive' ELSE 'active' END AS computed_status
+        FROM travels t
+        INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
+        LEFT JOIN profiles mp ON mp.id = tm.user_id
+        WHERE 1 = 1
+        ${statusCondition}
+      ) AS ut
+      INNER JOIN profiles owner_profile ON owner_profile.id = ut.owner_id
+      LEFT JOIN LATERAL (
+        SELECT json_agg(
+                 json_build_object(
+                   'userId', tm2.user_id,
+                   'name', p.name,
+                   'role', COALESCE(tm2.role, p.role)
+                 )
+                 ORDER BY tm2.joined_at
+               ) AS members
+        FROM travel_members tm2
+        LEFT JOIN profiles p ON p.id = tm2.user_id
+        WHERE tm2.travel_id = ut.id
        ) AS members ON TRUE
        ORDER BY ut.created_at DESC
        LIMIT $2 OFFSET $3`, [userId, limit, offset]);
@@ -255,6 +257,11 @@ let TravelService = TravelService_1 = class TravelService {
          ON CONFLICT (invite_code)
          DO UPDATE SET status = 'active', used_count = 0`, [travelId, inviteCode, userId]);
             await client.query(`UPDATE travels SET invite_code = $2 WHERE id = $1`, [travelId, inviteCode]);
+            // 초대 코드를 생성한 사용자를 운영 권한(owner)으로 보증
+            await client.query(`UPDATE profiles
+         SET role = 'owner'
+         WHERE id = $1
+           AND role NOT IN ('owner', 'admin', 'super_admin')`, [userId]);
         });
         return { inviteCode };
     }
@@ -272,6 +279,41 @@ let TravelService = TravelService_1 = class TravelService {
             await client.query(`DELETE FROM travel_members WHERE travel_id = $1`, [travelId]);
             await client.query(`DELETE FROM travels WHERE id = $1`, [travelId]);
         });
+    }
+    async transferOwnership(travelId, currentOwnerId, newOwnerId) {
+        const pool = await (0, pool_1.getPool)();
+        await this.ensureOwner(travelId, currentOwnerId, pool);
+        if (currentOwnerId === newOwnerId) {
+            throw new common_1.BadRequestException('이미 호스트입니다.');
+        }
+        await this.ensureTransaction(async (client) => {
+            const travelRow = await client.query(`SELECT owner_id FROM travels WHERE id = $1 LIMIT 1`, [travelId]);
+            if (!travelRow.rows[0]) {
+                throw new common_1.NotFoundException('여행을 찾을 수 없습니다.');
+            }
+            const memberRow = await client.query(`SELECT 1 FROM travel_members WHERE travel_id = $1 AND user_id = $2 LIMIT 1`, [travelId, newOwnerId]);
+            if (!memberRow.rows[0]) {
+                throw new common_1.BadRequestException('새 호스트가 여행 멤버가 아닙니다.');
+            }
+            // 기존 호스트를 멤버로, 새 호스트를 owner로 설정하고 travels.owner_id 업데이트
+            const demoteResult = await client.query(`UPDATE travel_members
+         SET role = 'member'
+         WHERE travel_id = $1 AND user_id = $2`, [travelId, currentOwnerId]);
+            if ((demoteResult.rowCount ?? 0) === 0) {
+                throw new common_1.BadRequestException('현재 호스트를 멤버로 변경하지 못했습니다.');
+            }
+            const promoteResult = await client.query(`UPDATE travel_members
+         SET role = 'owner'
+         WHERE travel_id = $1 AND user_id = $2`, [travelId, newOwnerId]);
+            if ((promoteResult.rowCount ?? 0) === 0) {
+                throw new common_1.BadRequestException('새 호스트를 설정하지 못했습니다.');
+            }
+            await client.query(`UPDATE travels
+         SET owner_id = $2
+         WHERE id = $1`, [travelId, newOwnerId]);
+        });
+        // 트랜잭션 커밋 후 최신 상태 조회
+        return this.fetchSummaryForMember(travelId, newOwnerId);
     }
     async joinByInviteCode(userId, inviteCode) {
         const pool = await (0, pool_1.getPool)();
@@ -309,8 +351,29 @@ let TravelService = TravelService_1 = class TravelService {
             await client.query(`UPDATE travel_invites
          SET used_count = used_count + 1
          WHERE invite_code = $1`, [inviteCode]);
+            // 초대 코드로 참여하면 프로필 역할을 member로 설정 (user인 경우만)
+            await client.query(`UPDATE profiles
+         SET role = 'member'
+         WHERE id = $1
+           AND role = 'user'`, [userId]);
         });
         return this.fetchSummaryForMember(inviteRow.travel_id, userId);
+    }
+    async leaveTravel(travelId, userId) {
+        const pool = await (0, pool_1.getPool)();
+        const membership = await pool.query(`SELECT tm.role, t.owner_id
+       FROM travel_members tm
+       INNER JOIN travels t ON t.id = tm.travel_id
+       WHERE tm.travel_id = $1 AND tm.user_id = $2
+       LIMIT 1`, [travelId, userId]);
+        const row = membership.rows[0];
+        if (!row) {
+            throw new common_1.NotFoundException('여행을 찾을 수 없거나 멤버가 아닙니다.');
+        }
+        if (row.owner_id === userId || row.role === 'owner') {
+            throw new common_1.ForbiddenException('여행 관리자는 여행에서 나갈 수 없습니다.');
+        }
+        await pool.query(`DELETE FROM travel_members WHERE travel_id = $1 AND user_id = $2`, [travelId, userId]);
     }
     async updateTravel(travelId, userId, payload) {
         const pool = await (0, pool_1.getPool)();

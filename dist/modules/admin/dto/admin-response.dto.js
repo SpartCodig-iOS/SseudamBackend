@@ -9,58 +9,58 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ProfileResponseDto = void 0;
+exports.UpdateUserRoleResponseDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
-class ProfileDataDto {
+class UpdateUserRoleDataDto {
 }
 __decorate([
     (0, swagger_1.ApiProperty)({ example: '60be2b70-65cf-4a90-a188-c8f967e1cbe7' }),
     __metadata("design:type", String)
-], ProfileDataDto.prototype, "id", void 0);
+], UpdateUserRoleDataDto.prototype, "id", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 'test@example.com' }),
+    (0, swagger_1.ApiProperty)({ example: 'admin@example.com' }),
     __metadata("design:type", String)
-], ProfileDataDto.prototype, "email", void 0);
+], UpdateUserRoleDataDto.prototype, "email", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: '테스트 사용자', nullable: true }),
+    (0, swagger_1.ApiProperty)({ example: '운영자', nullable: true }),
     __metadata("design:type", Object)
-], ProfileDataDto.prototype, "name", void 0);
+], UpdateUserRoleDataDto.prototype, "name", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ example: null, nullable: true }),
     __metadata("design:type", Object)
-], ProfileDataDto.prototype, "avatarURL", void 0);
+], UpdateUserRoleDataDto.prototype, "avatarURL", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'owner' }),
+    __metadata("design:type", String)
+], UpdateUserRoleDataDto.prototype, "role", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'admin_user' }),
+    __metadata("design:type", String)
+], UpdateUserRoleDataDto.prototype, "userId", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ example: '2025-11-07T20:43:21.842Z', nullable: true }),
     __metadata("design:type", Object)
-], ProfileDataDto.prototype, "createdAt", void 0);
+], UpdateUserRoleDataDto.prototype, "createdAt", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: '2025-11-07T20:43:21.842Z', nullable: true }),
+    (0, swagger_1.ApiProperty)({ example: '8e922b44-7a3b-495a-bbe8-59484596c70b' }),
+    __metadata("design:type", String)
+], UpdateUserRoleDataDto.prototype, "changedBy", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '신규 운영자 지정', nullable: true }),
     __metadata("design:type", Object)
-], ProfileDataDto.prototype, "updatedAt", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'user' }),
-    __metadata("design:type", String)
-], ProfileDataDto.prototype, "role", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'user' }),
-    __metadata("design:type", String)
-], ProfileDataDto.prototype, "userId", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'email' }),
-    __metadata("design:type", String)
-], ProfileDataDto.prototype, "loginType", void 0);
-class ProfileResponseDto {
+], UpdateUserRoleDataDto.prototype, "reason", void 0);
+class UpdateUserRoleResponseDto {
 }
-exports.ProfileResponseDto = ProfileResponseDto;
+exports.UpdateUserRoleResponseDto = UpdateUserRoleResponseDto;
 __decorate([
     (0, swagger_1.ApiProperty)({ example: 200 }),
     __metadata("design:type", Number)
-], ProfileResponseDto.prototype, "code", void 0);
+], UpdateUserRoleResponseDto.prototype, "code", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 'OK' }),
+    (0, swagger_1.ApiProperty)({ example: 'Role updated' }),
     __metadata("design:type", String)
-], ProfileResponseDto.prototype, "message", void 0);
+], UpdateUserRoleResponseDto.prototype, "message", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ type: ProfileDataDto }),
-    __metadata("design:type", ProfileDataDto)
-], ProfileResponseDto.prototype, "data", void 0);
+    (0, swagger_1.ApiProperty)({ type: UpdateUserRoleDataDto }),
+    __metadata("design:type", UpdateUserRoleDataDto)
+], UpdateUserRoleResponseDto.prototype, "data", void 0);

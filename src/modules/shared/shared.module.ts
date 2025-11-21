@@ -12,6 +12,7 @@ import { OptimizedOAuthService } from '../oauth/optimized-oauth.service';
 import { OptimizedDeleteService } from '../auth/optimized-delete.service';
 import { SocialAuthService } from '../oauth/social-auth.service';
 import { AuthService } from '../auth/auth.service';
+import { RolesGuard } from '../../common/guards/roles.guard';
 
 @Global()
 @Module({
@@ -28,6 +29,7 @@ import { AuthService } from '../auth/auth.service';
     SessionService,
     RateLimitService,
     AuthGuard,
+    RolesGuard,
     RateLimitGuard,
   ],
   exports: [
@@ -43,6 +45,7 @@ import { AuthService } from '../auth/auth.service';
     SessionService,
     RateLimitService,
     AuthGuard,
+    RolesGuard,
     RateLimitGuard,
   ],
 })

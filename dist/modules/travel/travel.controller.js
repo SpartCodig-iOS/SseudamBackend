@@ -83,6 +83,21 @@ let TravelController = class TravelController {
         const travel = await this.travelService.joinByInviteCode(req.currentUser.id, payload.inviteCode);
         return (0, api_1.success)(travel, 'Joined travel');
     }
+    async transferOwnership(travelId, body, req) {
+        if (!req.currentUser) {
+            throw new common_1.UnauthorizedException('Unauthorized');
+        }
+        const payload = travelSchemas_1.transferOwnershipSchema.parse(body);
+        const travel = await this.travelService.transferOwnership(travelId, req.currentUser.id, payload.newOwnerId);
+        return (0, api_1.success)(travel, 'Travel ownership transferred');
+    }
+    async leaveTravel(travelId, req) {
+        if (!req.currentUser) {
+            throw new common_1.UnauthorizedException('Unauthorized');
+        }
+        await this.travelService.leaveTravel(travelId, req.currentUser.id);
+        return (0, api_1.success)({}, 'Left travel');
+    }
     async deleteTravel(travelId, req) {
         if (!req.currentUser) {
             throw new common_1.UnauthorizedException('Unauthorized');
@@ -224,6 +239,37 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], TravelController.prototype, "join", null);
+__decorate([
+    (0, common_1.Patch)(':travelId/owner'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: '여행 호스트 권한 위임 (기존 호스트 → 멤버)' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['newOwnerId'],
+            properties: {
+                newOwnerId: { type: 'string', format: 'uuid', example: 'e11cc73b-052d-4740-8213-999c05bfc332' },
+            },
+        },
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: travel_response_dto_1.TravelSummaryDto }),
+    __param(0, (0, common_1.Param)('travelId', new common_1.ParseUUIDPipe({ version: '4' }))),
+    __param(1, (0, common_1.Body)()),
+    __param(2, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object, Object]),
+    __metadata("design:returntype", Promise)
+], TravelController.prototype, "transferOwnership", null);
+__decorate([
+    (0, common_1.Delete)(':travelId/leave'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: '여행 나가기 (본인만, 멤버만 가능)' }),
+    __param(0, (0, common_1.Param)('travelId', new common_1.ParseUUIDPipe({ version: '4' }))),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], TravelController.prototype, "leaveTravel", null);
 __decorate([
     (0, common_1.Delete)(':travelId'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),

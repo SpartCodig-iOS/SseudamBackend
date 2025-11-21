@@ -19,7 +19,7 @@ import { success } from '../../types/api';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RequestWithUser } from '../../types/request';
 import { TravelService } from './travel.service';
-import { createTravelSchema, travelInviteCodeSchema } from '../../validators/travelSchemas';
+import { createTravelSchema, travelInviteCodeSchema, transferOwnershipSchema } from '../../validators/travelSchemas';
 import { TravelInviteResponseDto, TravelSummaryDto } from './dto/travel-response.dto';
 
 @ApiTags('Travels')
@@ -191,6 +191,46 @@ export class TravelController {
     const payload = travelInviteCodeSchema.parse(body);
     const travel = await this.travelService.joinByInviteCode(req.currentUser.id, payload.inviteCode);
     return success(travel, 'Joined travel');
+  }
+
+  @Patch(':travelId/owner')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '여행 호스트 권한 위임 (기존 호스트 → 멤버)' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['newOwnerId'],
+      properties: {
+        newOwnerId: { type: 'string', format: 'uuid', example: 'e11cc73b-052d-4740-8213-999c05bfc332' },
+      },
+    },
+  })
+  @ApiOkResponse({ type: TravelSummaryDto })
+  async transferOwnership(
+    @Param('travelId', new ParseUUIDPipe({ version: '4' })) travelId: string,
+    @Body() body: unknown,
+    @Req() req: RequestWithUser,
+  ) {
+    if (!req.currentUser) {
+      throw new UnauthorizedException('Unauthorized');
+    }
+    const payload = transferOwnershipSchema.parse(body);
+    const travel = await this.travelService.transferOwnership(travelId, req.currentUser.id, payload.newOwnerId);
+    return success(travel, 'Travel ownership transferred');
+  }
+
+  @Delete(':travelId/leave')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '여행 나가기 (본인만, 멤버만 가능)' })
+  async leaveTravel(
+    @Param('travelId', new ParseUUIDPipe({ version: '4' })) travelId: string,
+    @Req() req: RequestWithUser,
+  ) {
+    if (!req.currentUser) {
+      throw new UnauthorizedException('Unauthorized');
+    }
+    await this.travelService.leaveTravel(travelId, req.currentUser.id);
+    return success({}, 'Left travel');
   }
 
   @Delete(':travelId')

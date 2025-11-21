@@ -131,6 +131,8 @@ DELETE /api/v1/auth/account       # 계정 삭제
 GET    /api/v1/travels            # 여행 목록
 POST   /api/v1/travels            # 여행 생성
 POST   /api/v1/travels/{id}/invite # 초대 코드 생성
+PATCH  /api/v1/travels/{id}/owner  # 호스트 권한 위임 (호스트만 호출, 기존 호스트는 member로 강등)
+DELETE /api/v1/travels/{id}/leave  # 여행 나가기 (본인만, 호스트는 불가)
 DELETE /api/v1/travels/{id}       # 여행 삭제
 ```
 

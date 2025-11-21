@@ -21,6 +21,7 @@ const optimized_oauth_service_1 = require("../oauth/optimized-oauth.service");
 const optimized_delete_service_1 = require("../auth/optimized-delete.service");
 const social_auth_service_1 = require("../oauth/social-auth.service");
 const auth_service_1 = require("../auth/auth.service");
+const roles_guard_1 = require("../../common/guards/roles.guard");
 let SharedModule = class SharedModule {
 };
 exports.SharedModule = SharedModule;
@@ -40,6 +41,7 @@ exports.SharedModule = SharedModule = __decorate([
             sessionService_1.SessionService,
             rateLimitService_1.RateLimitService,
             auth_guard_1.AuthGuard,
+            roles_guard_1.RolesGuard,
             rate_limit_guard_1.RateLimitGuard,
         ],
         exports: [
@@ -55,6 +57,7 @@ exports.SharedModule = SharedModule = __decorate([
             sessionService_1.SessionService,
             rateLimitService_1.RateLimitService,
             auth_guard_1.AuthGuard,
+            roles_guard_1.RolesGuard,
             rate_limit_guard_1.RateLimitGuard,
         ],
     })

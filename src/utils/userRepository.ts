@@ -8,6 +8,7 @@ const USER_COLUMNS = `
   name,
   avatar_url,
   username,
+  role,
   created_at,
   updated_at
 `;
@@ -19,6 +20,7 @@ const mapRow = (row: any): UserRecord => ({
   name: row.name,
   avatar_url: row.avatar_url,
   username: row.username,
+  role: row.role ?? 'user',
   created_at: row.created_at,
   updated_at: row.updated_at,
 });
@@ -62,13 +64,14 @@ export const createUser = async (params: {
   name?: string | null;
   avatarURL?: string | null;
   username: string;
+  role?: string;
 }): Promise<UserRecord> => {
   const pool = await getPool();
   const result = await pool.query(
-    `INSERT INTO users (email, password_hash, name, avatar_url, username)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO users (email, password_hash, name, avatar_url, username, role)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING ${USER_COLUMNS}`,
-    [params.email, params.passwordHash, params.name ?? null, params.avatarURL ?? null, params.username],
+    [params.email, params.passwordHash, params.name ?? null, params.avatarURL ?? null, params.username, params.role ?? 'user'],
   );
   return mapRow(result.rows[0]);
 };

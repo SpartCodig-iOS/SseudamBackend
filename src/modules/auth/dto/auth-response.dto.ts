@@ -17,6 +17,9 @@ export class AuthUserDto {
   createdAt!: string | null;
 
   @ApiProperty({ example: 'user' })
+  role!: string;
+
+  @ApiProperty({ example: 'user' })
   userId!: string;
 }
 

@@ -189,7 +189,20 @@ let AuthService = AuthService_1 = class AuthService {
            avatar_url,
            created_at,
            updated_at,
-           password_hash
+           password_hash,
+           role
+         FROM profiles
+         WHERE ${shouldUseEmailLookup ? 'email = $1' : 'username = $1'}
+         LIMIT 1`;
+        const selectWithoutPassword = `SELECT
+           id::text,
+           email,
+           name,
+           username,
+           avatar_url,
+           created_at,
+           updated_at,
+           role
          FROM profiles
          WHERE ${shouldUseEmailLookup ? 'email = $1' : 'username = $1'}
          LIMIT 1`;
@@ -209,10 +222,23 @@ let AuthService = AuthService_1 = class AuthService {
             result = await pool.query(selectWithPassword, [queryParam]);
         }
         catch (error) {
-            if (!(error instanceof Error) || !error.message.includes('password_hash')) {
+            if (error instanceof Error && error.message.includes('password_hash')) {
+                try {
+                    result = await pool.query(selectWithoutPassword, [queryParam]);
+                }
+                catch (innerError) {
+                    if (!(innerError instanceof Error) || !innerError.message.includes('role')) {
+                        throw innerError;
+                    }
+                    result = await pool.query(selectFallback, [queryParam]);
+                }
+            }
+            else if (error instanceof Error && error.message.includes('role')) {
+                result = await pool.query(selectFallback, [queryParam]);
+            }
+            else {
                 throw error;
             }
-            result = await pool.query(selectFallback, [queryParam]);
         }
         const row = result.rows[0];
         if (!row)
@@ -260,6 +286,7 @@ let AuthService = AuthService_1 = class AuthService {
             created_at: row.created_at,
             updated_at: row.updated_at,
             password_hash: '', // 보안상 빈 값으로 설정
+            role: row.role ?? 'user',
         };
         // 성공한 인증 후 사용자 정보를 Redis 캐시에 저장
         void this.setCachedUser(resolvedEmail, userRecord);
@@ -303,6 +330,7 @@ let AuthService = AuthService_1 = class AuthService {
             updated_at: new Date(),
             username,
             password_hash: passwordHash,
+            role: 'user',
         };
         // 세션 생성과 캐시 업데이트를 병렬로 처리
         const [result] = await Promise.all([
@@ -366,11 +394,40 @@ let AuthService = AuthService_1 = class AuthService {
         }
         let user;
         try {
-            const supabaseUser = await this.supabaseService.getUserById(payload.sub);
-            if (!supabaseUser) {
-                throw new common_1.UnauthorizedException('User not found in Supabase');
+            const pool = await (0, pool_1.getPool)();
+            const profile = await pool.query(`SELECT
+           id::text,
+           email,
+           name,
+           username,
+           avatar_url,
+           created_at,
+           updated_at,
+           role
+         FROM profiles
+         WHERE id = $1
+         LIMIT 1`, [payload.sub]);
+            const row = profile.rows[0];
+            if (row) {
+                user = {
+                    id: row.id,
+                    email: row.email,
+                    name: row.name,
+                    avatar_url: row.avatar_url,
+                    username: row.username,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                    password_hash: '',
+                    role: row.role ?? 'user',
+                };
             }
-            user = (0, mappers_1.fromSupabaseUser)(supabaseUser);
+            else {
+                const supabaseUser = await this.supabaseService.getUserById(payload.sub);
+                if (!supabaseUser) {
+                    throw new common_1.UnauthorizedException('User not found in Supabase');
+                }
+                user = (0, mappers_1.fromSupabaseUser)(supabaseUser);
+            }
         }
         catch (error) {
             throw new common_1.UnauthorizedException('User verification failed');

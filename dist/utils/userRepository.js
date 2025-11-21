@@ -9,6 +9,7 @@ const USER_COLUMNS = `
   name,
   avatar_url,
   username,
+  role,
   created_at,
   updated_at
 `;
@@ -19,6 +20,7 @@ const mapRow = (row) => ({
     name: row.name,
     avatar_url: row.avatar_url,
     username: row.username,
+    role: row.role ?? 'user',
     created_at: row.created_at,
     updated_at: row.updated_at,
 });
@@ -48,9 +50,9 @@ const findById = async (id) => {
 exports.findById = findById;
 const createUser = async (params) => {
     const pool = await (0, pool_1.getPool)();
-    const result = await pool.query(`INSERT INTO users (email, password_hash, name, avatar_url, username)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING ${USER_COLUMNS}`, [params.email, params.passwordHash, params.name ?? null, params.avatarURL ?? null, params.username]);
+    const result = await pool.query(`INSERT INTO users (email, password_hash, name, avatar_url, username, role)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING ${USER_COLUMNS}`, [params.email, params.passwordHash, params.name ?? null, params.avatarURL ?? null, params.username, params.role ?? 'user']);
     return mapRow(result.rows[0]);
 };
 exports.createUser = createUser;

@@ -20,6 +20,9 @@ class ProfileDataDto {
   updatedAt!: string | null;
 
   @ApiProperty({ example: 'user' })
+  role!: string;
+
+  @ApiProperty({ example: 'user' })
   userId!: string;
 
   @ApiProperty({ example: 'email' })

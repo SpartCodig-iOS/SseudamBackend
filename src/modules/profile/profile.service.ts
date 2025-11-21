@@ -68,6 +68,7 @@ export class ProfileService {
          name,
          avatar_url,
          username,
+         role,
          created_at,
          updated_at
        FROM profiles
@@ -85,6 +86,7 @@ export class ProfileService {
       name: row.name,
       avatar_url: row.avatar_url,
       username: row.username,
+      role: row.role ?? 'user',
       created_at: row.created_at,
       updated_at: row.updated_at,
       password_hash: '',
@@ -120,6 +122,7 @@ export class ProfileService {
          name,
          avatar_url,
          username,
+         role,
          created_at,
          updated_at`,
       [userId, payload.name ?? null, avatarURL],
@@ -131,6 +134,7 @@ export class ProfileService {
       name: row.name,
       avatar_url: row.avatar_url,
       username: row.username,
+      role: row.role ?? 'user',
       created_at: row.created_at,
       updated_at: row.updated_at,
       password_hash: '',

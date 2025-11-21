@@ -49,3 +49,9 @@ export const updateMemberSchema = z.object({
 });
 
 export type UpdateMemberInput = z.infer<typeof updateMemberSchema>;
+
+export const transferOwnershipSchema = z.object({
+  newOwnerId: z.string().uuid(),
+});
+
+export type TransferOwnershipInput = z.infer<typeof transferOwnershipSchema>;

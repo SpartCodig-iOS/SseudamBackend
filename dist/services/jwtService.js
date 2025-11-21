@@ -22,6 +22,7 @@ let JwtTokenService = class JwtTokenService {
             name: user.name ?? undefined,
             loginType,
             lastLoginAt: new Date().toISOString(),
+            role: user.role,
             sessionId,
         };
     }

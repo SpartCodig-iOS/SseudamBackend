@@ -47,6 +47,7 @@ let OptimizedJwtTokenService = OptimizedJwtTokenService_1 = class OptimizedJwtTo
             name: user.name ?? undefined,
             loginType,
             lastLoginAt: new Date().toISOString(),
+            role: user.role,
             sessionId,
         };
     }

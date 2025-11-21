@@ -15,6 +15,7 @@ const jwtService_1 = require("../../services/jwtService");
 const supabaseService_1 = require("../../services/supabaseService");
 const mappers_1 = require("../../utils/mappers");
 const sessionService_1 = require("../../services/sessionService");
+const pool_1 = require("../../db/pool");
 let AuthGuard = class AuthGuard {
     constructor(jwtTokenService, supabaseService, sessionService) {
         this.jwtTokenService = jwtTokenService;
@@ -32,21 +33,25 @@ let AuthGuard = class AuthGuard {
         const localUser = this.tryLocalJwt(token);
         if (localUser) {
             await this.ensureSessionActive(localUser.sessionId);
-            request.currentUser = localUser.user;
+            const hydratedUser = await this.hydrateUserRole(localUser.user);
+            this.setCachedUser(token, hydratedUser);
+            request.currentUser = hydratedUser;
             request.loginType = localUser.loginType;
             return true;
         }
         // 캐시된 사용자 확인
         const cachedUser = this.getCachedUser(token);
         if (cachedUser) {
-            request.currentUser = cachedUser;
+            const hydratedUser = await this.hydrateUserRole(cachedUser);
+            this.setCachedUser(token, hydratedUser);
+            request.currentUser = hydratedUser;
             request.loginType = 'email';
             return true;
         }
         try {
             const supabaseUser = await this.supabaseService.getUserFromToken(token);
             if (supabaseUser?.email) {
-                const userRecord = (0, mappers_1.fromSupabaseUser)(supabaseUser);
+                const userRecord = await this.hydrateUserRole((0, mappers_1.fromSupabaseUser)(supabaseUser));
                 this.setCachedUser(token, userRecord);
                 request.currentUser = userRecord;
                 request.loginType = 'email';
@@ -104,6 +109,7 @@ let AuthGuard = class AuthGuard {
                     avatar_url: null,
                     username: payload.email.split('@')[0] || payload.sub,
                     password_hash: '',
+                    role: payload.role ?? 'user',
                     created_at: issuedAt,
                     updated_at: issuedAt,
                 };
@@ -119,6 +125,19 @@ let AuthGuard = class AuthGuard {
         const session = await this.sessionService.getSession(sessionId);
         if (!session || !session.isActive) {
             throw new common_1.UnauthorizedException('Session expired or revoked');
+        }
+    }
+    // 최신 role을 DB에서 확인해 요청 사용자에 반영 (재로그인 없이 즉시 반영)
+    async hydrateUserRole(user) {
+        try {
+            const pool = await (0, pool_1.getPool)();
+            const result = await pool.query(`SELECT role FROM profiles WHERE id = $1 LIMIT 1`, [user.id]);
+            const dbRole = result.rows[0]?.role;
+            return { ...user, role: (dbRole ?? user.role ?? 'user') };
+        }
+        catch (error) {
+            // DB 실패 시 기존 역할 유지
+            return { ...user, role: user.role ?? 'user' };
         }
     }
 };

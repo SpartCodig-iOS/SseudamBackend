@@ -12,6 +12,7 @@ const toUserResponse = (user) => ({
     email: user.email,
     name: user.name,
     avatarURL: user.avatar_url,
+    role: user.role,
     createdAt: formatDate(user.created_at),
     userId: user.username,
 });
@@ -22,6 +23,7 @@ const toProfileResponse = (user) => ({
     email: user.email,
     name: user.name,
     avatarURL: user.avatar_url,
+    role: user.role,
     createdAt: formatDate(user.created_at),
     updatedAt: formatDate(user.updated_at),
 });
@@ -46,6 +48,7 @@ const fromSupabaseUser = (supabaseUser, options) => ({
     avatar_url: supabaseUser.user_metadata?.avatar_url ?? null,
     username: supabaseUser.email?.split('@')[0] || supabaseUser.id,
     password_hash: '',
+    role: 'user',
     created_at: supabaseUser.created_at ? new Date(supabaseUser.created_at) : null,
     updated_at: supabaseUser.updated_at ? new Date(supabaseUser.updated_at) : null,
 });

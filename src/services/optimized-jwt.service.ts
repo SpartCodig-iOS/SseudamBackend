@@ -3,7 +3,7 @@ import jwt, { JwtPayload } from 'jsonwebtoken';
 import { createHash } from 'crypto';
 import { env } from '../config/env';
 import { LoginType } from '../types/auth';
-import { UserRecord } from '../types/user';
+import { UserRecord, UserRole } from '../types/user';
 import { CacheService } from './cacheService';
 
 export interface TokenPair {
@@ -25,6 +25,7 @@ export interface AccessPayload extends JwtPayload {
   name?: string | null;
   loginType?: LoginType;
   lastLoginAt?: string;
+  role?: UserRole;
   sessionId: string;
 }
 
@@ -66,6 +67,7 @@ export class OptimizedJwtTokenService {
       name: user.name ?? undefined,
       loginType,
       lastLoginAt: new Date().toISOString(),
+      role: user.role,
       sessionId,
     };
   }

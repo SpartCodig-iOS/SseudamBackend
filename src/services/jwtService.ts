@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { env } from '../config/env';
 import { LoginType } from '../types/auth';
-import { UserRecord } from '../types/user';
+import { UserRecord, UserRole } from '../types/user';
 
 export interface TokenPair {
   accessToken: string;
@@ -23,6 +23,7 @@ export interface AccessPayload extends JwtPayload {
   name?: string | null;
   loginType?: LoginType;
   lastLoginAt?: string;
+  role?: UserRole;
   sessionId: string;
 }
 
@@ -37,6 +38,7 @@ export class JwtTokenService {
       name: user.name ?? undefined,
       loginType,
       lastLoginAt: new Date().toISOString(),
+      role: user.role,
       sessionId,
     };
   }

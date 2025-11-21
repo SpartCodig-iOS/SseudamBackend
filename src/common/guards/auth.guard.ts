@@ -6,6 +6,7 @@ import { SupabaseService } from '../../services/supabaseService';
 import { fromSupabaseUser } from '../../utils/mappers';
 import { UserRecord } from '../../types/user';
 import { SessionService } from '../../services/sessionService';
+import { getPool } from '../../db/pool';
 
 interface LocalAuthResult {
   user: UserRecord;
@@ -39,7 +40,9 @@ export class AuthGuard implements CanActivate {
     const localUser = this.tryLocalJwt(token);
     if (localUser) {
       await this.ensureSessionActive(localUser.sessionId);
-      request.currentUser = localUser.user;
+      const hydratedUser = await this.hydrateUserRole(localUser.user);
+      this.setCachedUser(token, hydratedUser);
+      request.currentUser = hydratedUser;
       request.loginType = localUser.loginType;
       return true;
     }
@@ -47,7 +50,9 @@ export class AuthGuard implements CanActivate {
     // 캐시된 사용자 확인
     const cachedUser = this.getCachedUser(token);
     if (cachedUser) {
-      request.currentUser = cachedUser;
+      const hydratedUser = await this.hydrateUserRole(cachedUser);
+      this.setCachedUser(token, hydratedUser);
+      request.currentUser = hydratedUser;
       request.loginType = 'email';
       return true;
     }
@@ -55,7 +60,7 @@ export class AuthGuard implements CanActivate {
     try {
       const supabaseUser = await this.supabaseService.getUserFromToken(token);
       if (supabaseUser?.email) {
-        const userRecord = fromSupabaseUser(supabaseUser);
+        const userRecord = await this.hydrateUserRole(fromSupabaseUser(supabaseUser));
         this.setCachedUser(token, userRecord);
         request.currentUser = userRecord;
         request.loginType = 'email';
@@ -118,6 +123,7 @@ export class AuthGuard implements CanActivate {
           avatar_url: null,
           username: payload.email.split('@')[0] || payload.sub,
           password_hash: '',
+          role: payload.role ?? 'user',
           created_at: issuedAt,
           updated_at: issuedAt,
         };
@@ -133,6 +139,22 @@ export class AuthGuard implements CanActivate {
     const session = await this.sessionService.getSession(sessionId);
     if (!session || !session.isActive) {
       throw new UnauthorizedException('Session expired or revoked');
+    }
+  }
+
+  // 최신 role을 DB에서 확인해 요청 사용자에 반영 (재로그인 없이 즉시 반영)
+  private async hydrateUserRole(user: UserRecord): Promise<UserRecord> {
+    try {
+      const pool = await getPool();
+      const result = await pool.query(
+        `SELECT role FROM profiles WHERE id = $1 LIMIT 1`,
+        [user.id],
+      );
+      const dbRole = result.rows[0]?.role as string | undefined;
+      return { ...user, role: (dbRole ?? user.role ?? 'user') as UserRecord['role'] };
+    } catch (error) {
+      // DB 실패 시 기존 역할 유지
+      return { ...user, role: user.role ?? 'user' };
     }
   }
 }

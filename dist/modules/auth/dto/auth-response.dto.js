@@ -37,6 +37,10 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiProperty)({ example: 'user' }),
     __metadata("design:type", String)
+], AuthUserDto.prototype, "role", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'user' }),
+    __metadata("design:type", String)
 ], AuthUserDto.prototype, "userId", void 0);
 class AuthSessionEnvelopeDto {
 }
