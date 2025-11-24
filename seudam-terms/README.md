@@ -1,36 +1,116 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 쓰담 (SseuDam) - 서비스 약관 웹사이트
 
-## Getting Started
+**여행 후 복잡한 정산 과정을 쉽고 투명하고 간편하게 해결하는 서비스**
 
-First, run the development server:
+쓰담 서비스의 이용약관 및 개인정보 처리방침을 제공하는 공식 웹사이트입니다.
+
+## 🌐 웹사이트 구조
+
+### 📄 페이지 구성
+
+1. **홈페이지** (`/`)
+   - 쓰담 서비스 소개
+   - 브랜딩 및 핵심 가치 제시
+   - 서비스 특징 (쉬운 정산, 투명한 과정, 빠른 처리)
+
+2. **이용약관** (`/terms`)
+   - 전체 18개 조항으로 구성된 완전한 이용약관
+   - 서비스 제공 범위, 회원 관리, 저작권 등 포함
+   - **시행일자**: 2025년 11월 24일
+
+3. **개인정보 처리방침** (`/privacy`)
+   - 전체 12개 조항으로 구성된 개인정보 처리방침
+   - 개인정보 수집/이용 목적, 보유기간, 파기방법 등
+   - 개인정보 보호책임자: 쓰담 (suhwj81@gmail.com)
+   - **시행일자**: 2025년 11월 24일
+
+## 🚀 기술 스택
+
+- **Framework**: Next.js 16 (App Router)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **Deployment**: Vercel
+- **Features**: 반응형 디자인, SEO 최적화
+
+## 💻 개발 환경 설정
+
+### 사전 요구사항
+- Node.js 18.17 이상
+- npm 또는 yarn
+
+### 설치 및 실행
 
 ```bash
+# 의존성 설치
+npm install
+
+# 개발 서버 실행
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+
+# 프로덕션 빌드
+npm run build
+
+# 프로덕션 서버 실행
+npm start
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 로컬 개발 서버
+```
+http://localhost:3000
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 📱 반응형 디자인
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **모바일**: 360px 이상
+- **태블릿**: 768px 이상
+- **데스크톱**: 1024px 이상
 
-## Learn More
+모든 페이지가 다양한 화면 크기에서 최적화되어 표시됩니다.
 
-To learn more about Next.js, take a look at the following resources:
+## 🎨 UI/UX 특징
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 디자인 시스템
+- **Primary Color**: Blue (#3B82F6)
+- **Typography**: 한국어 최적화 폰트
+- **Layout**: 깔끔하고 읽기 쉬운 구조
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 접근성
+- 명확한 네비게이션 구조
+- 읽기 쉬운 폰트 크기 및 줄 간격
+- 색상 대비 최적화
 
-## Deploy on Vercel
+## 📋 법적 요구사항 준수
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 이용약관
+- ✅ 서비스 목적 및 범위 명시
+- ✅ 이용자 권리 및 의무 규정
+- ✅ 개인정보 처리 관련 조항
+- ✅ 분쟁 해결 절차 포함
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 개인정보 처리방침
+- ✅ 개인정보보호법 제30조 준수
+- ✅ 수집 목적 및 항목 명시
+- ✅ 보유기간 및 파기방법 설명
+- ✅ 정보주체 권리 고지
+
+## 🔗 내부 네비게이션
+
+모든 페이지에서 쉽게 이동할 수 있도록 설계:
+
+- **상단 네비게이션**: 홈, 이용약관, 개인정보처리방침
+- **하단 푸터**: 주요 링크 및 연락처 정보
+- **페이지 내 링크**: 관련 문서 간 이동
+
+## 📞 연락처
+
+**개인정보 보호책임자**
+- **담당자**: 쓰담
+- **이메일**: suhwj81@gmail.com
+
+## 📝 라이선스
+
+이 프로젝트는 쓰담 서비스의 공식 약관 웹사이트입니다.
+
+---
+
+*마지막 업데이트: 2025년 11월 24일*
