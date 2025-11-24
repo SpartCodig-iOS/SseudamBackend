@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>쓰담 (SseuDam) - 여행 정산 서비스</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+            line-height: 1.6;
+            color: #1a1a1a;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        .header {
+            padding: 80px 0 60px;
+            text-align: center;
+            color: white;
+        }
+
+        .logo {
+            font-size: 3.5rem;
+            font-weight: 800;
+            margin-bottom: 20px;
+            letter-spacing: -1px;
+        }
+
+        .tagline {
+            font-size: 1.3rem;
+            margin-bottom: 40px;
+            opacity: 0.9;
+            font-weight: 400;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            line-height: 1.7;
+        }
+
+        .highlight {
+            color: #ffd700;
+            font-weight: 600;
+        }
+
+        .main-content {
+            background: white;
+            border-radius: 20px;
+            padding: 60px 40px;
+            margin: 0 20px 60px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        .section {
+            margin-bottom: 50px;
+        }
+
+        .section-title {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #2c3e50;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+
+        .feature {
+            text-align: center;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 15px;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .feature:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .feature-icon {
+            font-size: 3rem;
+            margin-bottom: 20px;
+            display: block;
+        }
+
+        .feature-title {
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #2c3e50;
+        }
+
+        .feature-description {
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .navigation {
+            text-align: center;
+            margin-top: 50px;
+        }
+
+        .nav-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 25px;
+        }
+
+        .nav-links {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+
+        .nav-link {
+            display: inline-block;
+            padding: 12px 25px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 25px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .nav-link:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        }
+
+        .footer {
+            text-align: center;
+            padding: 40px 20px;
+            color: white;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            margin: 0 20px;
+            border-radius: 20px 20px 0 0;
+        }
+
+        .footer-text {
+            margin-bottom: 10px;
+            opacity: 0.9;
+        }
+
+        .contact {
+            font-size: 0.9rem;
+            opacity: 0.7;
+        }
+
+        @media (max-width: 768px) {
+            .logo {
+                font-size: 2.5rem;
+            }
+
+            .tagline {
+                font-size: 1.1rem;
+            }
+
+            .main-content {
+                padding: 40px 25px;
+                margin: 0 10px 40px;
+            }
+
+            .section-title {
+                font-size: 1.6rem;
+            }
+
+            .features {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+
+            .nav-links {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .nav-link {
+                width: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1 class="logo">쓰담 (SseuDam)</h1>
+            <p class="tagline">
+                여행 후 복잡한 정산 과정을<br>
+                <span class="highlight">쉽고 투명하고 간편하게</span> 해결하는 서비스
+            </p>
+        </header>
+
+        <main class="main-content">
+            <section class="section">
+                <h2 class="section-title">🌟 주요 기능</h2>
+                <div class="features">
+                    <div class="feature">
+                        <span class="feature-icon">💰</span>
+                        <h3 class="feature-title">스마트 정산</h3>
+                        <p class="feature-description">
+                            복잡한 여행 경비를 자동으로 계산하고 각자의 몫을 정확하게 산출합니다.
+                        </p>
+                    </div>
+                    <div class="feature">
+                        <span class="feature-icon">📊</span>
+                        <h3 class="feature-title">투명한 관리</h3>
+                        <p class="feature-description">
+                            모든 지출 내역을 투명하게 공유하여 불필요한 오해를 방지합니다.
+                        </p>
+                    </div>
+                    <div class="feature">
+                        <span class="feature-icon">⚡</span>
+                        <h3 class="feature-title">간편한 사용</h3>
+                        <p class="feature-description">
+                            직관적인 인터페이스로 누구나 쉽게 여행 경비를 관리할 수 있습니다.
+                        </p>
+                    </div>
+                    <div class="feature">
+                        <span class="feature-icon">🤝</span>
+                        <h3 class="feature-title">그룹 관리</h3>
+                        <p class="feature-description">
+                            여행 멤버들과 실시간으로 경비를 공유하고 관리할 수 있습니다.
+                        </p>
+                    </div>
+                    <div class="feature">
+                        <span class="feature-icon">💳</span>
+                        <h3 class="feature-title">다양한 결제</h3>
+                        <p class="feature-description">
+                            카드, 현금 등 다양한 결제 수단을 지원하여 편리하게 기록합니다.
+                        </p>
+                    </div>
+                    <div class="feature">
+                        <span class="feature-icon">📱</span>
+                        <h3 class="feature-title">모바일 최적화</h3>
+                        <p class="feature-description">
+                            언제 어디서나 모바일로 쉽게 접근하고 관리할 수 있습니다.
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="navigation">
+                <h2 class="nav-title">서비스 정보</h2>
+                <div class="nav-links">
+                    <a href="/terms/" class="nav-link">서비스 이용약관</a>
+                    <a href="/privacy/" class="nav-link">개인정보처리방침</a>
+                </div>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <p class="footer-text">
+                <strong>쓰담 (SseuDam)</strong><br>
+                여행 후 복잡한 정산 과정을 쉽고 투명하고 간편하게 해결하는 서비스
+            </p>
+            <p class="contact">
+                문의: suhwj81@gmail.com | © 2025 쓰담. All rights reserved.
+            </p>
+        </footer>
+    </div>
+</body>
+</html>
