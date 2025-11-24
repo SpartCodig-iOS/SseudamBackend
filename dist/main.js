@@ -141,9 +141,9 @@ async function bootstrap() {
         methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
         credentials: true,
     });
-    // HTTP 요청 크기 및 타임아웃 제한
-    app.use((0, express_1.json)({ limit: '10mb' }));
-    app.use((0, express_1.urlencoded)({ extended: true, limit: '10mb' }));
+    // HTTP 요청 크기 및 타임아웃 제한 (8GB 메모리 활용)
+    app.use((0, express_1.json)({ limit: '50mb' }));
+    app.use((0, express_1.urlencoded)({ extended: true, limit: '50mb' }));
     // 글로벌 타임아웃 설정 (30초)
     app.use((req, res, next) => {
         req.setTimeout(30000, () => {

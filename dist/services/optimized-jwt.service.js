@@ -29,9 +29,9 @@ let OptimizedJwtTokenService = OptimizedJwtTokenService_1 = class OptimizedJwtTo
         this.INVALID_TOKEN_CACHE_TTL = 60; // 1분 (잘못된 토큰은 짧게 캐시)
         // 메모리 기반 토큰 캐시 (Redis 장애 시 fallback)
         this.tokenCache = new Map();
-        this.MAX_MEMORY_CACHE_SIZE = 1000;
-        // Railway Sleep 모드 지원: 개발환경에서는 백그라운드 캐시 정리 비활성화
-        if (process.env.NODE_ENV === 'production') {
+        this.MAX_MEMORY_CACHE_SIZE = 10000;
+        // Railway Sleep 모드 지원: 개발환경 또는 RAILWAY_SLEEP_MODE에서는 백그라운드 캐시 정리 비활성화
+        if (process.env.NODE_ENV === 'production' && process.env.RAILWAY_SLEEP_MODE !== 'true') {
             // 운영환경에서만 2시간마다 캐시 정리
             const cleanupInterval = 2 * 60 * 60 * 1000; // 2시간
             setInterval(() => {

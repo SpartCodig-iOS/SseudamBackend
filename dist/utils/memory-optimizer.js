@@ -9,9 +9,9 @@ class MemoryOptimizer {
         this.setupProcessEventHandlers();
     }
     static setupMemoryMonitoring() {
-        // Railway Sleep 모드 지원: 개발환경에서는 백그라운드 모니터링 완전 비활성화
-        if (process.env.NODE_ENV !== 'production') {
-            this.logger.log('Memory monitoring disabled in development for Railway Sleep mode support');
+        // Railway Sleep 모드 지원: 개발환경 또는 RAILWAY_SLEEP_MODE에서는 백그라운드 모니터링 완전 비활성화
+        if (process.env.NODE_ENV !== 'production' || process.env.RAILWAY_SLEEP_MODE === 'true') {
+            this.logger.log('Memory monitoring disabled for Railway Sleep mode support');
             return;
         }
         // 운영환경에서만 메모리 모니터링 (2시간마다)
@@ -43,8 +43,8 @@ class MemoryOptimizer {
         }, monitoringInterval);
     }
     static setupGCOptimization() {
-        // Railway Sleep 모드 지원: 개발환경에서는 백그라운드 GC 완전 비활성화
-        if (process.env.NODE_ENV !== 'production') {
+        // Railway Sleep 모드 지원: 개발환경 또는 RAILWAY_SLEEP_MODE에서는 백그라운드 GC 완전 비활성화
+        if (process.env.NODE_ENV !== 'production' || process.env.RAILWAY_SLEEP_MODE === 'true') {
             this.logger.log('Background GC disabled in development for Railway Sleep mode support');
             return;
         }
@@ -140,4 +140,4 @@ class MemoryOptimizer {
 exports.MemoryOptimizer = MemoryOptimizer;
 MemoryOptimizer.logger = new common_1.Logger(MemoryOptimizer.name);
 MemoryOptimizer.gcInterval = null;
-MemoryOptimizer.memoryThreshold = 500 * 1024 * 1024; // 500MB
+MemoryOptimizer.memoryThreshold = 4 * 1024 * 1024 * 1024; // 4GB
