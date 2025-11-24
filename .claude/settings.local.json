@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/tmp/login_result_1.json)",
+      "Bash(/tmp/signup_result.json)",
+      "Bash(for i in {1..5})",
+      "Bash(do echo \"테스트 $i:\")",
+      "Bash(/tmp/login_result_$i.json)",
+      "Bash(done)",
+      "Bash(/tmp/signup_result_2.json)",
+      "Bash(/tmp/timing_result.json)",
+      "Bash(npm install:*)",
+      "Bash(echo:*)",
+      "Bash(echo \"APPLE_PRIVATE_KEY: $APPLE_PRIVATE_KEY:+(set)\")",
+      "Bash(__NEW_LINE__ echo -e \"\\n=== Google 환경변수 확인 ===\")",
+      "Bash(echo \"GOOGLE_CLIENT_SECRET: $GOOGLE_CLIENT_SECRET:+(set)\")",
+      "Bash(pkill:*)",
+      "Bash(lsof:*)",
+      "Bash(xargs kill:*)",
+      "Bash(NEW_TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmZTZlNjRmYi1mODJjLTQ5NjctYWFmYy03NmU2NDhkNTA0ZDEiLCJlbWFpbCI6InBlcmZvcm1hbmNlLnRlc3RAZXhhbXBsZS5jb20iLCJuYW1lIjoi7ISx64qlIO2FjOyKpO2KuCDsgqzsmqnsnpAiLCJsb2dpblR5cGUiOiJzaWdudXAiLCJsYXN0TG9naW5BdCI6IjIwMjUtMTEtMTRUMTU6MzM6NDEuNzcyWiIsImlhdCI6MTc2MzEzNDQyMSwiZXhwIjoxNzYzMjIwODIxfQ.pmn40AyYPw7mbY5YRKdHI8xt-MoOnudn9uAjJDZhtdI\" echo \"=== Checking current profile state ===\" curl -s -H \"Authorization: Bearer $NEW_TOKEN\" -H \"Accept: application/json\" http://localhost:8081/api/v1/profile/me)",
+      "Bash(head -c 200 echo -e \"\\n\\n=== 2. 메트릭 API 성능 테스트 (최적화된 메모리 정보 포함) ===\" time curl -s -H \"Accept: application/json\" http://localhost:8081/metrics)",
+      "Bash(killall:*)",
+      "Bash(railway --help:*)",
+      "Bash(railway variables --help:*)",
+      "Bash(NODE_ENV=development PORT=8081 npm start:*)",
+      "Bash(NODE_ENV=development PORT=8082 npm start:*)",
+      "Bash(railway status:*)",
+      "Bash(railway variables:*)",
+      "Bash(railway service:*)",
+      "Bash(railway list:*)",
+      "Bash(railway open:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

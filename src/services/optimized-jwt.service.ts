@@ -46,7 +46,7 @@ export class OptimizedJwtTokenService {
 
   // 메모리 기반 토큰 캐시 (Redis 장애 시 fallback)
   private tokenCache = new Map<string, CachedTokenData>();
-  private readonly MAX_MEMORY_CACHE_SIZE = 1000;
+  private readonly MAX_MEMORY_CACHE_SIZE = 10000;
 
   constructor(private readonly cacheService: CacheService) {
     // Railway Sleep 모드 지원: 개발환경 또는 RAILWAY_SLEEP_MODE에서는 백그라운드 캐시 정리 비활성화

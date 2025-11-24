@@ -3,7 +3,7 @@ import { Logger } from '@nestjs/common';
 export class MemoryOptimizer {
   private static readonly logger = new Logger(MemoryOptimizer.name);
   private static gcInterval: NodeJS.Timeout | null = null;
-  private static memoryThreshold = 500 * 1024 * 1024; // 500MB
+  private static memoryThreshold = 4 * 1024 * 1024 * 1024; // 4GB
 
   static initialize() {
     this.setupMemoryMonitoring();

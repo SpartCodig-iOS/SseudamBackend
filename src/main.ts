@@ -116,9 +116,9 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // HTTP 요청 크기 및 타임아웃 제한
-  app.use(json({ limit: '10mb' }));
-  app.use(urlencoded({ extended: true, limit: '10mb' }));
+  // HTTP 요청 크기 및 타임아웃 제한 (8GB 메모리 활용)
+  app.use(json({ limit: '50mb' }));
+  app.use(urlencoded({ extended: true, limit: '50mb' }));
 
   // 글로벌 타임아웃 설정 (30초)
   app.use((req: any, res: any, next: any) => {
