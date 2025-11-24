@@ -129,7 +129,7 @@ async function bootstrap() {
   });
 
   app.useGlobalFilters(new AllExceptionsFilter());
-  app.useStaticAssets(path.join(process.cwd(), 'public'), { prefix: '/public/' });
+  app.useStaticAssets(path.join(process.cwd(), 'public'));
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Sseduam App Server API')
