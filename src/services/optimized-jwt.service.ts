@@ -49,8 +49,8 @@ export class OptimizedJwtTokenService {
   private readonly MAX_MEMORY_CACHE_SIZE = 1000;
 
   constructor(private readonly cacheService: CacheService) {
-    // Railway Sleep 모드 지원: 개발환경에서는 백그라운드 캐시 정리 비활성화
-    if (process.env.NODE_ENV === 'production') {
+    // Railway Sleep 모드 지원: 개발환경 또는 RAILWAY_SLEEP_MODE에서는 백그라운드 캐시 정리 비활성화
+    if (process.env.NODE_ENV === 'production' && process.env.RAILWAY_SLEEP_MODE !== 'true') {
       // 운영환경에서만 2시간마다 캐시 정리
       const cleanupInterval = 2 * 60 * 60 * 1000; // 2시간
       setInterval(() => {
