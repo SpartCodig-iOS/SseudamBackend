@@ -152,7 +152,7 @@ async function bootstrap() {
         next();
     });
     app.useGlobalFilters(new all_exceptions_filter_1.AllExceptionsFilter());
-    app.useStaticAssets(node_path_1.default.join(process.cwd(), 'public'), { prefix: '/public/' });
+    app.useStaticAssets(node_path_1.default.join(process.cwd(), 'public'));
     const swaggerConfig = new swagger_1.DocumentBuilder()
         .setTitle('Sseduam App Server API')
         .setDescription('Sseduam 연동 인증/프로필 API')
