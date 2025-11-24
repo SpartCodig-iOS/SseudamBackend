@@ -14,6 +14,7 @@ import { TravelSettlementModule } from './modules/travel-settlement/travel-settl
 import { PerformanceInterceptor } from './common/interceptors/performance.interceptor';
 import { ResponseTransformInterceptor } from './common/filters/response-transform.filter';
 import { ApiOptimizationInterceptor } from './common/interceptors/api-optimization.interceptor';
+import { HomeModule } from './home/home.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { ApiOptimizationInterceptor } from './common/interceptors/api-optimizati
     TravelExpenseModule,
     TravelSettlementModule,
     SessionModule,
+    HomeModule,
   ],
   providers: [
     {
