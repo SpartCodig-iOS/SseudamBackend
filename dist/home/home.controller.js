@@ -23,12 +23,6 @@ let HomeController = class HomeController {
             pathRewrite: {
                 '^/home': '', // /home 경로를 제거하고 Next.js로 전달
             },
-            onError: (err, req, res) => {
-                console.error('Proxy error:', err.message);
-                res.status(500).json({
-                    error: 'Next.js 서버에 연결할 수 없습니다. 포트 3031이 실행 중인지 확인하세요.'
-                });
-            },
         });
     }
     proxyToNextjs(req, res) {
