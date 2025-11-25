@@ -1,8 +1,8 @@
-# 🌍 Sseduam Backend
+# 🌍 쓰담 (SseuDam) - 여행 정산 서비스
 
 <div align="center">
 
-**🚀 여행 가계부 및 정산 서비스 백엔드 API**
+**🚀 여행 후 복잡한 정산 과정을 쉽고 투명하고 간편하게 해결하는 서비스**
 
 [![Node.js](https://img.shields.io/badge/Node.js-v18+-339933?style=flat-square&logo=node.js)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
@@ -10,19 +10,26 @@
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16+-336791?style=flat-square&logo=postgresql)](https://postgresql.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-Auth-3ECF8E?style=flat-square&logo=supabase)](https://supabase.com/)
 
-[📚 API 문서](https://sseudam.up.railway.app/api-docs/) | [🔴 라이브 서버](https://sseudam.up.railway.app/) | 
+[🌐 웹사이트](https://sseudam.up.railway.app/) | [📚 API 문서](https://sseudam.up.railway.app/api-docs/) | [🔴 라이브 서버](https://sseudam.up.railway.app/) | [📋 이용약관](https://sseudam.up.railway.app/terms/) | [🔒 개인정보처리방침](https://sseudam.up.railway.app/privacy/)
 </div>
 
 ---
 
 ## ✨ 주요 기능
 
+### 📱 모바일 앱 (출시 예정)
+- 💰 **스마트 정산** - 복잡한 여행 경비를 자동으로 계산하고 각자의 몫을 정확하게 산출
+- 📊 **투명한 관리** - 모든 지출 내역을 투명하게 공유하여 불필요한 오해를 방지
+- ⚡ **간편한 사용** - 직관적인 인터페이스로 누구나 쉽게 여행 경비를 관리
+- 🤝 **그룹 관리** - 여행 멤버들과 실시간으로 경비를 공유하고 관리
+- 💳 **다양한 결제** - 카드, 현금 등 다양한 결제 수단을 지원하여 편리하게 기록
+- 📊 **실시간 통계** - 여행 중 실시간으로 지출 현황과 정산 상태를 확인
+
+### 🔧 백엔드 API
 - 🔐 **다중 인증 지원** - JWT, Supabase, Apple/Google OAuth
-- 💰 **여행 지출 관리** - 실시간 지출 기록 및 공유
-- 🧮 **자동 정산** - 스마트한 정산 알고리즘
 - 💱 **환율 변환** - 실시간 환율 API 연동
-- 📊 **통계 및 분석** - 지출 패턴 분석
 - 🚀 **고성능 최적화** - 캐싱, 배치 처리, N+1 해결
+- 🌐 **웹사이트** - 서비스 소개 및 법적 문서 제공
 
 ---
 
@@ -248,11 +255,36 @@ npm start          # 프로덕션 서버
 
 ---
 
+## 🌐 웹사이트
+
+쓰담 서비스는 완전한 웹사이트를 제공하여 사용자들이 서비스를 쉽게 이해하고 법적 정보에 접근할 수 있습니다.
+
+### 📄 제공 페이지
+- **🏠 메인 홈페이지** - 서비스 소개 및 주요 기능 6가지 설명
+- **📋 서비스 이용약관** - 총 18개 조항의 완전한 이용약관 (2025.11.24 시행)
+- **🔒 개인정보처리방침** - 총 12개 섹션의 개인정보 정책 (GDPR 준수)
+
+### ✨ 웹사이트 특징
+- **🎨 깔끔한 디자인** - 모던하고 직관적인 사용자 인터페이스
+- **📱 반응형 디자인** - 다양한 화면 크기에 최적화
+- **⚡ 빠른 로딩** - 정적 파일 기반으로 빠른 응답속도
+- **🔗 쉬운 네비게이션** - 모든 페이지 간 원활한 이동
+
+### 🛠 기술 구현
+- **정적 HTML** - NestJS 정적 파일 서빙
+- **모던 CSS** - Flexbox, Grid, CSS3 애니메이션
+- **법적 컴플라이언스** - 개인정보보호법 및 관련 법령 준수
+- **SEO 최적화** - 검색엔진 친화적 구조
+
+---
+
 ## 🌐 배포 및 운영
 
 ### 🔴 라이브 환경
-- **URL**: https://sseudam.up.railway.app
+- **메인 웹사이트**: https://sseudam.up.railway.app
 - **API 문서**: https://sseudam.up.railway.app/api-docs/
+- **이용약관**: https://sseudam.up.railway.app/terms/
+- **개인정보처리방침**: https://sseudam.up.railway.app/privacy/
 - **헬스체크**: https://sseudam.up.railway.app/health
 
 ### 🔧 운영 모니터링
