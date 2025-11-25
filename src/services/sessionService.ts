@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { getPool } from '../db/pool';
 import { LoginType } from '../types/auth';
+import { SupabaseService } from './supabaseService';
 
 export type SessionStatus = 'active' | 'revoked' | 'expired';
 
@@ -15,6 +16,7 @@ export interface SessionRecord {
   revokedAt: string | null;
   status: SessionStatus;
   isActive: boolean;
+  supabaseSessionValid?: boolean; // Supabase 세션 유효성
 }
 
 @Injectable()
@@ -23,6 +25,8 @@ export class SessionService {
   private readonly defaultTTLHours = 24 * 30;
   private readonly CLEANUP_INTERVAL_MS = process.env.NODE_ENV === 'production' ? 60 * 60 * 1000 : 45 * 60 * 1000; // Railway Sleep 친화적: 운영 1시간, 개발 45분
   private lastCleanupRun = 0;
+
+  constructor(private readonly supabaseService: SupabaseService) {}
 
   // 세션 캐시: 10분 TTL, 최대 2000개 세션
   private readonly sessionCache = new Map<string, { data: SessionRecord; expiresAt: number }>();
@@ -77,6 +81,20 @@ export class SessionService {
       if (cached.data.userId === userId) {
         this.sessionCache.delete(sessionId);
       }
+    }
+  }
+
+  /**
+   * Supabase 세션 유효성 확인 (빠른 검증)
+   */
+  private async checkSupabaseSession(userId: string): Promise<boolean> {
+    try {
+      // Supabase에서 사용자 정보 조회로 세션 유효성 확인
+      const user = await this.supabaseService.getUser(userId);
+      return !!user;
+    } catch (error) {
+      this.logger.warn(`Supabase session check failed for user ${userId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      return false;
     }
   }
 
@@ -203,6 +221,17 @@ export class SessionService {
     // 캐시에서 먼저 확인
     const cachedSession = this.getCachedSession(sessionId);
     if (cachedSession) {
+      // 캐시된 세션이 활성 상태이면 Supabase 세션도 확인
+      if (cachedSession.isActive && cachedSession.supabaseSessionValid === undefined) {
+        const supabaseValid = await this.checkSupabaseSession(cachedSession.userId);
+        cachedSession.supabaseSessionValid = supabaseValid;
+
+        // Supabase 세션이 무효하면 로컬 세션도 무효로 처리
+        if (!supabaseValid) {
+          cachedSession.status = 'revoked';
+          cachedSession.isActive = false;
+        }
+      }
       return cachedSession;
     }
 
@@ -225,6 +254,26 @@ export class SessionService {
     if (!row) return null;
 
     const session = this.mapRowToSession(row);
+
+    // 세션이 활성 상태이면 Supabase 세션 상태도 확인
+    if (session.isActive) {
+      const supabaseValid = await this.checkSupabaseSession(session.userId);
+      session.supabaseSessionValid = supabaseValid;
+
+      // Supabase 세션이 무효하면 로컬 세션도 무효로 처리하고 DB 업데이트
+      if (!supabaseValid) {
+        session.status = 'revoked';
+        session.isActive = false;
+
+        // 백그라운드에서 DB의 세션도 revoke 처리
+        pool.query(
+          `UPDATE user_sessions SET revoked_at = NOW() WHERE session_id = $1`,
+          [sessionId]
+        ).catch(err =>
+          this.logger.warn(`Failed to update revoked session in DB: ${err.message}`)
+        );
+      }
+    }
 
     // 캐시에 저장
     this.setCachedSession(sessionId, session);

@@ -27,4 +27,7 @@ export class SessionResponseDto {
 
   @ApiProperty({ example: true })
   isActive!: boolean;
+
+  @ApiProperty({ example: true, required: false, description: 'Supabase 세션 유효성 (활성 세션일 때만 확인)' })
+  supabaseSessionValid?: boolean;
 }
