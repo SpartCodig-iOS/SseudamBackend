@@ -90,7 +90,7 @@ export class SessionService {
   private async checkSupabaseSession(userId: string): Promise<boolean> {
     try {
       // Supabase에서 사용자 정보 조회로 세션 유효성 확인
-      const user = await this.supabaseService.getUser(userId);
+      const user = await this.supabaseService.getUserById(userId);
       return !!user;
     } catch (error) {
       this.logger.warn(`Supabase session check failed for user ${userId}: ${error instanceof Error ? error.message : 'Unknown error'}`);

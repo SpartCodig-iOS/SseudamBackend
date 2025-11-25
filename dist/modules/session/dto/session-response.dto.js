@@ -50,3 +50,7 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: true }),
     __metadata("design:type", Boolean)
 ], SessionResponseDto.prototype, "isActive", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: true, required: false, description: 'Supabase 세션 유효성 (활성 세션일 때만 확인)' }),
+    __metadata("design:type", Boolean)
+], SessionResponseDto.prototype, "supabaseSessionValid", void 0);
