@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=1200, initial-scale=0.5, user-scalable=yes">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>쓰담 (SseuDam) - 여행 정산 서비스</title>
     <style>
         * {
@@ -17,11 +17,10 @@
             color: #2c3e50;
             background: #f8f9fa;
             min-height: 100vh;
-            min-width: 1000px;
         }
 
         .container {
-            width: 1000px;
+            max-width: 1000px;
             margin: 0 auto;
             padding: 0 20px;
         }
@@ -177,6 +176,97 @@
         .contact {
             font-size: 0.85rem;
             color: #999;
+        }
+
+        /* 모바일 전용 스타일 */
+        @media (max-width: 768px) {
+            .container {
+                padding: 0 15px;
+            }
+
+            .header {
+                padding: 40px 0 30px;
+                margin: 15px;
+            }
+
+            .logo {
+                font-size: 2.2rem;
+                margin-bottom: 12px;
+            }
+
+            .tagline {
+                font-size: 1rem;
+                line-height: 1.5;
+            }
+
+            .main-content {
+                padding: 40px 25px;
+                margin: 15px;
+            }
+
+            .section-title {
+                font-size: 1.5rem;
+                margin-bottom: 20px;
+            }
+
+            .features {
+                grid-template-columns: 1fr;
+                gap: 15px;
+                margin-bottom: 25px;
+            }
+
+            .feature {
+                padding: 20px 15px;
+            }
+
+            .feature-icon {
+                font-size: 2.2rem;
+                margin-bottom: 12px;
+            }
+
+            .feature-title {
+                font-size: 1.1rem;
+                margin-bottom: 8px;
+            }
+
+            .feature-description {
+                font-size: 0.85rem;
+            }
+
+            .navigation {
+                padding: 25px 0;
+                margin-top: 25px;
+            }
+
+            .nav-title {
+                font-size: 1.2rem;
+                margin-bottom: 18px;
+            }
+
+            .nav-links {
+                flex-direction: column;
+                gap: 12px;
+            }
+
+            .nav-link {
+                padding: 12px 25px;
+                width: 100%;
+                max-width: 250px;
+            }
+
+            .footer {
+                padding: 25px 15px;
+                margin: 15px;
+            }
+
+            .footer-text {
+                font-size: 0.9rem;
+                margin-bottom: 8px;
+            }
+
+            .contact {
+                font-size: 0.8rem;
+            }
         }
 
     </style>
