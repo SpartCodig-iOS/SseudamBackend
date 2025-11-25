@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>쓰담 (SseuDam) - 여행 정산 서비스</title>
-    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -14,9 +14,76 @@
 
         body {
             font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-            line-height: 1.7;
-            color: #2d3748;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            line-height: 1.6;
+            color: #1a1a1a;
+            background: #fefce8;
+            min-height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: #fefce8;
+            border-bottom: 1px solid #e5e7eb;
+            z-index: 50;
+            padding: 1rem 0;
+        }
+
+        .nav-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.75rem;
+            font-weight: 800;
+            color: #1a1a1a;
+            letter-spacing: -0.02em;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        .nav-link {
+            color: #1a1a1a;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.95rem;
+            transition: color 0.2s ease;
+        }
+
+        .nav-link:hover {
+            color: #059669;
+        }
+
+        .cta-button {
+            background: #059669;
+            color: white;
+            padding: 0.5rem 1.25rem;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: background-color 0.2s ease;
+        }
+
+        .cta-button:hover {
+            background: #047857;
+        }
+
+        /* Main Content */
+        .main {
+            padding-top: 120px;
             min-height: 100vh;
         }
 
@@ -29,281 +96,231 @@
         /* Hero Section */
         .hero {
             text-align: center;
-            padding: 80px 0 60px;
-            color: white;
+            padding: 60px 0 80px;
         }
 
-        .hero-content {
-            max-width: 800px;
-            margin: 0 auto;
-        }
-
-        .logo {
-            font-size: 3.5rem;
-            font-weight: 700;
+        .hero-title {
+            font-size: clamp(3rem, 8vw, 8rem);
+            font-weight: 900;
+            color: #1a1a1a;
             margin-bottom: 24px;
-            letter-spacing: -0.02em;
-            background: linear-gradient(135deg, #ffffff 0%, #f0f9ff 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            letter-spacing: -0.04em;
+            line-height: 0.9;
         }
 
-        .tagline {
-            font-size: 1.25rem;
-            font-weight: 300;
-            opacity: 0.95;
-            line-height: 1.8;
-            margin-bottom: 40px;
+        .hero-subtitle {
+            font-size: 1.5rem;
+            font-weight: 400;
+            color: #6b7280;
+            margin-bottom: 16px;
+            font-style: italic;
+        }
+
+        .hero-description {
+            font-size: 1.125rem;
+            color: #4b5563;
             max-width: 600px;
-            margin-left: auto;
-            margin-right: auto;
+            margin: 0 auto;
+            line-height: 1.7;
         }
 
-        .highlight {
-            font-weight: 600;
-            background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        /* Main Content */
-        .main-content {
+        /* Features Section */
+        .features-section {
+            padding: 80px 0;
             background: white;
-            margin: -40px 24px 40px;
-            border-radius: 24px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
-            overflow: hidden;
-        }
-
-        .content-inner {
-            padding: 60px 40px;
         }
 
         .section-title {
-            font-size: 2rem;
-            font-weight: 600;
-            color: #1a202c;
-            margin-bottom: 16px;
+            font-size: 3rem;
+            font-weight: 700;
+            color: #1a1a1a;
+            margin-bottom: 20px;
             text-align: center;
-            position: relative;
-        }
-
-        .section-title::after {
-            content: '';
-            position: absolute;
-            bottom: -8px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 60px;
-            height: 3px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 2px;
+            letter-spacing: -0.02em;
         }
 
         .section-subtitle {
             text-align: center;
-            color: #718096;
-            font-size: 1.1rem;
-            margin-bottom: 50px;
-            font-weight: 300;
+            color: #6b7280;
+            font-size: 1.25rem;
+            margin-bottom: 60px;
+            font-weight: 400;
         }
 
         /* Features Grid */
         .features {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 32px;
-            margin-bottom: 60px;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 40px;
+            margin-bottom: 80px;
         }
 
         .feature {
-            background: #fafafa;
-            border: 1px solid #e2e8f0;
-            border-radius: 16px;
-            padding: 40px 32px;
-            text-align: center;
-            transition: all 0.3s ease;
+            background: #fefce8;
+            border: 2px solid #f3f4f6;
+            border-radius: 12px;
+            padding: 40px 28px;
+            text-align: left;
+            transition: all 0.2s ease;
             position: relative;
-            overflow: hidden;
-        }
-
-        .feature::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 4px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            transform: translateY(-4px);
-            transition: transform 0.3s ease;
         }
 
         .feature:hover {
-            transform: translateY(-8px);
-            box-shadow: 0 20px 40px -12px rgba(102, 126, 234, 0.25);
-            border-color: #667eea;
-            background: white;
-        }
-
-        .feature:hover::before {
-            transform: translateY(0);
+            border-color: #059669;
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
         }
 
         .feature-icon {
-            font-size: 3rem;
-            margin-bottom: 24px;
+            font-size: 2.5rem;
+            margin-bottom: 20px;
             display: block;
-            filter: grayscale(0.3);
-            transition: filter 0.3s ease;
-        }
-
-        .feature:hover .feature-icon {
-            filter: none;
         }
 
         .feature-title {
-            font-size: 1.3rem;
-            font-weight: 600;
-            margin-bottom: 16px;
-            color: #2d3748;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: #1a1a1a;
+            letter-spacing: -0.01em;
         }
 
         .feature-description {
-            color: #4a5568;
-            line-height: 1.7;
+            color: #4b5563;
+            line-height: 1.6;
             font-weight: 400;
+            font-size: 1rem;
         }
 
-        /* Navigation */
-        .navigation {
+        /* Info Section */
+        .info-section {
+            padding: 60px 0;
+            background: #fefce8;
             text-align: center;
-            padding: 50px 0;
-            background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
-            margin: 0 -40px -60px;
         }
 
-        .nav-title {
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: #2d3748;
+        .info-title {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #1a1a1a;
             margin-bottom: 32px;
+            letter-spacing: -0.01em;
         }
 
-        .nav-links {
+        .info-links {
             display: flex;
             justify-content: center;
             gap: 20px;
             flex-wrap: wrap;
         }
 
-        .nav-link {
+        .info-link {
             display: inline-flex;
             align-items: center;
-            padding: 14px 28px;
+            padding: 12px 24px;
             background: white;
-            color: #4a5568;
+            color: #4b5563;
             text-decoration: none;
-            border-radius: 12px;
-            font-weight: 500;
-            transition: all 0.3s ease;
-            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-weight: 600;
             font-size: 0.95rem;
+            border: 2px solid #e5e7eb;
+            transition: all 0.2s ease;
         }
 
-        .nav-link:hover {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        .info-link:hover {
+            background: #059669;
             color: white;
+            border-color: #059669;
             transform: translateY(-2px);
-            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
-            border-color: transparent;
+            box-shadow: 0 8px 20px rgba(5, 150, 105, 0.25);
         }
 
         /* Footer */
         .footer {
+            background: #1f2937;
+            color: white;
             text-align: center;
             padding: 60px 24px;
-            color: white;
-            position: relative;
-        }
-
-        .footer::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 100px;
-            height: 1px;
-            background: rgba(255, 255, 255, 0.3);
         }
 
         .footer-brand {
             font-size: 1.5rem;
-            font-weight: 600;
+            font-weight: 700;
             margin-bottom: 16px;
+            letter-spacing: -0.01em;
         }
 
         .footer-description {
-            font-weight: 300;
-            opacity: 0.9;
+            font-weight: 400;
+            opacity: 0.8;
             margin-bottom: 24px;
             max-width: 500px;
             margin-left: auto;
             margin-right: auto;
+            line-height: 1.6;
         }
 
         .footer-contact {
             font-size: 0.9rem;
             opacity: 0.7;
-            font-weight: 300;
+            font-weight: 400;
         }
 
         /* Mobile Responsive */
         @media screen and (max-width: 768px) {
+            .nav-links {
+                display: none;
+            }
+
+            .nav-container {
+                padding: 0 16px;
+            }
+
             .container {
                 padding: 0 16px;
             }
 
-            .hero {
-                padding: 60px 0 40px;
+            .main {
+                padding-top: 100px;
             }
 
-            .logo {
-                font-size: 2.5rem;
+            .hero {
+                padding: 40px 0 60px;
+            }
+
+            .hero-title {
+                font-size: clamp(2.5rem, 10vw, 4rem);
                 margin-bottom: 20px;
             }
 
-            .tagline {
-                font-size: 1.1rem;
-                margin-bottom: 30px;
-            }
-
-            .main-content {
-                margin: -30px 16px 30px;
-                border-radius: 20px;
-            }
-
-            .content-inner {
-                padding: 40px 24px;
-            }
-
-            .section-title {
-                font-size: 1.6rem;
+            .hero-subtitle {
+                font-size: 1.25rem;
                 margin-bottom: 12px;
             }
 
-            .section-subtitle {
+            .hero-description {
                 font-size: 1rem;
+            }
+
+            .features-section {
+                padding: 60px 0;
+            }
+
+            .section-title {
+                font-size: 2rem;
+                margin-bottom: 16px;
+            }
+
+            .section-subtitle {
+                font-size: 1.125rem;
                 margin-bottom: 40px;
             }
 
             .features {
                 grid-template-columns: 1fr;
                 gap: 24px;
-                margin-bottom: 40px;
+                margin-bottom: 60px;
             }
 
             .feature {
@@ -311,40 +328,39 @@
             }
 
             .feature-icon {
-                font-size: 2.5rem;
-                margin-bottom: 20px;
+                font-size: 2rem;
+                margin-bottom: 16px;
             }
 
             .feature-title {
-                font-size: 1.2rem;
-                margin-bottom: 12px;
+                font-size: 1.25rem;
+                margin-bottom: 10px;
             }
 
             .feature-description {
-                font-size: 0.9rem;
+                font-size: 0.95rem;
             }
 
-            .navigation {
+            .info-section {
                 padding: 40px 0;
-                margin: 0 -24px -40px;
             }
 
-            .nav-title {
-                font-size: 1.3rem;
+            .info-title {
+                font-size: 1.5rem;
                 margin-bottom: 24px;
             }
 
-            .nav-links {
+            .info-links {
                 flex-direction: column;
                 align-items: center;
                 gap: 16px;
             }
 
-            .nav-link {
+            .info-link {
                 width: 100%;
                 max-width: 280px;
                 justify-content: center;
-                padding: 16px 32px;
+                padding: 14px 24px;
             }
 
             .footer {
@@ -352,118 +368,116 @@
             }
 
             .footer-brand {
-                font-size: 1.3rem;
+                font-size: 1.25rem;
             }
 
             .footer-description {
-                font-size: 0.95rem;
+                font-size: 0.9rem;
             }
         }
 
-        /* Animation */
-        @keyframes fadeInUp {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .feature {
-            animation: fadeInUp 0.6s ease;
-        }
-
-        .feature:nth-child(1) { animation-delay: 0.1s; }
-        .feature:nth-child(2) { animation-delay: 0.2s; }
-        .feature:nth-child(3) { animation-delay: 0.3s; }
-        .feature:nth-child(4) { animation-delay: 0.4s; }
-        .feature:nth-child(5) { animation-delay: 0.5s; }
-        .feature:nth-child(6) { animation-delay: 0.6s; }
     </style>
 </head>
 <body>
-    <div class="container">
+    <!-- Header -->
+    <header class="header">
+        <nav class="nav-container">
+            <div class="logo">쓰담</div>
+            <div class="nav-links">
+                <a href="#features" class="nav-link">주요 기능</a>
+                <a href="#info" class="nav-link">서비스 정보</a>
+                <a href="/api-docs/" class="cta-button">API 문서</a>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main">
+        <!-- Hero Section -->
         <section class="hero">
-            <div class="hero-content">
-                <h1 class="logo">쓰담 (SseuDam)</h1>
-                <p class="tagline">
+            <div class="container">
+                <h1 class="hero-title">쓰담</h1>
+                <p class="hero-subtitle">SseuDam</p>
+                <p class="hero-description">
                     여행 후 복잡한 정산 과정을<br>
-                    <span class="highlight">쉽고 투명하고 간편하게</span> 해결하는 서비스
+                    쉽고 투명하고 간편하게 해결하는 서비스
                 </p>
             </div>
         </section>
 
-        <main class="main-content">
-            <div class="content-inner">
-                <section>
-                    <h2 class="section-title">주요 기능</h2>
-                    <p class="section-subtitle">쓰담과 함께 스마트한 여행 정산을 경험해보세요</p>
+        <!-- Features Section -->
+        <section id="features" class="features-section">
+            <div class="container">
+                <h2 class="section-title">주요 기능</h2>
+                <p class="section-subtitle">쓰담과 함께 스마트한 여행 정산을 경험해보세요</p>
 
-                    <div class="features">
-                        <article class="feature">
-                            <span class="feature-icon">💰</span>
-                            <h3 class="feature-title">스마트 정산</h3>
-                            <p class="feature-description">
-                                복잡한 여행 경비를 자동으로 계산하고 각자의 몫을 정확하게 산출합니다.
-                            </p>
-                        </article>
+                <div class="features">
+                    <article class="feature">
+                        <span class="feature-icon">💰</span>
+                        <h3 class="feature-title">스마트 정산</h3>
+                        <p class="feature-description">
+                            복잡한 여행 경비를 자동으로 계산하고 각자의 몫을 정확하게 산출합니다.
+                        </p>
+                    </article>
 
-                        <article class="feature">
-                            <span class="feature-icon">📊</span>
-                            <h3 class="feature-title">투명한 관리</h3>
-                            <p class="feature-description">
-                                모든 지출 내역을 투명하게 공유하여 불필요한 오해를 방지합니다.
-                            </p>
-                        </article>
+                    <article class="feature">
+                        <span class="feature-icon">📊</span>
+                        <h3 class="feature-title">투명한 관리</h3>
+                        <p class="feature-description">
+                            모든 지출 내역을 투명하게 공유하여 불필요한 오해를 방지합니다.
+                        </p>
+                    </article>
 
-                        <article class="feature">
-                            <span class="feature-icon">⚡</span>
-                            <h3 class="feature-title">간편한 사용</h3>
-                            <p class="feature-description">
-                                직관적인 인터페이스로 누구나 쉽게 여행 경비를 관리할 수 있습니다.
-                            </p>
-                        </article>
+                    <article class="feature">
+                        <span class="feature-icon">⚡</span>
+                        <h3 class="feature-title">간편한 사용</h3>
+                        <p class="feature-description">
+                            직관적인 인터페이스로 누구나 쉽게 여행 경비를 관리할 수 있습니다.
+                        </p>
+                    </article>
 
-                        <article class="feature">
-                            <span class="feature-icon">🤝</span>
-                            <h3 class="feature-title">그룹 관리</h3>
-                            <p class="feature-description">
-                                여행 멤버들과 실시간으로 경비를 공유하고 관리할 수 있습니다.
-                            </p>
-                        </article>
+                    <article class="feature">
+                        <span class="feature-icon">🤝</span>
+                        <h3 class="feature-title">그룹 관리</h3>
+                        <p class="feature-description">
+                            여행 멤버들과 실시간으로 경비를 공유하고 관리할 수 있습니다.
+                        </p>
+                    </article>
 
-                        <article class="feature">
-                            <span class="feature-icon">💳</span>
-                            <h3 class="feature-title">다양한 결제</h3>
-                            <p class="feature-description">
-                                카드, 현금 등 다양한 결제 수단을 지원하여 편리하게 기록합니다.
-                            </p>
-                        </article>
+                    <article class="feature">
+                        <span class="feature-icon">💳</span>
+                        <h3 class="feature-title">다양한 결제</h3>
+                        <p class="feature-description">
+                            카드, 현금 등 다양한 결제 수단을 지원하여 편리하게 기록합니다.
+                        </p>
+                    </article>
 
-                        <article class="feature">
-                            <span class="feature-icon">📈</span>
-                            <h3 class="feature-title">실시간 통계</h3>
-                            <p class="feature-description">
-                                여행 중 실시간으로 지출 현황과 정산 상태를 확인할 수 있습니다.
-                            </p>
-                        </article>
-                    </div>
-                </section>
-
-                <nav class="navigation">
-                    <h2 class="nav-title">서비스 정보</h2>
-                    <div class="nav-links">
-                        <a href="/terms/" class="nav-link">서비스 이용약관</a>
-                        <a href="/privacy/" class="nav-link">개인정보처리방침</a>
-                    </div>
-                </nav>
+                    <article class="feature">
+                        <span class="feature-icon">📈</span>
+                        <h3 class="feature-title">실시간 통계</h3>
+                        <p class="feature-description">
+                            여행 중 실시간으로 지출 현황과 정산 상태를 확인할 수 있습니다.
+                        </p>
+                    </article>
+                </div>
             </div>
-        </main>
+        </section>
 
-        <footer class="footer">
+        <!-- Info Section -->
+        <section id="info" class="info-section">
+            <div class="container">
+                <h2 class="info-title">서비스 정보</h2>
+                <div class="info-links">
+                    <a href="/terms/" class="info-link">서비스 이용약관</a>
+                    <a href="/privacy/" class="info-link">개인정보처리방침</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
             <h3 class="footer-brand">쓰담 (SseuDam)</h3>
             <p class="footer-description">
                 여행 후 복잡한 정산 과정을 쉽고 투명하고 간편하게 해결하는 서비스
@@ -471,7 +485,7 @@
             <p class="footer-contact">
                 문의: suhwj81@gmail.com | © 2025 쓰담. All rights reserved.
             </p>
-        </footer>
-    </div>
+        </div>
+    </footer>
 </body>
 </html>

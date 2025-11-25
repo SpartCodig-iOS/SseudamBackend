@@ -46,7 +46,8 @@
       "Bash(railway whoami:*)",
       "Bash(PORT=3031 npm run dev:*)",
       "Bash(NODE_ENV=development PORT=8080 npm start:*)",
-      "Bash(kill:*)"
+      "Bash(kill:*)",
+      "WebFetch(domain:ddd-web-psi.vercel.app)"
     ],
     "deny": [],
     "ask": []
