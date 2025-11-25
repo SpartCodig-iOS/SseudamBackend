@@ -210,30 +210,30 @@
         .info-links {
             display: flex;
             justify-content: center;
-            gap: 20px;
+            align-items: center;
+            gap: 1rem;
             flex-wrap: wrap;
         }
 
         .info-link {
-            display: inline-flex;
-            align-items: center;
-            padding: 12px 24px;
-            background: white;
             color: #4b5563;
             text-decoration: none;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 0.95rem;
-            border: 2px solid #e5e7eb;
+            font-weight: 500;
+            font-size: 1rem;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid transparent;
             transition: all 0.2s ease;
         }
 
         .info-link:hover {
-            background: #059669;
-            color: white;
-            border-color: #059669;
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(5, 150, 105, 0.25);
+            color: #3500FA;
+            border-bottom-color: #3500FA;
+        }
+
+        .info-separator {
+            color: #9ca3af;
+            font-weight: 300;
+            user-select: none;
         }
 
         /* Footer */
@@ -351,16 +351,11 @@
             }
 
             .info-links {
-                flex-direction: column;
-                align-items: center;
-                gap: 16px;
+                gap: 0.75rem;
             }
 
             .info-link {
-                width: 100%;
-                max-width: 280px;
-                justify-content: center;
-                padding: 14px 24px;
+                font-size: 0.9rem;
             }
 
             .footer {
@@ -468,6 +463,7 @@
                 <h2 class="info-title">서비스 정보</h2>
                 <div class="info-links">
                     <a href="/terms/" class="info-link">서비스 이용약관</a>
+                    <span class="info-separator">|</span>
                     <a href="/privacy/" class="info-link">개인정보처리방침</a>
                 </div>
             </div>
