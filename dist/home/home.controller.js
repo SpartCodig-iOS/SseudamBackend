@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.HomeController = void 0;
 const common_1 = require("@nestjs/common");
 const http_proxy_middleware_1 = require("http-proxy-middleware");
+const swagger_1 = require("@nestjs/swagger");
 let HomeController = class HomeController {
     constructor() {
         this.proxy = (0, http_proxy_middleware_1.createProxyMiddleware)({
@@ -41,5 +42,6 @@ __decorate([
     __metadata("design:returntype", void 0)
 ], HomeController.prototype, "proxyToNextjs", null);
 exports.HomeController = HomeController = __decorate([
+    (0, swagger_1.ApiExcludeController)(),
     (0, common_1.Controller)('home')
 ], HomeController);
