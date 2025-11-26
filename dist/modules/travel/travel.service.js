@@ -14,6 +14,57 @@ const pool_1 = require("../../db/pool");
 let TravelService = TravelService_1 = class TravelService {
     constructor() {
         this.logger = new common_1.Logger(TravelService_1.name);
+        // 여행 목록 캐시: 5분 TTL, 사용자별 캐시
+        this.travelListCache = new Map();
+        this.TRAVEL_LIST_CACHE_TTL = 5 * 60 * 1000; // 5분
+        this.MAX_CACHE_SIZE = 1000;
+        // 여행 상세 캐시: 10분 TTL
+        this.travelDetailCache = new Map();
+        this.TRAVEL_DETAIL_CACHE_TTL = 10 * 60 * 1000; // 10분
+    }
+    getCachedTravelList(userId) {
+        const cached = this.travelListCache.get(userId);
+        if (!cached || Date.now() > cached.expiresAt) {
+            this.travelListCache.delete(userId);
+            return null;
+        }
+        return cached.data;
+    }
+    setCachedTravelList(userId, travels) {
+        if (this.travelListCache.size >= this.MAX_CACHE_SIZE) {
+            const oldestKey = this.travelListCache.keys().next().value;
+            if (oldestKey)
+                this.travelListCache.delete(oldestKey);
+        }
+        this.travelListCache.set(userId, {
+            data: travels,
+            expiresAt: Date.now() + this.TRAVEL_LIST_CACHE_TTL
+        });
+    }
+    getCachedTravelDetail(travelId) {
+        const cached = this.travelDetailCache.get(travelId);
+        if (!cached || Date.now() > cached.expiresAt) {
+            this.travelDetailCache.delete(travelId);
+            return null;
+        }
+        return cached.data;
+    }
+    setCachedTravelDetail(travelId, travel) {
+        if (this.travelDetailCache.size >= this.MAX_CACHE_SIZE) {
+            const oldestKey = this.travelDetailCache.keys().next().value;
+            if (oldestKey)
+                this.travelDetailCache.delete(oldestKey);
+        }
+        this.travelDetailCache.set(travelId, {
+            data: travel,
+            expiresAt: Date.now() + this.TRAVEL_DETAIL_CACHE_TTL
+        });
+    }
+    invalidateUserTravelCache(userId) {
+        this.travelListCache.delete(userId);
+    }
+    invalidateTravelDetailCache(travelId) {
+        this.travelDetailCache.delete(travelId);
     }
     async ensureOwner(travelId, userId, runner) {
         const executor = runner ?? (await (0, pool_1.getPool)());

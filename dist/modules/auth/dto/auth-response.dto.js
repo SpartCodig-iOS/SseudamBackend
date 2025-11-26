@@ -31,17 +31,9 @@ __decorate([
     __metadata("design:type", Object)
 ], AuthUserDto.prototype, "avatarURL", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: '2025-11-07T20:43:21.842Z', nullable: true }),
-    __metadata("design:type", Object)
-], AuthUserDto.prototype, "createdAt", void 0);
-__decorate([
     (0, swagger_1.ApiProperty)({ example: 'user' }),
     __metadata("design:type", String)
 ], AuthUserDto.prototype, "role", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'user' }),
-    __metadata("design:type", String)
-], AuthUserDto.prototype, "userId", void 0);
 class AuthSessionEnvelopeDto {
 }
 exports.AuthSessionEnvelopeDto = AuthSessionEnvelopeDto;

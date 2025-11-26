@@ -13,14 +13,8 @@ export class AuthUserDto {
   @ApiProperty({ example: null, nullable: true })
   avatarURL!: string | null;
 
-  @ApiProperty({ example: '2025-11-07T20:43:21.842Z', nullable: true })
-  createdAt!: string | null;
-
   @ApiProperty({ example: 'user' })
   role!: string;
-
-  @ApiProperty({ example: 'user' })
-  userId!: string;
 }
 
 export class AuthSessionEnvelopeDto {

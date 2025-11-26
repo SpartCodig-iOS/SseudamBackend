@@ -110,6 +110,7 @@ export class TravelExpenseService {
     userId: string,
     payload: CreateExpenseInput,
   ): Promise<TravelExpense> {
+    // 컨텍스트 조회와 환율 변환을 병렬로 처리하기 위해 먼저 컨텍스트만 조회
     const context = await this.getTravelContext(travelId, userId);
     const payerId = payload.payerId ?? userId;
     this.ensurePayer(context.memberIds, payerId);
@@ -119,6 +120,7 @@ export class TravelExpenseService {
       throw new BadRequestException('최소 한 명 이상의 참여자가 필요합니다.');
     }
 
+    // 환율 변환은 독립적으로 실행 가능하므로 병렬 처리 대상
     const convertedAmount = await this.convertAmount(
       payload.amount,
       payload.currency,

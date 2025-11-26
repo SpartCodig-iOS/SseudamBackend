@@ -62,6 +62,29 @@ let ProfileService = ProfileService_1 = class ProfileService {
         if (cachedProfile) {
             return cachedProfile;
         }
+        // DB 조회와 Redis 캐시 조회를 병렬로 처리
+        const [dbResult, redisProfile] = await Promise.allSettled([
+            this.getProfileFromDB(userId),
+            this.cacheService.get(`profile:${userId}`)
+        ]);
+        // Redis 캐시에서 찾았다면 반환
+        if (redisProfile.status === 'fulfilled' && redisProfile.value) {
+            this.setCachedProfile(userId, redisProfile.value);
+            return redisProfile.value;
+        }
+        // DB에서 조회한 결과 처리
+        if (dbResult.status === 'fulfilled' && dbResult.value) {
+            const profile = dbResult.value;
+            // 메모리 캐시와 Redis 캐시에 동시에 저장 (비동기)
+            Promise.allSettled([
+                Promise.resolve(this.setCachedProfile(userId, profile)),
+                this.cacheService.set(`profile:${userId}`, profile, { ttl: 600 }) // 10분
+            ]);
+            return profile;
+        }
+        return null;
+    }
+    async getProfileFromDB(userId) {
         const pool = await (0, pool_1.getPool)();
         const result = await pool.query(`SELECT
          id::text,
@@ -78,7 +101,7 @@ let ProfileService = ProfileService_1 = class ProfileService {
         const row = result.rows[0];
         if (!row)
             return null;
-        const profile = {
+        return {
             id: row.id,
             email: row.email,
             name: row.name,
@@ -89,9 +112,6 @@ let ProfileService = ProfileService_1 = class ProfileService {
             updated_at: row.updated_at,
             password_hash: '',
         };
-        // 캐시에 저장
-        this.setCachedProfile(userId, profile);
-        return profile;
     }
     async updateProfile(userId, payload, file) {
         let avatarURL = payload.avatarURL ?? null;
