@@ -1,7 +1,9 @@
 import { Controller, Get, Res, Req, All } from '@nestjs/common';
 import { Response, Request } from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
+import { ApiExcludeController } from '@nestjs/swagger';
 
+@ApiExcludeController()
 @Controller('home')
 export class HomeController {
   private proxy = createProxyMiddleware({
