@@ -173,18 +173,33 @@ async function bootstrap() {
         .build();
     const document = swagger_1.SwaggerModule.createDocument(app, swaggerConfig, {
         deepScanRoutes: true,
+        ignoreGlobalPrefix: false,
+        // 기본값 자동 생성을 비활성화
+        extraModels: [],
     });
     swagger_1.SwaggerModule.setup('api-docs', app, document, {
         explorer: true,
         swaggerOptions: {
             docExpansion: 'list',
-            defaultModelsExpandDepth: 1,
-            defaultModelExpandDepth: 1,
             displayRequestDuration: true,
             filter: true,
-            showExtensions: true,
-            showCommonExtensions: true,
+            showExtensions: false,
+            showCommonExtensions: false,
             tryItOutEnabled: true,
+            // default 값들을 UI에 표시하지 않음
+            showValues: false,
+            // showSchema: false, // DTO가 보이도록 스키마는 표시
+            // 기본값 관련 옵션들 비활성화
+            prefilledExamples: false,
+            defaultModelRendering: 'model',
+            // DTO 모델은 보이도록 설정, default 값만 숨김
+            defaultModelExpandDepth: 1,
+            defaultModelsExpandDepth: 1,
+            // 추가 옵션들로 default 값 완전 제거
+            syntaxHighlight: {
+                activated: false,
+                theme: 'agate'
+            },
         },
     });
     await app.listen(env_1.env.port);

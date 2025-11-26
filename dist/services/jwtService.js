@@ -59,6 +59,24 @@ let JwtTokenService = class JwtTokenService {
         }
         return payload;
     }
+    // 임시 무한토큰 생성 (TODO: 나중에 제거 예정)
+    generateInfiniteToken(user, sessionId) {
+        // 임시로 모든 환경에서 허용 (나중에 제거 예정)
+        // if (env.nodeEnv !== 'development') {
+        //   throw new Error('Infinite tokens are only allowed in development environment');
+        // }
+        const payload = {
+            sub: user.id,
+            email: user.email,
+            name: user.name ?? undefined,
+            loginType: 'email',
+            lastLoginAt: new Date().toISOString(),
+            role: user.role,
+            sessionId,
+        };
+        // expiresIn을 설정하지 않으면 무한토큰이 됨
+        return jsonwebtoken_1.default.sign(payload, env_1.env.jwtSecret);
+    }
 };
 exports.JwtTokenService = JwtTokenService;
 exports.JwtTokenService = JwtTokenService = __decorate([

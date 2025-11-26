@@ -32,7 +32,11 @@ let AuthGuard = class AuthGuard {
         }
         const localUser = this.tryLocalJwt(token);
         if (localUser) {
-            await this.ensureSessionActive(localUser.sessionId);
+            // 무한 토큰인지 확인 (exp 필드가 없는 경우)
+            const isInfiniteToken = this.isInfiniteToken(token);
+            if (!isInfiniteToken) {
+                await this.ensureSessionActive(localUser.sessionId);
+            }
             const hydratedUser = await this.hydrateUserRole(localUser.user);
             this.setCachedUser(token, hydratedUser);
             request.currentUser = hydratedUser;
@@ -119,6 +123,16 @@ let AuthGuard = class AuthGuard {
         }
         catch (error) {
             return null;
+        }
+    }
+    isInfiniteToken(token) {
+        try {
+            const payload = this.jwtTokenService.verifyAccessToken(token);
+            // exp 필드가 없으면 무한 토큰으로 간주
+            return !payload.exp;
+        }
+        catch (error) {
+            return false;
         }
     }
     async ensureSessionActive(sessionId) {

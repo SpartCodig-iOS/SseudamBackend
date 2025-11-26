@@ -16,9 +16,22 @@ export const createExpenseSchema = z.object({
       today.setHours(23, 59, 59, 999); // 오늘 끝까지 허용
       return expenseDate <= today;
     }, '지출 날짜는 미래 날짜일 수 없습니다.'),
-  category: z.string().min(1).max(50).optional(),
+  category: z.string()
+    .min(1, '카테고리는 최소 1글자 이상이어야 합니다.')
+    .max(20, '카테고리는 20자 이하여야 합니다.')
+    .regex(/^[a-zA-Z0-9가-힣_-]+$/, '카테고리는 영문, 숫자, 한글, _, - 만 사용 가능합니다.')
+    .optional(),
   payerId: z.string().uuid().optional(),
-  participantIds: z.array(z.string().uuid()).optional(),
+  participantIds: z.array(z.string().uuid('잘못된 참가자 ID 형식입니다.'))
+    .min(1, '참가자는 최소 1명 이상이어야 합니다.')
+    .max(20, '참가자는 최대 20명까지 가능합니다.')
+    .optional()
+    .refine((ids) => {
+      if (!ids) return true; // optional이므로 undefined는 허용
+      // 중복 ID 검사
+      const uniqueIds = new Set(ids);
+      return uniqueIds.size === ids.length;
+    }, '중복된 참가자 ID가 있습니다.'),
 });
 
 export type CreateExpenseInput = z.infer<typeof createExpenseSchema>;
