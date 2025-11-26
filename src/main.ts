@@ -170,13 +170,13 @@ async function bootstrap() {
       tryItOutEnabled: true,
       // default 값들을 UI에 표시하지 않음
       showValues: false,
-      showSchema: false,
+      // showSchema: false, // DTO가 보이도록 스키마는 표시
       // 기본값 관련 옵션들 비활성화
       prefilledExamples: false,
       defaultModelRendering: 'model',
-      // 모델 예시에서 기본값 표시 안함
-      defaultModelExpandDepth: -1,
-      defaultModelsExpandDepth: -1,
+      // DTO 모델은 보이도록 설정, default 값만 숨김
+      defaultModelExpandDepth: 1,
+      defaultModelsExpandDepth: 1,
       // 추가 옵션들로 default 값 완전 제거
       syntaxHighlight: {
         activated: false,
