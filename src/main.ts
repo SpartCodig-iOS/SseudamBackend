@@ -163,8 +163,6 @@ async function bootstrap() {
     explorer: true,
     swaggerOptions: {
       docExpansion: 'list',
-      defaultModelsExpandDepth: 1,
-      defaultModelExpandDepth: 1,
       displayRequestDuration: true,
       filter: true,
       showExtensions: false,
@@ -176,6 +174,14 @@ async function bootstrap() {
       // 기본값 관련 옵션들 비활성화
       prefilledExamples: false,
       defaultModelRendering: 'model',
+      // 모델 예시에서 기본값 표시 안함
+      defaultModelExpandDepth: -1,
+      defaultModelsExpandDepth: -1,
+      // 추가 옵션들로 default 값 완전 제거
+      syntaxHighlight: {
+        activated: false,
+        theme: 'agate'
+      },
     },
   });
 
