@@ -179,7 +179,7 @@ async function bootstrap() {
       defaultModelsExpandDepth: 1,
       // 추가 옵션들로 default 값 완전 제거
       syntaxHighlight: {
-        activated: false,
+        activated: true,
         theme: 'agate'
       },
     },
