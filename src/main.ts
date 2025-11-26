@@ -154,6 +154,9 @@ async function bootstrap() {
 
   const document = SwaggerModule.createDocument(app, swaggerConfig, {
     deepScanRoutes: true,
+    ignoreGlobalPrefix: false,
+    // 기본값 자동 생성을 비활성화
+    extraModels: [],
   });
 
   SwaggerModule.setup('api-docs', app, document, {
@@ -164,9 +167,15 @@ async function bootstrap() {
       defaultModelExpandDepth: 1,
       displayRequestDuration: true,
       filter: true,
-      showExtensions: true,
-      showCommonExtensions: true,
+      showExtensions: false,
+      showCommonExtensions: false,
       tryItOutEnabled: true,
+      // default 값들을 UI에 표시하지 않음
+      showValues: false,
+      showSchema: false,
+      // 기본값 관련 옵션들 비활성화
+      prefilledExamples: false,
+      defaultModelRendering: 'model',
     },
   });
 
