@@ -32,7 +32,7 @@ export const env = {
   databaseForceIPv4: truthy(process.env.DATABASE_FORCE_IPV4) ?? false,
   jwtSecret: process.env.JWT_SECRET ?? 'secret',
   accessTokenTTL: optionalNumber(process.env.ACCESS_TOKEN_TTL_SECONDS, 60 * 60 * 24) ?? 60 * 60 * 24,
-  refreshTokenTTL: optionalNumber(process.env.REFRESH_TOKEN_TTL_SECONDS, 60 * 60 * 24 * 7) ?? 60 * 60 * 24 * 7,
+  refreshTokenTTL: optionalNumber(process.env.REFRESH_TOKEN_TTL_SECONDS, 60 * 60 * 24 * 60) ?? 60 * 60 * 24 * 60,
   supabaseUrl: process.env.SUPABASE_URL ?? process.env.SUPERBASE_URL ?? '',
   supabaseServiceRoleKey:
     process.env.SUPABASE_SERVICE_ROLE_KEY ??

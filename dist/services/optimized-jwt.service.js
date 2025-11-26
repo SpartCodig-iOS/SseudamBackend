@@ -30,9 +30,8 @@ let OptimizedJwtTokenService = OptimizedJwtTokenService_1 = class OptimizedJwtTo
         // 메모리 기반 토큰 캐시 (Redis 장애 시 fallback)
         this.tokenCache = new Map();
         this.MAX_MEMORY_CACHE_SIZE = 10000;
-        // Railway Sleep 모드 지원: 개발환경 또는 RAILWAY_SLEEP_MODE에서는 백그라운드 캐시 정리 비활성화
-        if (process.env.NODE_ENV === 'production' && process.env.RAILWAY_SLEEP_MODE !== 'true') {
-            // 운영환경에서만 2시간마다 캐시 정리
+        // Railway Sleep 모드 지원: 백그라운드 캐시 정리 완전 비활성화
+        if (false) { // Railway Sleep 모드를 위해 완전히 비활성화
             const cleanupInterval = 2 * 60 * 60 * 1000; // 2시간
             setInterval(() => {
                 this.cleanupMemoryCache();
@@ -143,7 +142,7 @@ let OptimizedJwtTokenService = OptimizedJwtTokenService_1 = class OptimizedJwtTo
             this.generateRefreshTokenAsync(user, sessionId),
         ]);
         const accessTokenExpiresAt = new Date(Date.now() + secondsToMs(3600)); // 1시간
-        const refreshTokenExpiresAt = new Date(Date.now() + secondsToMs(86400 * 7)); // 7일
+        const refreshTokenExpiresAt = new Date(Date.now() + secondsToMs(86400 * 60)); // 60일
         return {
             accessToken,
             accessTokenExpiresAt,

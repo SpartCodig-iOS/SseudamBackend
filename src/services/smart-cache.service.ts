@@ -33,11 +33,11 @@ export class SmartCacheService {
   private tagMap = new Map<string, Set<string>>(); // tag -> keys
 
   constructor(private readonly cacheService: CacheService) {
-    // Railway Sleep 모드 지원: 백그라운드 로깅 완전 비활성화 (운영환경에서만 활성화)
-    if (process.env.NODE_ENV === 'production' && process.env.ENABLE_CACHE_STATS === 'true' && process.env.RAILWAY_SLEEP_MODE !== 'true') {
+    // Railway Sleep 모드 지원: 백그라운드 로깅 완전 비활성화
+    if (false) { // Railway Sleep 모드를 위해 완전히 비활성화
       setInterval(() => {
         this.logStats();
-      }, 2 * 60 * 60 * 1000); // 운영환경에서만 2시간마다
+      }, 2 * 60 * 60 * 1000);
     }
     this.logger.log('Smart cache background logging disabled for Railway Sleep mode support');
   }
