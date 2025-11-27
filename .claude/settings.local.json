@@ -50,7 +50,9 @@
       "WebFetch(domain:ddd-web-psi.vercel.app)",
       "Bash(npm start)",
       "Bash(node test-validation.js:*)",
-      "Bash(http://localhost:8081/api/v1/profile/me)"
+      "Bash(http://localhost:8081/api/v1/profile/me)",
+      "Bash(https://sseudam.up.railway.app/api/v1/profile/me)",
+      "Bash(https://sseudam.up.railway.app/api/v1/travels)"
     ],
     "deny": [],
     "ask": []

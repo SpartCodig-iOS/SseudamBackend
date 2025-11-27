@@ -492,13 +492,14 @@ export class AuthService {
     const pool = await getPool();
 
     // 프로필 타입 조회 (DB 우선, 실패 시 Supabase)
+    let avatarUrl: string | null = user.avatar_url ?? null;
     let profileLoginType: LoginType | null = null;
     let appleRefreshToken: string | null = null;
     let googleRefreshToken: string | null = null;
 
     try {
       const directProfile = await pool.query(
-        `SELECT login_type, apple_refresh_token, google_refresh_token
+        `SELECT login_type, apple_refresh_token, google_refresh_token, avatar_url
          FROM profiles
          WHERE id = $1
          LIMIT 1`,
@@ -509,6 +510,7 @@ export class AuthService {
         profileLoginType = (profileRow.login_type as LoginType | null) ?? null;
         appleRefreshToken = (profileRow.apple_refresh_token as string | null) ?? null;
         googleRefreshToken = (profileRow.google_refresh_token as string | null) ?? null;
+        avatarUrl = avatarUrl ?? (profileRow.avatar_url as string | null);
       }
     } catch (error) {
       this.logger.warn('[deleteAccount] Failed to fetch profile login type from DB', error as Error);
@@ -517,6 +519,7 @@ export class AuthService {
       try {
         const profile = await this.supabaseService.findProfileById(user.id);
         profileLoginType = (profile?.login_type as LoginType | null) ?? null;
+        avatarUrl = avatarUrl ?? (profile?.avatar_url as string | null) ?? null;
       } catch (error) {
         this.logger.warn('[deleteAccount] Failed to fetch profile login type via Supabase', error as Error);
       }
@@ -629,7 +632,10 @@ export class AuthService {
         .catch((error) => this.logger.warn('[deleteAccount] User cache invalidation failed', error as Error)),
     ]);
 
-    await Promise.all([localCleanup, supabaseDeletion, cacheCleanup]);
+    const profileImageDeletion = this.supabaseService.deleteProfileImage(avatarUrl)
+      .catch((error) => this.logger.warn('[deleteAccount] Profile image deletion failed', error as Error));
+
+    await Promise.all([localCleanup, supabaseDeletion, cacheCleanup, profileImageDeletion]);
 
     const duration = Date.now() - startTime;
     this.logger.debug(`Fast account deletion completed in ${duration}ms for ${user.email}`);

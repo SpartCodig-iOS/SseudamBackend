@@ -123,7 +123,7 @@ export class SupabaseService {
     const client = this.getClient();
     const { data, error } = await client
       .from(env.supabaseProfileTable)
-      .select('id, email, username, name, login_type')
+      .select('id, email, username, name, login_type, avatar_url')
       .eq('id', id)
       .limit(1)
       .maybeSingle();
@@ -339,6 +339,41 @@ export class SupabaseService {
       throw new Error(`[getGoogleRefreshToken] select failed: ${error.message}`);
     }
     return (data?.google_refresh_token as string | null) ?? null;
+  }
+
+  private parseAvatarStoragePath(avatarUrl?: string | null): { bucket: string; path: string } | null {
+    if (!avatarUrl) return null;
+    const trimmed = avatarUrl.trim();
+    if (!trimmed) return null;
+
+    const bucket = 'profileimages';
+    const normalizedBase = env.supabaseUrl.replace(/\/$/, '');
+    const publicPrefix = `${normalizedBase}/storage/v1/object/public/${bucket}/`;
+
+    if (trimmed.startsWith(publicPrefix)) {
+      const path = trimmed.slice(publicPrefix.length);
+      return path ? { bucket, path } : null;
+    }
+
+    if (trimmed.startsWith(`${bucket}/`)) {
+      const path = trimmed.slice(bucket.length + 1);
+      return path ? { bucket, path } : null;
+    }
+
+    return null;
+  }
+
+  async deleteProfileImage(avatarUrl?: string | null): Promise<void> {
+    const pathInfo = this.parseAvatarStoragePath(avatarUrl);
+    if (!pathInfo) {
+      return;
+    }
+
+    const client = this.getClient();
+    const { error } = await client.storage.from(pathInfo.bucket).remove([pathInfo.path]);
+    if (error) {
+      throw new Error(`[deleteProfileImage] remove failed: ${error.message}`);
+    }
   }
 
   async deleteUser(id: string) {

@@ -34,7 +34,7 @@ let DevController = class DevController {
         }
         // 테스트용 가짜 유저 데이터
         const testUser = {
-            id: 'test-user-id-12345',
+            id: 'fe6e64fb-f82c-4967-aafc-76e648d504d1', // UUID 형식으로 변경
             email: 'test@example.com',
             password_hash: 'fake-hash',
             name: '테스트 사용자',

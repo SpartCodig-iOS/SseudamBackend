@@ -35,6 +35,7 @@ let OptimizedDeleteService = OptimizedDeleteService_1 = class OptimizedDeleteSer
                 this.fetchUserProfileData(user.id),
                 this.getCachedSocialTokens(user.id)
             ]);
+            const avatarUrl = profileData?.avatar_url || user.avatar_url || null;
             const loginType = profileData?.login_type || loginTypeHint || 'email';
             const appleRefreshToken = profileData?.apple_refresh_token || cachedTokens?.appleToken;
             const googleRefreshToken = profileData?.google_refresh_token || cachedTokens?.googleToken;
@@ -44,13 +45,17 @@ let OptimizedDeleteService = OptimizedDeleteService_1 = class OptimizedDeleteSer
             const localDeletePromise = this.performFastLocalDeletion(user.id);
             // 4. Supabase 사용자 삭제를 병렬로 처리
             const supabaseDeletePromise = this.deleteSupabaseUserAsync(user.id);
+            // 4-1. 프로필 이미지 삭제 (스토리지)
+            const profileImageDeletePromise = this.supabaseService.deleteProfileImage(avatarUrl)
+                .catch(error => this.logger.warn(`Profile image deletion failed: ${error instanceof Error ? error.message : 'Unknown error'}`));
             // 5. 캐시 무효화를 백그라운드에서 처리
             const cacheCleanupPromise = this.invalidateUserCaches(user.id);
             // 6. 중요한 작업들만 대기 (소셜 해제는 백그라운드)
             const [, supabaseResult] = await Promise.all([
                 localDeletePromise,
                 supabaseDeletePromise,
-                cacheCleanupPromise
+                cacheCleanupPromise,
+                profileImageDeletePromise
             ]);
             // 7. 소셜 토큰 해제는 백그라운드에서 계속 처리
             socialRevokePromise.catch(error => {
@@ -72,7 +77,7 @@ let OptimizedDeleteService = OptimizedDeleteService_1 = class OptimizedDeleteSer
     async fetchUserProfileData(userId) {
         const pool = await (0, pool_1.getPool)();
         try {
-            const result = await pool.query(`SELECT login_type, apple_refresh_token, google_refresh_token
+            const result = await pool.query(`SELECT login_type, apple_refresh_token, google_refresh_token, avatar_url
          FROM profiles
          WHERE id = $1 LIMIT 1`, [userId]);
             return result.rows[0] || null;
