@@ -167,7 +167,7 @@ export class AuthGuard implements CanActivate {
       const dbRole = result.rows[0]?.role as string | undefined;
 
       // 프로필이 없으면 자동 생성 (특히 테스트 사용자의 경우)
-      if (!dbRole && user.id === 'fe6e64fb-f82c-4967-aafc-76e648d504d1') {
+      if (!dbRole && user.id === 'e11cc73b-052d-4740-8213-999c05bfc332') {
         await pool.query(
           `INSERT INTO profiles (id, email, name, role, created_at, updated_at)
            VALUES ($1, $2, $3, $4, NOW(), NOW())

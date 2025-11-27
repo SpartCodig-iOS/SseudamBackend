@@ -93,7 +93,7 @@ let TravelService = TravelService_1 = class TravelService {
          t.base_currency,
          t.base_exchange_rate,
          t.invite_code,
-         CASE WHEN t.end_date < CURRENT_DATE THEN 'inactive' ELSE 'active' END AS status,
+         CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS status,
          t.created_at::text,
          tm.role AS role,
          owner_profile.name AS owner_name,
@@ -144,7 +144,7 @@ let TravelService = TravelService_1 = class TravelService {
         if (status === 'active') {
             return `AND ${alias}.end_date >= CURRENT_DATE`;
         }
-        if (status === 'inactive') {
+        if (status === 'archived') {
             return `AND ${alias}.end_date < CURRENT_DATE`;
         }
         return '';
@@ -174,7 +174,7 @@ let TravelService = TravelService_1 = class TravelService {
                 const ownerName = currentUser.name ?? currentUser.email ?? '알 수 없는 사용자';
                 const insertResult = await client.query(`WITH new_travel AS (
              INSERT INTO travels (owner_id, title, start_date, end_date, country_code, base_currency, base_exchange_rate, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $4 < CURRENT_DATE THEN 'inactive' ELSE 'active' END)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $4 < CURRENT_DATE THEN 'archived' ELSE 'active' END)
              RETURNING id,
                        title,
                        start_date,
@@ -263,7 +263,7 @@ let TravelService = TravelService_1 = class TravelService {
        COALESCE(members.members, '[]'::json) AS members
      FROM (
         SELECT t.*, COALESCE(tm.role, mp.role, 'member') AS role,
-               CASE WHEN t.end_date < CURRENT_DATE THEN 'inactive' ELSE 'active' END AS computed_status
+               CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS computed_status
         FROM travels t
         INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
         LEFT JOIN profiles mp ON mp.id = tm.user_id
@@ -373,7 +373,7 @@ let TravelService = TravelService_1 = class TravelService {
               ti.used_count,
               ti.max_uses,
               ti.expires_at,
-              CASE WHEN t.end_date < CURRENT_DATE THEN 'inactive' ELSE 'active' END AS travel_status
+              CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS travel_status
        FROM travel_invites ti
        INNER JOIN travels t ON t.id = ti.travel_id
        WHERE ti.invite_code = $1
@@ -445,7 +445,7 @@ let TravelService = TravelService_1 = class TravelService {
            country_code = $6,
            base_currency = $7,
            base_exchange_rate = $8,
-           status = CASE WHEN $5 < CURRENT_DATE THEN 'inactive' ELSE 'active' END,
+           status = CASE WHEN $5 < CURRENT_DATE THEN 'archived' ELSE 'active' END,
            updated_at = NOW()
        WHERE id = $1 AND owner_id = $2
        RETURNING

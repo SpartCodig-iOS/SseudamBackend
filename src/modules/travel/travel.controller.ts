@@ -38,7 +38,7 @@ export class TravelController {
   @ApiQuery({
     name: 'status',
     required: false,
-    enum: ['active', 'inactive'],
+    enum: ['active', 'archived'],
     description: '여행 상태에 따라 목록을 필터링합니다.',
   })
   async list(@Req() req: RequestWithUser, @Req() request: RequestWithUser) {
@@ -48,12 +48,12 @@ export class TravelController {
     const page = Number((request.query?.page as string) ?? '1') || 1;
     const limit = Number((request.query?.limit as string) ?? '20') || 20;
     const requestedStatus = (request.query?.status as string | undefined)?.toLowerCase();
-    let status: 'active' | 'inactive' | undefined;
+    let status: 'active' | 'archived' | undefined;
     if (requestedStatus) {
-      if (requestedStatus !== 'active' && requestedStatus !== 'inactive') {
-        throw new BadRequestException("status는 'active' 혹은 'inactive' 값만 허용됩니다.");
+      if (requestedStatus !== 'active' && requestedStatus !== 'archived') {
+        throw new BadRequestException("status는 'active' 혹은 'archived' 값만 허용됩니다.");
       }
-      status = requestedStatus as 'active' | 'inactive';
+      status = requestedStatus as 'active' | 'archived';
     }
     const result = await this.travelService.listTravels(req.currentUser.id, { page, limit, status });
     return success(result);

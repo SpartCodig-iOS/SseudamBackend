@@ -33,8 +33,8 @@ let TravelController = class TravelController {
         const requestedStatus = request.query?.status?.toLowerCase();
         let status;
         if (requestedStatus) {
-            if (requestedStatus !== 'active' && requestedStatus !== 'inactive') {
-                throw new common_1.BadRequestException("status는 'active' 혹은 'inactive' 값만 허용됩니다.");
+            if (requestedStatus !== 'active' && requestedStatus !== 'archived') {
+                throw new common_1.BadRequestException("status는 'active' 혹은 'archived' 값만 허용됩니다.");
             }
             status = requestedStatus;
         }
@@ -117,7 +117,7 @@ __decorate([
     (0, swagger_1.ApiQuery)({
         name: 'status',
         required: false,
-        enum: ['active', 'inactive'],
+        enum: ['active', 'archived'],
         description: '여행 상태에 따라 목록을 필터링합니다.',
     }),
     __param(0, (0, common_1.Req)()),
