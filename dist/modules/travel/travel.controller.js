@@ -61,6 +61,13 @@ let TravelController = class TravelController {
         const travel = await this.travelService.updateTravel(travelId, req.currentUser.id, payload);
         return (0, api_1.success)(travel, 'Travel updated');
     }
+    async getTravel(travelId, req) {
+        if (!req.currentUser) {
+            throw new common_1.UnauthorizedException('Unauthorized');
+        }
+        const travel = await this.travelService.getTravelDetail(travelId, req.currentUser.id);
+        return (0, api_1.success)(travel);
+    }
     async removeMember(travelId, memberId, req) {
         if (!req.currentUser) {
             throw new common_1.UnauthorizedException('Unauthorized');
@@ -197,6 +204,17 @@ __decorate([
     __metadata("design:paramtypes", [String, Object, Object]),
     __metadata("design:returntype", Promise)
 ], TravelController.prototype, "updateTravel", null);
+__decorate([
+    (0, common_1.Get)(':travelId'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: '여행 상세 조회 (travelId 기반)' }),
+    (0, swagger_1.ApiOkResponse)({ type: travel_response_dto_1.TravelSummaryDto }),
+    __param(0, (0, common_1.Param)('travelId', new common_1.ParseUUIDPipe({ version: '4' }))),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], TravelController.prototype, "getTravel", null);
 __decorate([
     (0, common_1.Delete)(':travelId/members/:memberId'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),

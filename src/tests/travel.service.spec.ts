@@ -27,7 +27,6 @@ test('listTravels returns mapped and paginated travel summaries', async () => {
           base_exchange_rate: 144.5,
           invite_code: 'abc123',
           status: 'active',
-          role: 'owner',
           created_at: '2024-07-01T00:00:00.000Z',
           owner_name: '홍길동',
           members: [
@@ -54,7 +53,9 @@ test('listTravels returns mapped and paginated travel summaries', async () => {
   mock.method(poolModule, 'getPool', async () => mockPool);
 
   try {
-    const service = new TravelService();
+    const service = new TravelService({
+      getCountries: async () => [{ code: 'JP', currencies: ['JPY'] }],
+    } as any);
     const result = await service.listTravels('user-1', { page: 2, limit: 1 });
 
     assert.equal(result.total, 2);
@@ -68,7 +69,7 @@ test('listTravels returns mapped and paginated travel summaries', async () => {
     assert.equal(item.startDate, '2024-08-01');
     assert.equal(item.endDate, '2024-08-05');
     assert.equal(item.status, 'active');
-    assert.equal(item.role, 'owner');
+    assert.equal(item.destinationCurrency, 'JPY');
     assert.ok(Array.isArray(item.members));
     assert.equal(item.members?.[0].name, '홍길동');
 
@@ -116,7 +117,6 @@ test('updateTravel applies owner changes and returns refreshed summary', async (
             base_exchange_rate: samplePayload.baseExchangeRate,
             invite_code: 'invite-123',
             status: 'active',
-            role: 'owner',
             created_at: '2024-06-01T00:00:00.000Z',
             owner_name: '호스트',
             members: [
@@ -138,7 +138,9 @@ test('updateTravel applies owner changes and returns refreshed summary', async (
   mock.method(poolModule, 'getPool', async () => mockPool);
 
   try {
-    const service = new TravelService();
+    const service = new TravelService({
+      getCountries: async () => [{ code: 'JP', currencies: ['JPY'] }],
+    } as any);
     const result = await service.updateTravel('travel-123', 'user-123', samplePayload);
 
     assert.equal(updateArgs[0], 'travel-123');
@@ -146,6 +148,7 @@ test('updateTravel applies owner changes and returns refreshed summary', async (
     assert.equal(result.title, samplePayload.title);
     assert.equal(result.startDate, samplePayload.startDate);
     assert.equal(result.baseExchangeRate, samplePayload.baseExchangeRate);
+    assert.equal(result.destinationCurrency, 'JPY');
     assert.equal(result.ownerName, '호스트');
     assert.equal(result.members?.[0].userId, 'user-123');
   } finally {
@@ -180,7 +183,9 @@ test('deleteTravel verifies ownership and clears related records in a transactio
   mock.method(poolModule, 'getPool', async () => mockPool);
 
   try {
-    const service = new TravelService();
+    const service = new TravelService({
+      getCountries: async () => [{ code: 'JP', currencies: ['JPY'] }],
+    } as any);
     await service.deleteTravel('travel-abc', 'owner-999');
 
     assert.equal(poolQuery.mock.callCount(), 1, 'ownership should be checked once');

@@ -19,6 +19,9 @@ export class TravelSummaryDto {
   @ApiProperty({ example: 'JPY' })
   baseCurrency!: string;
 
+  @ApiProperty({ example: 'JPY', description: '여행지 통화 코드(국가 코드 기반)' })
+  destinationCurrency!: string;
+
   @ApiProperty({ example: 0.0091 })
   baseExchangeRate!: number;
 
@@ -27,9 +30,6 @@ export class TravelSummaryDto {
 
   @ApiProperty({ example: 'active' })
   status!: string;
-
-  @ApiProperty({ example: 'owner' })
-  role!: string;
 
   @ApiProperty({ example: '2025-09-01T12:34:56.000Z' })
   createdAt!: string;

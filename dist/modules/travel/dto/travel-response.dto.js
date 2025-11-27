@@ -39,6 +39,10 @@ __decorate([
     __metadata("design:type", String)
 ], TravelSummaryDto.prototype, "baseCurrency", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({ example: 'JPY', description: '여행지 통화 코드(국가 코드 기반)' }),
+    __metadata("design:type", String)
+], TravelSummaryDto.prototype, "destinationCurrency", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ example: 0.0091 }),
     __metadata("design:type", Number)
 ], TravelSummaryDto.prototype, "baseExchangeRate", void 0);
@@ -50,10 +54,6 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: 'active' }),
     __metadata("design:type", String)
 ], TravelSummaryDto.prototype, "status", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'owner' }),
-    __metadata("design:type", String)
-], TravelSummaryDto.prototype, "role", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ example: '2025-09-01T12:34:56.000Z' }),
     __metadata("design:type", String)

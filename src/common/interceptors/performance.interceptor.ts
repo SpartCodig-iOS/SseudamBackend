@@ -12,6 +12,12 @@ import { Request, Response } from 'express';
 @Injectable()
 export class PerformanceInterceptor implements NestInterceptor {
   private readonly logger = new Logger(PerformanceInterceptor.name);
+  private readonly warnThresholdMs = Number(process.env.PERF_WARN_MS ?? 300);
+  private readonly errorThresholdMs = Number(process.env.PERF_ERROR_MS ?? 800);
+  private readonly logSampleRate = Math.min(
+    1,
+    Math.max(0, Number(process.env.PERF_LOG_SAMPLE ?? 1)),
+  );
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const request = context.switchToHttp().getRequest<Request>();
@@ -71,9 +77,11 @@ export class PerformanceInterceptor implements NestInterceptor {
           'X-Request-ID': `req_${startTime}`,
         });
 
-        // 느린 요청 로깅 (100ms 이상)
-        if (duration > 100) {
-          this.logger.warn(`Slow request detected`, {
+        const shouldLog = Math.random() <= this.logSampleRate;
+
+        // 느린 요청 로깅 (환경 변수 기준, 기본 300ms)
+        if (duration > this.warnThresholdMs && shouldLog) {
+          this.logger.warn('Slow request detected', {
             method,
             url,
             duration: `${duration.toFixed(2)}ms`,
@@ -82,14 +90,15 @@ export class PerformanceInterceptor implements NestInterceptor {
           });
         }
 
-        // 매우 느린 요청은 더 자세히 로깅 (500ms 이상)
-        if (duration > 500) {
-          this.logger.error(`Very slow request`, {
+        // 매우 느린 요청은 더 자세히 로깅 (환경 변수 기준, 기본 800ms)
+        if (duration > this.errorThresholdMs && shouldLog) {
+          const responseSize = data ? Buffer.byteLength(JSON.stringify(data), 'utf8') : 0;
+          this.logger.error('Very slow request', {
             method,
             url,
             duration: `${duration.toFixed(2)}ms`,
             userAgent,
-            responseSize: JSON.stringify(data || {}).length,
+            responseSize,
             timestamp: new Date().toISOString(),
           });
         }

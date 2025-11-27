@@ -11,6 +11,7 @@ import { Pool, PoolClient } from 'pg';
 import { getPool } from '../../db/pool';
 import { CreateTravelInput } from '../../validators/travelSchemas';
 import { UserRecord } from '../../types/user';
+import { MetaService } from '../meta/meta.service';
 
 export interface TravelSummary {
   id: string;
@@ -20,9 +21,9 @@ export interface TravelSummary {
   countryCode: string;
   baseCurrency: string;
   baseExchangeRate: number;
+  destinationCurrency: string;
   inviteCode?: string;
   status: string;
-  role: string;
   createdAt: string;
   ownerName: string | null;
   members?: TravelMember[];
@@ -43,6 +44,9 @@ export interface TravelMember {
 @Injectable()
 export class TravelService {
   private readonly logger = new Logger(TravelService.name);
+  private readonly countryCurrencyCache = new Map<string, string>();
+  private countryCurrencyLoaded = false;
+  private countryCurrencyLoadPromise: Promise<void> | null = null;
 
   // 여행 목록 캐시: 5분 TTL, 사용자별 캐시
   private readonly travelListCache = new Map<string, { data: TravelSummary[]; expiresAt: number }>();
@@ -52,6 +56,8 @@ export class TravelService {
   // 여행 상세 캐시: 10분 TTL
   private readonly travelDetailCache = new Map<string, { data: TravelDetail; expiresAt: number }>();
   private readonly TRAVEL_DETAIL_CACHE_TTL = 10 * 60 * 1000; // 10분
+
+  constructor(private readonly metaService: MetaService) {}
 
   private getCachedTravelList(userId: string): TravelSummary[] | null {
     const cached = this.travelListCache.get(userId);
@@ -126,6 +132,8 @@ export class TravelService {
   }
 
   private async fetchSummaryForMember(travelId: string, userId: string): Promise<TravelSummary> {
+    await this.ensureCountryCurrencyMap();
+
     const pool = await getPool();
     const result = await pool.query(
       `SELECT
@@ -171,6 +179,7 @@ export class TravelService {
   }
 
   private mapSummary(row: any): TravelSummary {
+    const destinationCurrency = this.resolveDestinationCurrency(row.country_code, row.base_currency);
     return {
       id: row.id,
       title: row.title,
@@ -179,13 +188,67 @@ export class TravelService {
       countryCode: row.country_code,
       baseCurrency: row.base_currency,
       baseExchangeRate: Number(row.base_exchange_rate),
+      destinationCurrency,
       inviteCode: row.invite_code ?? undefined,
       status: row.status,
-      role: row.role,
       createdAt: row.created_at,
       ownerName: row.owner_name ?? null,
       members: row.members ?? undefined,
     };
+  }
+
+  async getTravelDetail(travelId: string, userId: string): Promise<TravelDetail> {
+    // 멤버십 검증을 먼저 수행하여 캐시된 데이터로 인한 권한 우회 방지
+    const member = await this.isMember(travelId, userId);
+    if (!member) {
+      throw new ForbiddenException('여행에 참여 중인 사용자만 조회할 수 있습니다.');
+    }
+
+    const cached = this.getCachedTravelDetail(travelId);
+    if (cached) {
+      return cached;
+    }
+
+    const travel = await this.fetchSummaryForMember(travelId, userId);
+    this.setCachedTravelDetail(travelId, travel);
+    return travel;
+  }
+
+  private async ensureCountryCurrencyMap(): Promise<void> {
+    if (this.countryCurrencyLoaded) return;
+    if (this.countryCurrencyLoadPromise) {
+      await this.countryCurrencyLoadPromise;
+      return;
+    }
+
+    this.countryCurrencyLoadPromise = (async () => {
+      try {
+        const countries = await this.metaService.getCountries();
+        for (const country of countries) {
+          const code = (country.code ?? '').toUpperCase();
+          const currency = country.currencies?.[0];
+          if (code && currency) {
+            this.countryCurrencyCache.set(code, currency.toUpperCase());
+          }
+        }
+        this.countryCurrencyLoaded = true;
+      } catch (error) {
+        this.logger.warn(
+          `[travel] Failed to load country currencies: ${
+            error instanceof Error ? error.message : 'Unknown error'
+          }`
+        );
+      } finally {
+        this.countryCurrencyLoadPromise = null;
+      }
+    })();
+
+    await this.countryCurrencyLoadPromise;
+  }
+
+  private resolveDestinationCurrency(countryCode: string, baseCurrency?: string | null): string {
+    const code = (countryCode ?? '').toUpperCase();
+    return this.countryCurrencyCache.get(code) ?? (baseCurrency ?? 'USD');
   }
 
   private buildStatusCondition(status: 'active' | 'archived' | undefined, alias: string): string {
@@ -270,7 +333,6 @@ export class TravelService {
 
         const optimizedResult = {
           ...travelRow,
-          role: 'owner',
           owner_name: ownerName,
           members: [
             {
@@ -284,6 +346,7 @@ export class TravelService {
         const duration = Date.now() - startTime;
         this.logger.debug(`Travel created in ${duration}ms for user ${currentUser.id}`);
 
+        await this.ensureCountryCurrencyMap();
         return this.mapSummary(optimizedResult);
       });
     } catch (error) {
@@ -296,6 +359,8 @@ export class TravelService {
     userId: string,
     pagination: { page?: number; limit?: number; status?: 'active' | 'archived' } = {},
   ): Promise<{ total: number; page: number; limit: number; items: TravelSummary[] }> {
+    await this.ensureCountryCurrencyMap();
+
     const pool = await getPool();
     const page = Math.max(1, pagination.page ?? 1);
     const limit = Math.min(100, Math.max(1, pagination.limit ?? 20));

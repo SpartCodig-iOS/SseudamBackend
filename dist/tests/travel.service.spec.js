@@ -63,7 +63,6 @@ const samplePayload = {
                     base_exchange_rate: 144.5,
                     invite_code: 'abc123',
                     status: 'active',
-                    role: 'owner',
                     created_at: '2024-07-01T00:00:00.000Z',
                     owner_name: '홍길동',
                     members: [
@@ -87,7 +86,9 @@ const samplePayload = {
     const mockPool = { query: queryMock };
     node_test_1.mock.method(poolModule, 'getPool', async () => mockPool);
     try {
-        const service = new travel_service_1.TravelService();
+        const service = new travel_service_1.TravelService({
+            getCountries: async () => [{ code: 'JP', currencies: ['JPY'] }],
+        });
         const result = await service.listTravels('user-1', { page: 2, limit: 1 });
         strict_1.default.equal(result.total, 2);
         strict_1.default.equal(result.page, 2);
@@ -99,7 +100,7 @@ const samplePayload = {
         strict_1.default.equal(item.startDate, '2024-08-01');
         strict_1.default.equal(item.endDate, '2024-08-05');
         strict_1.default.equal(item.status, 'active');
-        strict_1.default.equal(item.role, 'owner');
+        strict_1.default.equal(item.destinationCurrency, 'JPY');
         strict_1.default.ok(Array.isArray(item.members));
         strict_1.default.equal(item.members?.[0].name, '홍길동');
         const [, listCall] = calls;
@@ -144,7 +145,6 @@ const samplePayload = {
                         base_exchange_rate: samplePayload.baseExchangeRate,
                         invite_code: 'invite-123',
                         status: 'active',
-                        role: 'owner',
                         created_at: '2024-06-01T00:00:00.000Z',
                         owner_name: '호스트',
                         members: [
@@ -163,13 +163,16 @@ const samplePayload = {
     const mockPool = { query: queryMock };
     node_test_1.mock.method(poolModule, 'getPool', async () => mockPool);
     try {
-        const service = new travel_service_1.TravelService();
+        const service = new travel_service_1.TravelService({
+            getCountries: async () => [{ code: 'JP', currencies: ['JPY'] }],
+        });
         const result = await service.updateTravel('travel-123', 'user-123', samplePayload);
         strict_1.default.equal(updateArgs[0], 'travel-123');
         strict_1.default.equal(updateArgs[1], 'user-123');
         strict_1.default.equal(result.title, samplePayload.title);
         strict_1.default.equal(result.startDate, samplePayload.startDate);
         strict_1.default.equal(result.baseExchangeRate, samplePayload.baseExchangeRate);
+        strict_1.default.equal(result.destinationCurrency, 'JPY');
         strict_1.default.equal(result.ownerName, '호스트');
         strict_1.default.equal(result.members?.[0].userId, 'user-123');
     }
@@ -200,7 +203,9 @@ const samplePayload = {
     };
     node_test_1.mock.method(poolModule, 'getPool', async () => mockPool);
     try {
-        const service = new travel_service_1.TravelService();
+        const service = new travel_service_1.TravelService({
+            getCountries: async () => [{ code: 'JP', currencies: ['JPY'] }],
+        });
         await service.deleteTravel('travel-abc', 'owner-999');
         strict_1.default.equal(poolQuery.mock.callCount(), 1, 'ownership should be checked once');
         strict_1.default.equal(mockPool.connect.mock.callCount(), 1, 'transaction client should be acquired');

@@ -13,6 +13,9 @@ const operators_1 = require("rxjs/operators");
 let PerformanceInterceptor = PerformanceInterceptor_1 = class PerformanceInterceptor {
     constructor() {
         this.logger = new common_1.Logger(PerformanceInterceptor_1.name);
+        this.warnThresholdMs = Number(process.env.PERF_WARN_MS ?? 300);
+        this.errorThresholdMs = Number(process.env.PERF_ERROR_MS ?? 800);
+        this.logSampleRate = Math.min(1, Math.max(0, Number(process.env.PERF_LOG_SAMPLE ?? 1)));
     }
     intercept(context, next) {
         const request = context.switchToHttp().getRequest();
@@ -62,9 +65,10 @@ let PerformanceInterceptor = PerformanceInterceptor_1 = class PerformanceInterce
                 'X-Response-Time': `${duration.toFixed(2)}ms`,
                 'X-Request-ID': `req_${startTime}`,
             });
-            // 느린 요청 로깅 (100ms 이상)
-            if (duration > 100) {
-                this.logger.warn(`Slow request detected`, {
+            const shouldLog = Math.random() <= this.logSampleRate;
+            // 느린 요청 로깅 (환경 변수 기준, 기본 300ms)
+            if (duration > this.warnThresholdMs && shouldLog) {
+                this.logger.warn('Slow request detected', {
                     method,
                     url,
                     duration: `${duration.toFixed(2)}ms`,
@@ -72,14 +76,15 @@ let PerformanceInterceptor = PerformanceInterceptor_1 = class PerformanceInterce
                     timestamp: new Date().toISOString(),
                 });
             }
-            // 매우 느린 요청은 더 자세히 로깅 (500ms 이상)
-            if (duration > 500) {
-                this.logger.error(`Very slow request`, {
+            // 매우 느린 요청은 더 자세히 로깅 (환경 변수 기준, 기본 800ms)
+            if (duration > this.errorThresholdMs && shouldLog) {
+                const responseSize = data ? Buffer.byteLength(JSON.stringify(data), 'utf8') : 0;
+                this.logger.error('Very slow request', {
                     method,
                     url,
                     duration: `${duration.toFixed(2)}ms`,
                     userAgent,
-                    responseSize: JSON.stringify(data || {}).length,
+                    responseSize,
                     timestamp: new Date().toISOString(),
                 });
             }

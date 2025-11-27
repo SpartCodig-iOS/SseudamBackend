@@ -141,6 +141,21 @@ export class TravelController {
     return success(travel, 'Travel updated');
   }
 
+  @Get(':travelId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '여행 상세 조회 (travelId 기반)' })
+  @ApiOkResponse({ type: TravelSummaryDto })
+  async getTravel(
+    @Param('travelId', new ParseUUIDPipe({ version: '4' })) travelId: string,
+    @Req() req: RequestWithUser,
+  ) {
+    if (!req.currentUser) {
+      throw new UnauthorizedException('Unauthorized');
+    }
+    const travel = await this.travelService.getTravelDetail(travelId, req.currentUser.id);
+    return success(travel);
+  }
+
   @Delete(':travelId/members/:memberId')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '여행 멤버 삭제 (호스트 전용)' })
