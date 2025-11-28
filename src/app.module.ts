@@ -16,6 +16,7 @@ import { ResponseTransformInterceptor } from './common/filters/response-transfor
 import { ApiOptimizationInterceptor } from './common/interceptors/api-optimization.interceptor';
 import { HomeModule } from './home/home.module';
 import { DevModule } from './modules/dev/dev.module';
+import { VersionModule } from './modules/version/version.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { DevModule } from './modules/dev/dev.module';
     SessionModule,
     HomeModule,
     DevModule,
+    VersionModule,
   ],
   providers: [
     {

@@ -434,7 +434,8 @@ let AuthService = AuthService_1 = class AuthService {
         }
         // 기존 세션은 재사용하지 않으므로 즉시 폐기
         await this.sessionService.deleteSession(payload.sessionId);
-        const sessionPayload = await this.createAuthSession(user, 'email');
+        const resolvedLoginType = currentSession.loginType ?? 'email';
+        const sessionPayload = await this.createAuthSession(user, resolvedLoginType);
         return { tokenPair: sessionPayload.tokenPair, loginType: sessionPayload.loginType, session: sessionPayload.session };
     }
     async deleteAccount(user, loginTypeHint) {

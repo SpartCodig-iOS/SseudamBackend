@@ -44,6 +44,8 @@ exports.env = {
     appleTeamId: process.env.APPLE_TEAM_ID ?? null,
     appleKeyId: process.env.APPLE_KEY_ID ?? null,
     applePrivateKey: process.env.APPLE_PRIVATE_KEY ?? null,
+    appMinSupportedVersion: process.env.APP_MIN_SUPPORTED_VERSION ?? null,
+    appForceUpdate: truthy(process.env.APP_FORCE_UPDATE) ?? true,
     googleClientId: process.env.GOOGLE_CLIENT_ID ?? null,
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? null,
     // Redis 설정 (선택적)

@@ -1,5 +1,5 @@
 import { BadRequestException, Controller, Get, HttpCode, HttpStatus, Query } from '@nestjs/common';
-import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { success } from '../../types/api';
 import { MetaService } from './meta.service';
 import { CountryMetaDto } from './dto/country-meta.dto';

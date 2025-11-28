@@ -1,0 +1,165 @@
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { env } from '../../config/env';
+import { getPool } from '../../db/pool';
+
+export interface AppVersionMeta {
+  bundleId: string;
+  latestVersion: string;
+  releaseNotes: string | null;
+  trackName: string | null;
+  minimumOsVersion: string | null;
+  lastUpdated: string | null;
+  minSupportedVersion: string | null;
+  forceUpdate: boolean;
+  currentVersion: string | null;
+  shouldUpdate: boolean;
+  message: string | null;
+}
+
+@Injectable()
+export class VersionService {
+  private readonly networkTimeout = 5000;
+  private readonly appVersionCache = new Map<string, { data: AppVersionMeta; expiresAt: number }>();
+  private readonly appVersionCacheTTL = 1000 * 60 * 5; // 5분
+
+  private async fetchDbVersion(bundleId: string) {
+    try {
+      const pool = await getPool();
+      const result = await pool.query(
+        `SELECT bundle_id,
+                latest_version,
+                min_supported_version,
+                force_update,
+                release_notes,
+                updated_at
+         FROM app_versions
+         WHERE bundle_id = $1
+         LIMIT 1`,
+        [bundleId],
+      );
+      return result.rows[0] ?? null;
+    } catch (error) {
+      // DB 문제 시 App Store 결과만으로 동작 (로그는 최소화)
+      return null;
+    }
+  }
+
+  private async fetchWithTimeout(url: string, retries = 2): Promise<Response> {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), this.networkTimeout);
+
+        const response = await fetch(url, {
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'SseudamBackend/1.0.0',
+            'Accept': 'application/json',
+          },
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        return response;
+      } catch (error) {
+        if (attempt === retries) {
+          throw new ServiceUnavailableException('App Store lookup failed');
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+    throw new ServiceUnavailableException('App Store lookup failed');
+  }
+
+  private compareVersions(a: string, b: string): number {
+    const parse = (v: string) => v.split('.').map((part) => Number(part) || 0);
+    const aParts = parse(a);
+    const bParts = parse(b);
+    const len = Math.max(aParts.length, bParts.length);
+    for (let i = 0; i < len; i++) {
+      const aVal = aParts[i] ?? 0;
+      const bVal = bParts[i] ?? 0;
+      if (aVal > bVal) return 1;
+      if (aVal < bVal) return -1;
+    }
+    return 0;
+  }
+
+  async getAppVersion(
+    bundleId?: string,
+    currentVersion?: string,
+    forceUpdateOverride?: boolean,
+  ): Promise<AppVersionMeta> {
+    const resolvedBundleId = (bundleId ?? env.appleClientId ?? '').trim();
+    if (!resolvedBundleId) {
+      throw new ServiceUnavailableException('bundleId (APPLE_CLIENT_ID) is not configured');
+    }
+
+    const cacheKey = `${resolvedBundleId}|${currentVersion ?? ''}|${forceUpdateOverride ?? 'auto'}`;
+    const cached = this.appVersionCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
+
+    const dbVersion = await this.fetchDbVersion(resolvedBundleId);
+
+    let app: any = null;
+    try {
+      const url = `https://itunes.apple.com/lookup?bundleId=${encodeURIComponent(resolvedBundleId)}`;
+      const response = await this.fetchWithTimeout(url, 2);
+      const payload = (await response.json()) as any;
+      app = payload?.results?.[0] ?? null;
+    } catch (error) {
+      // App Store 조회 실패 시 DB 값이 없으면 오류
+      if (!dbVersion) {
+        throw new ServiceUnavailableException('App version not found from App Store');
+      }
+    }
+
+    if (!app && !dbVersion) {
+      throw new ServiceUnavailableException('App version not found from App Store');
+    }
+
+    const data: AppVersionMeta = {
+      bundleId: resolvedBundleId,
+      latestVersion: dbVersion?.latest_version ?? app?.version ?? '0.0.0',
+      releaseNotes: dbVersion?.release_notes ?? app?.releaseNotes ?? null,
+      trackName: app?.trackName ?? null,
+      minimumOsVersion: app?.minimumOsVersion ?? null,
+      lastUpdated: dbVersion?.updated_at ?? app?.currentVersionReleaseDate ?? null,
+      minSupportedVersion: dbVersion?.min_supported_version ?? env.appMinSupportedVersion ?? null,
+      forceUpdate: Boolean(env.appForceUpdate),
+      currentVersion: currentVersion ?? null,
+      shouldUpdate: false,
+      message: null,
+    };
+
+    const baseForceUpdate =
+      typeof forceUpdateOverride === 'boolean'
+        ? forceUpdateOverride
+        : (dbVersion?.force_update as boolean | null | undefined) ?? Boolean(env.appForceUpdate);
+    let requiresMin = false;
+    if (currentVersion) {
+      data.shouldUpdate = this.compareVersions(currentVersion, data.latestVersion) < 0;
+      requiresMin = data.minSupportedVersion
+        ? this.compareVersions(currentVersion, data.minSupportedVersion) < 0
+        : false;
+    }
+    data.forceUpdate = baseForceUpdate || requiresMin;
+
+    if (data.shouldUpdate || data.forceUpdate) {
+      data.message = '최신 버전이 나왔습니다. 앱스토어에서 업데이트 해주세요!';
+    }
+
+    this.appVersionCache.set(cacheKey, {
+      data,
+      expiresAt: Date.now() + this.appVersionCacheTTL,
+    });
+
+    return data;
+  }
+}

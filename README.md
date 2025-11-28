@@ -78,6 +78,8 @@ JWT_SECRET=your_jwt_secret
 # OAuth (선택사항)
 APPLE_CLIENT_ID=your_apple_client_id
 APPLE_TEAM_ID=your_apple_team_id
+APP_MIN_SUPPORTED_VERSION=1.0.0
+APP_FORCE_UPDATE=true
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
 
