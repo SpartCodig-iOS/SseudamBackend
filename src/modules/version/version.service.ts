@@ -1,4 +1,4 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { env } from '../../config/env';
 import { getPool } from '../../db/pool';
 
@@ -18,6 +18,7 @@ export interface AppVersionMeta {
 
 @Injectable()
 export class VersionService {
+  private readonly logger = new Logger(VersionService.name);
   private readonly networkTimeout = 5000;
   private readonly appVersionCache = new Map<string, { data: AppVersionMeta; expiresAt: number }>();
   private readonly appVersionCacheTTL = 1000 * 60 * 5; // 5분
@@ -155,11 +156,42 @@ export class VersionService {
       data.message = '최신 버전이 나왔습니다. 앱스토어에서 업데이트 해주세요!';
     }
 
+    // DB에 버전 정보를 캐싱 (성공해도 실패해도 본 응답에는 영향 없음)
+    this.upsertDbVersion(data).catch((err) =>
+      this.logger.warn(`[version] Failed to upsert app_versions: ${err instanceof Error ? err.message : String(err)}`),
+    );
+
     this.appVersionCache.set(cacheKey, {
       data,
       expiresAt: Date.now() + this.appVersionCacheTTL,
     });
 
     return data;
+  }
+
+  private async upsertDbVersion(data: AppVersionMeta): Promise<void> {
+    try {
+      const pool = await getPool();
+      await pool.query(
+        `INSERT INTO app_versions (bundle_id, latest_version, min_supported_version, force_update, release_notes)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (bundle_id)
+         DO UPDATE SET
+           latest_version = EXCLUDED.latest_version,
+           min_supported_version = EXCLUDED.min_supported_version,
+           force_update = EXCLUDED.force_update,
+           release_notes = EXCLUDED.release_notes,
+           updated_at = NOW()`,
+        [
+          data.bundleId,
+          data.latestVersion,
+          data.minSupportedVersion,
+          data.forceUpdate,
+          data.releaseNotes,
+        ],
+      );
+    } catch (error) {
+      throw error;
+    }
   }
 }

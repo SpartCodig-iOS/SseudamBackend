@@ -5,13 +5,15 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
+var VersionService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.VersionService = void 0;
 const common_1 = require("@nestjs/common");
 const env_1 = require("../../config/env");
 const pool_1 = require("../../db/pool");
-let VersionService = class VersionService {
+let VersionService = VersionService_1 = class VersionService {
     constructor() {
+        this.logger = new common_1.Logger(VersionService_1.name);
         this.networkTimeout = 5000;
         this.appVersionCache = new Map();
         this.appVersionCacheTTL = 1000 * 60 * 5; // 5분
@@ -131,14 +133,39 @@ let VersionService = class VersionService {
         if (data.shouldUpdate || data.forceUpdate) {
             data.message = '최신 버전이 나왔습니다. 앱스토어에서 업데이트 해주세요!';
         }
+        // DB에 버전 정보를 캐싱 (성공해도 실패해도 본 응답에는 영향 없음)
+        this.upsertDbVersion(data).catch((err) => this.logger.warn(`[version] Failed to upsert app_versions: ${err instanceof Error ? err.message : String(err)}`));
         this.appVersionCache.set(cacheKey, {
             data,
             expiresAt: Date.now() + this.appVersionCacheTTL,
         });
         return data;
     }
+    async upsertDbVersion(data) {
+        try {
+            const pool = await (0, pool_1.getPool)();
+            await pool.query(`INSERT INTO app_versions (bundle_id, latest_version, min_supported_version, force_update, release_notes)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (bundle_id)
+         DO UPDATE SET
+           latest_version = EXCLUDED.latest_version,
+           min_supported_version = EXCLUDED.min_supported_version,
+           force_update = EXCLUDED.force_update,
+           release_notes = EXCLUDED.release_notes,
+           updated_at = NOW()`, [
+                data.bundleId,
+                data.latestVersion,
+                data.minSupportedVersion,
+                data.forceUpdate,
+                data.releaseNotes,
+            ]);
+        }
+        catch (error) {
+            throw error;
+        }
+    }
 };
 exports.VersionService = VersionService;
-exports.VersionService = VersionService = __decorate([
+exports.VersionService = VersionService = VersionService_1 = __decorate([
     (0, common_1.Injectable)()
 ], VersionService);
