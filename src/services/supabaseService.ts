@@ -7,6 +7,8 @@ import { env } from '../config/env';
 export class SupabaseService {
   private client: SupabaseClient | null = null;
   private readonly logger = new Logger(SupabaseService.name);
+  private readonly avatarBucket = 'profileimages';
+  private avatarBucketEnsured = false;
 
   constructor() {
     if (!env.supabaseUrl || !env.supabaseServiceRoleKey) {
@@ -347,7 +349,7 @@ export class SupabaseService {
     const trimmed = avatarUrl.trim();
     if (!trimmed) return null;
 
-    const bucket = 'profileimages';
+    const bucket = this.avatarBucket;
     const normalizedBase = env.supabaseUrl.replace(/\/$/, '');
     const publicPrefix = `${normalizedBase}/storage/v1/object/public/${bucket}/`;
 
@@ -376,6 +378,22 @@ export class SupabaseService {
     if (cleanExt === 'jpg' || cleanExt === 'jpeg') return 'jpeg';
 
     return null;
+  }
+
+  private async ensureAvatarBucket(): Promise<void> {
+    if (this.avatarBucketEnsured) return;
+    const client = this.getClient();
+    const { data, error } = await client.storage.getBucket(this.avatarBucket);
+    if (error && !error.message.toLowerCase().includes('not found')) {
+      throw error;
+    }
+    if (!data) {
+      const { error: createError } = await client.storage.createBucket(this.avatarBucket, { public: true });
+      if (createError) {
+        throw createError;
+      }
+    }
+    this.avatarBucketEnsured = true;
   }
 
   async mirrorProfileAvatar(userId: string, sourceUrl?: string | null): Promise<string | null> {
@@ -412,10 +430,11 @@ export class SupabaseService {
 
       const ext = kind === 'png' ? 'png' : 'jpeg';
       const resolvedContentType = kind === 'png' ? 'image/png' : 'image/jpeg';
-      const objectPath = `profileimages/${userId}/social-avatar.${ext}`;
+      const objectPath = `${this.avatarBucket}/${userId}/social-avatar.${ext}`;
 
       const client = this.getClient();
-      const { error } = await client.storage.from('profileimages').upload(objectPath, buffer, {
+      await this.ensureAvatarBucket();
+      const { error } = await client.storage.from(this.avatarBucket).upload(objectPath, buffer, {
         contentType: resolvedContentType,
         upsert: true,
       });

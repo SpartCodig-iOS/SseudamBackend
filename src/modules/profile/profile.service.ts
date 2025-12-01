@@ -14,6 +14,7 @@ export class ProfileService {
   private readonly logger = new Logger(ProfileService.name);
   private readonly storageClient = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
   private readonly avatarBucket = 'profileimages';
+  private avatarBucketEnsured = false;
 
   constructor(private readonly cacheService: CacheService) {}
 
@@ -51,6 +52,21 @@ export class ProfileService {
 
   private clearCachedProfile(userId: string): void {
     this.profileCache.delete(userId);
+  }
+
+  private async ensureAvatarBucket(): Promise<void> {
+    if (this.avatarBucketEnsured) return;
+    const { data, error } = await this.storageClient.storage.getBucket(this.avatarBucket);
+    if (error && !error.message.toLowerCase().includes('not found')) {
+      throw error;
+    }
+    if (!data) {
+      const { error: createError } = await this.storageClient.storage.createBucket(this.avatarBucket, { public: true });
+      if (createError) {
+        throw createError;
+      }
+    }
+    this.avatarBucketEnsured = true;
   }
 
   async getProfile(userId: string): Promise<UserRecord | null> {
@@ -193,6 +209,8 @@ export class ProfileService {
 
     const filename = `${userId}/${randomUUID()}-${file.originalname}`;
     const bucket = this.avatarBucket;
+
+    await this.ensureAvatarBucket();
 
     const { error } = await this.storageClient.storage
       .from(bucket)
