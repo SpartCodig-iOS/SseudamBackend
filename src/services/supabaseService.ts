@@ -1,4 +1,5 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 import { LoginType } from '../types/auth';
 import { env } from '../config/env';
@@ -430,7 +431,7 @@ export class SupabaseService {
 
       const ext = kind === 'png' ? 'png' : 'jpeg';
       const resolvedContentType = kind === 'png' ? 'image/png' : 'image/jpeg';
-      const objectPath = `${this.avatarBucket}/${userId}/social-avatar.${ext}`;
+      const objectPath = `${this.avatarBucket}/${userId}/${randomUUID()}.${ext}`;
 
       const client = this.getClient();
       await this.ensureAvatarBucket();
