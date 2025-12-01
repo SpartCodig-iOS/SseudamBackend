@@ -65,6 +65,11 @@ export class ProfileService {
       if (createError) {
         throw createError;
       }
+    } else if (!data.public) {
+      const { error: updateError } = await this.storageClient.storage.updateBucket(this.avatarBucket, { public: true });
+      if (updateError) {
+        throw updateError;
+      }
     }
     this.avatarBucketEnsured = true;
   }

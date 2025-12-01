@@ -393,6 +393,11 @@ export class SupabaseService {
       if (createError) {
         throw createError;
       }
+    } else if (!data.public) {
+      const { error: updateError } = await client.storage.updateBucket(this.avatarBucket, { public: true });
+      if (updateError) {
+        throw updateError;
+      }
     }
     this.avatarBucketEnsured = true;
   }
