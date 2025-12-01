@@ -212,12 +212,19 @@ export class ProfileService {
 
     await this.ensureAvatarBucket();
 
-    const { error } = await this.storageClient.storage
+    const upload = async () => this.storageClient.storage
       .from(bucket)
       .upload(filename, file.buffer, {
         contentType: file.mimetype,
         upsert: true,
       });
+
+    let { error } = await upload();
+    if (error && error.message.toLowerCase().includes('bucket not found')) {
+      this.avatarBucketEnsured = false;
+      await this.ensureAvatarBucket();
+      ({ error } = await upload());
+    }
 
     if (error) {
       throw new BadRequestException(`이미지 업로드 실패: ${error.message}`);

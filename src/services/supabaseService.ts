@@ -434,10 +434,16 @@ export class SupabaseService {
 
       const client = this.getClient();
       await this.ensureAvatarBucket();
-      const { error } = await client.storage.from(this.avatarBucket).upload(objectPath, buffer, {
+      const upload = async () => client.storage.from(this.avatarBucket).upload(objectPath, buffer, {
         contentType: resolvedContentType,
         upsert: true,
       });
+      let { error } = await upload();
+      if (error && error.message.toLowerCase().includes('bucket not found')) {
+        this.avatarBucketEnsured = false;
+        await this.ensureAvatarBucket();
+        ({ error } = await upload());
+      }
       if (error) {
         throw new Error(`upload failed: ${error.message}`);
       }
