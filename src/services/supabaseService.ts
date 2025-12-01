@@ -364,18 +364,18 @@ export class SupabaseService {
     return null;
   }
 
-  private detectExtension(url: string, contentType?: string | null): string {
+  private detectImageKind(url: string, contentType?: string | null): 'png' | 'jpeg' | null {
+    const type = (contentType ?? '').toLowerCase();
+    if (type.includes('png')) return 'png';
+    if (type.includes('jpeg') || type.includes('jpg')) return 'jpeg';
+
     const normalized = (url.split('?')[0] ?? '').toLowerCase();
     const extFromUrl = normalized.split('.').pop() ?? '';
     const cleanExt = extFromUrl.replace(/[^a-z0-9]/g, '');
-    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(cleanExt)) {
-      return cleanExt;
-    }
-    const type = (contentType ?? '').toLowerCase();
-    if (type.includes('png')) return 'png';
-    if (type.includes('webp')) return 'webp';
-    if (type.includes('gif')) return 'gif';
-    return 'jpg';
+    if (cleanExt === 'png') return 'png';
+    if (cleanExt === 'jpg' || cleanExt === 'jpeg') return 'jpeg';
+
+    return null;
   }
 
   async mirrorProfileAvatar(userId: string, sourceUrl?: string | null): Promise<string | null> {
@@ -402,12 +402,21 @@ export class SupabaseService {
       const arrayBuffer = await response.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       const contentType = response.headers.get('content-type') ?? undefined;
-      const ext = this.detectExtension(trimmedUrl, contentType);
+      const kind = this.detectImageKind(trimmedUrl, contentType);
+
+      // png/jpeg 외 포맷은 건너뛰고 기존 URL 유지
+      if (!kind) {
+        this.logger.warn(`[mirrorProfileAvatar] Skip unsupported image type for user ${userId} (${contentType ?? 'unknown'})`);
+        return null;
+      }
+
+      const ext = kind === 'png' ? 'png' : 'jpeg';
+      const resolvedContentType = kind === 'png' ? 'image/png' : 'image/jpeg';
       const objectPath = `profileimages/${userId}/social-avatar.${ext}`;
 
       const client = this.getClient();
       const { error } = await client.storage.from('profileimages').upload(objectPath, buffer, {
-        contentType,
+        contentType: resolvedContentType,
         upsert: true,
       });
       if (error) {
