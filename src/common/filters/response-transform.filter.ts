@@ -8,6 +8,8 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { Response } from 'express';
 
+const PRESERVE_NULL_KEYS = new Set(['avatarURL']);
+
 interface OptimizedResponse {
   code: number;
   message: string;
@@ -108,6 +110,10 @@ export class ResponseTransformInterceptor implements NestInterceptor {
       const compacted: any = {};
       for (const [key, value] of Object.entries(obj)) {
         // null, undefined, 빈 문자열 제거
+        if (PRESERVE_NULL_KEYS.has(key)) {
+          compacted[key] = value === undefined ? null : value;
+          continue;
+        }
         if (value !== null && value !== undefined && value !== '') {
           compacted[key] = this.compactObject(value);
         }

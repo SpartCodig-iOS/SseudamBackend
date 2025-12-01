@@ -252,6 +252,14 @@ export class SocialAuthService {
     const preferDisplayName = loginType !== 'email' && loginType !== 'username';
     const user = fromSupabaseUser(supabaseUser, { preferDisplayName });
 
+    // 소셜 프로필 이미지를 스토리지로 미러링 (가능하면)
+    if (user.avatar_url) {
+      const mirrored = await this.supabaseService.mirrorProfileAvatar(user.id, user.avatar_url);
+      if (mirrored) {
+        user.avatar_url = mirrored;
+      }
+    }
+
     // 사용자 정보를 캐시에 저장 (다음 로그인 최적화)
     await this.setCachedOAuthUser(accessToken, user);
 

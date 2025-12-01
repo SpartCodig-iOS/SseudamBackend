@@ -1,4 +1,4 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 import { LoginType } from '../types/auth';
 import { env } from '../config/env';
@@ -6,6 +6,7 @@ import { env } from '../config/env';
 @Injectable()
 export class SupabaseService {
   private client: SupabaseClient | null = null;
+  private readonly logger = new Logger(SupabaseService.name);
 
   constructor() {
     if (!env.supabaseUrl || !env.supabaseServiceRoleKey) {
@@ -361,6 +362,69 @@ export class SupabaseService {
     }
 
     return null;
+  }
+
+  private detectExtension(url: string, contentType?: string | null): string {
+    const normalized = (url.split('?')[0] ?? '').toLowerCase();
+    const extFromUrl = normalized.split('.').pop() ?? '';
+    const cleanExt = extFromUrl.replace(/[^a-z0-9]/g, '');
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(cleanExt)) {
+      return cleanExt;
+    }
+    const type = (contentType ?? '').toLowerCase();
+    if (type.includes('png')) return 'png';
+    if (type.includes('webp')) return 'webp';
+    if (type.includes('gif')) return 'gif';
+    return 'jpg';
+  }
+
+  async mirrorProfileAvatar(userId: string, sourceUrl?: string | null): Promise<string | null> {
+    if (!sourceUrl) return null;
+    const trimmedUrl = sourceUrl.trim();
+    if (!trimmedUrl) return null;
+
+    // 이미 스토리지 경로면 그대로 사용
+    const existingPath = this.parseAvatarStoragePath(trimmedUrl);
+    if (existingPath) {
+      return trimmedUrl;
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch(trimmedUrl, { signal: controller.signal });
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        throw new Error(`fetch failed with ${response.status}`);
+      }
+
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const contentType = response.headers.get('content-type') ?? undefined;
+      const ext = this.detectExtension(trimmedUrl, contentType);
+      const objectPath = `profileimages/${userId}/social-avatar.${ext}`;
+
+      const client = this.getClient();
+      const { error } = await client.storage.from('profileimages').upload(objectPath, buffer, {
+        contentType,
+        upsert: true,
+      });
+      if (error) {
+        throw new Error(`upload failed: ${error.message}`);
+      }
+
+      const publicUrl = `${env.supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${objectPath}`;
+      await client
+        .from(env.supabaseProfileTable)
+        .update({ avatar_url: publicUrl, updated_at: new Date().toISOString() })
+        .eq('id', userId);
+
+      return publicUrl;
+    } catch (error) {
+      this.logger.warn(`[mirrorProfileAvatar] Failed for user ${userId} from ${trimmedUrl}`, error as Error);
+      return null;
+    }
   }
 
   async deleteProfileImage(avatarUrl?: string | null): Promise<void> {

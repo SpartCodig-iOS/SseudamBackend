@@ -19,6 +19,7 @@ export interface AuthSessionPayload {
 }
 
 interface RefreshPayload {
+  user: UserRecord;
   tokenPair: TokenPair;
   loginType: LoginType;
   session: SessionRecord;
@@ -484,7 +485,7 @@ export class AuthService {
 
     const resolvedLoginType = (currentSession.loginType as LoginType | undefined) ?? 'email';
     const sessionPayload = await this.createAuthSession(user, resolvedLoginType);
-    return { tokenPair: sessionPayload.tokenPair, loginType: sessionPayload.loginType, session: sessionPayload.session };
+    return { user, tokenPair: sessionPayload.tokenPair, loginType: sessionPayload.loginType, session: sessionPayload.session };
   }
 
   async deleteAccount(user: UserRecord, loginTypeHint?: LoginType): Promise<{ supabaseDeleted: boolean }> {
