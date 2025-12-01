@@ -63,8 +63,9 @@ export class ProfileController {
   @ApiBody({
     schema: {
       type: 'object',
+      required: [],
       properties: {
-        name: { type: 'string', example: '김코드', nullable: true },
+        name: { type: 'string', example: '김코드', nullable: true, description: '선택 입력' },
         avatar: {
           type: 'string',
           format: 'binary',
