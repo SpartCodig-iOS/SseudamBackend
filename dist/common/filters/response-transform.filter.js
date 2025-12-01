@@ -9,6 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ResponseTransformInterceptor = void 0;
 const common_1 = require("@nestjs/common");
 const operators_1 = require("rxjs/operators");
+const PRESERVE_NULL_KEYS = new Set(['avatarURL']);
 let ResponseTransformInterceptor = class ResponseTransformInterceptor {
     intercept(context, next) {
         const response = context.switchToHttp().getResponse();
@@ -81,6 +82,10 @@ let ResponseTransformInterceptor = class ResponseTransformInterceptor {
             const compacted = {};
             for (const [key, value] of Object.entries(obj)) {
                 // null, undefined, 빈 문자열 제거
+                if (PRESERVE_NULL_KEYS.has(key)) {
+                    compacted[key] = value === undefined ? null : value;
+                    continue;
+                }
                 if (value !== null && value !== undefined && value !== '') {
                     compacted[key] = this.compactObject(value);
                 }

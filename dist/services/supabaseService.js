@@ -8,14 +8,16 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var SupabaseService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SupabaseService = void 0;
 const common_1 = require("@nestjs/common");
 const supabase_js_1 = require("@supabase/supabase-js");
 const env_1 = require("../config/env");
-let SupabaseService = class SupabaseService {
+let SupabaseService = SupabaseService_1 = class SupabaseService {
     constructor() {
         this.client = null;
+        this.logger = new common_1.Logger(SupabaseService_1.name);
         if (!env_1.env.supabaseUrl || !env_1.env.supabaseServiceRoleKey) {
             console.warn('[SupabaseService] SUPABASE_URL 또는 SUPABASE_SERVICE_ROLE_KEY가 설정되어 있지 않습니다.');
             return;
@@ -312,6 +314,66 @@ let SupabaseService = class SupabaseService {
         }
         return null;
     }
+    detectExtension(url, contentType) {
+        const normalized = (url.split('?')[0] ?? '').toLowerCase();
+        const extFromUrl = normalized.split('.').pop() ?? '';
+        const cleanExt = extFromUrl.replace(/[^a-z0-9]/g, '');
+        if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(cleanExt)) {
+            return cleanExt;
+        }
+        const type = (contentType ?? '').toLowerCase();
+        if (type.includes('png'))
+            return 'png';
+        if (type.includes('webp'))
+            return 'webp';
+        if (type.includes('gif'))
+            return 'gif';
+        return 'jpg';
+    }
+    async mirrorProfileAvatar(userId, sourceUrl) {
+        if (!sourceUrl)
+            return null;
+        const trimmedUrl = sourceUrl.trim();
+        if (!trimmedUrl)
+            return null;
+        // 이미 스토리지 경로면 그대로 사용
+        const existingPath = this.parseAvatarStoragePath(trimmedUrl);
+        if (existingPath) {
+            return trimmedUrl;
+        }
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 8000);
+            const response = await fetch(trimmedUrl, { signal: controller.signal });
+            clearTimeout(timeout);
+            if (!response.ok) {
+                throw new Error(`fetch failed with ${response.status}`);
+            }
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+            const contentType = response.headers.get('content-type') ?? undefined;
+            const ext = this.detectExtension(trimmedUrl, contentType);
+            const objectPath = `profileimages/${userId}/social-avatar.${ext}`;
+            const client = this.getClient();
+            const { error } = await client.storage.from('profileimages').upload(objectPath, buffer, {
+                contentType,
+                upsert: true,
+            });
+            if (error) {
+                throw new Error(`upload failed: ${error.message}`);
+            }
+            const publicUrl = `${env_1.env.supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${objectPath}`;
+            await client
+                .from(env_1.env.supabaseProfileTable)
+                .update({ avatar_url: publicUrl, updated_at: new Date().toISOString() })
+                .eq('id', userId);
+            return publicUrl;
+        }
+        catch (error) {
+            this.logger.warn(`[mirrorProfileAvatar] Failed for user ${userId} from ${trimmedUrl}`, error);
+            return null;
+        }
+    }
     async deleteProfileImage(avatarUrl) {
         const pathInfo = this.parseAvatarStoragePath(avatarUrl);
         if (!pathInfo) {
@@ -375,7 +437,7 @@ let SupabaseService = class SupabaseService {
     }
 };
 exports.SupabaseService = SupabaseService;
-exports.SupabaseService = SupabaseService = __decorate([
+exports.SupabaseService = SupabaseService = SupabaseService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [])
 ], SupabaseService);

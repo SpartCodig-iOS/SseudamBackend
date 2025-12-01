@@ -436,7 +436,7 @@ let AuthService = AuthService_1 = class AuthService {
         await this.sessionService.deleteSession(payload.sessionId);
         const resolvedLoginType = currentSession.loginType ?? 'email';
         const sessionPayload = await this.createAuthSession(user, resolvedLoginType);
-        return { tokenPair: sessionPayload.tokenPair, loginType: sessionPayload.loginType, session: sessionPayload.session };
+        return { user, tokenPair: sessionPayload.tokenPair, loginType: sessionPayload.loginType, session: sessionPayload.session };
     }
     async deleteAccount(user, loginTypeHint) {
         const startTime = Date.now();
