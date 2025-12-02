@@ -252,38 +252,47 @@ export class SocialAuthService {
     const preferDisplayName = loginType !== 'email' && loginType !== 'username';
     const user = fromSupabaseUser(supabaseUser, { preferDisplayName });
 
-    // 소셜 프로필 이미지를 스토리지로 미러링 (가능하면)
-    if (user.avatar_url) {
-      const mirrored = await this.supabaseService.mirrorProfileAvatar(user.id, user.avatar_url);
-      if (mirrored) {
-        user.avatar_url = mirrored;
-      }
-    }
-
     // 사용자 정보를 캐시에 저장 (다음 로그인 최적화)
     await this.setCachedOAuthUser(accessToken, user);
 
-    // 토큰 저장 작업도 병렬로 처리
-    const saveTokenTasks: Promise<void>[] = [];
+    // 세션은 즉시 생성하고, 부가 작업은 백그라운드로 처리해 응답 지연을 최소화
+    const authSession = await this.authService.createAuthSession(user, loginType);
 
+    const backgroundTasks: Promise<unknown>[] = [];
+
+    // 소셜 프로필 이미지를 스토리지로 미러링 (가능하면)
+    if (user.avatar_url) {
+      backgroundTasks.push(
+        this.supabaseService.mirrorProfileAvatar(user.id, user.avatar_url).then((mirrored) => {
+          if (mirrored) {
+            user.avatar_url = mirrored;
+          }
+        }).catch((error) => this.logger.warn(`[social-avatar] mirror failed for ${user.id}`, error as Error))
+      );
+    }
+
+    // 토큰 저장 작업을 백그라운드로 처리
     if (loginType === 'apple' && finalAppleRefreshToken) {
-      saveTokenTasks.push(
+      backgroundTasks.push(
         this.supabaseService.saveAppleRefreshToken(user.id, finalAppleRefreshToken)
+          .catch((error) => this.logger.warn(`[apple-refresh] save failed for ${user.id}`, error as Error))
       );
     }
 
     if (loginType === 'google' && finalGoogleRefreshToken) {
-      saveTokenTasks.push(
+      backgroundTasks.push(
         this.supabaseService.saveGoogleRefreshToken(user.id, finalGoogleRefreshToken)
+          .catch((error) => this.logger.warn(`[google-refresh] save failed for ${user.id}`, error as Error))
       );
     }
 
-    // 토큰 저장과 세션 생성을 병렬로 처리
-    const [authSession] = await Promise.all([
-      this.authService.createAuthSession(user, loginType),
-      this.authService.markLastLogin(user.id),
-      ...saveTokenTasks
-    ]);
+    // 마지막 로그인 기록도 비동기 처리
+    backgroundTasks.push(
+      this.authService.markLastLogin(user.id)
+        .catch((error) => this.logger.warn(`[markLastLogin] failed for ${user.id}`, error as Error))
+    );
+
+    void Promise.allSettled(backgroundTasks);
     this.authService.warmAuthCaches(user);
 
     const duration = Date.now() - startTime;
