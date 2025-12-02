@@ -318,6 +318,7 @@ export class TravelService {
                   new_travel.start_date::text,
                   new_travel.end_date::text,
                   new_travel.country_code,
+                  new_travel.country_name_kr,
                   new_travel.base_currency,
                   new_travel.base_exchange_rate,
                   new_travel.invite_code,
