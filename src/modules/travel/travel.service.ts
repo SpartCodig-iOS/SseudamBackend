@@ -146,7 +146,7 @@ export class TravelService {
          t.country_name_kr,
          t.base_currency,
          t.base_exchange_rate,
-         t.invite_code,
+         ti.invite_code,
          CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS status,
          t.created_at::text,
          tm.role AS role,
@@ -156,6 +156,7 @@ export class TravelService {
        INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $2
        LEFT JOIN profiles member_profile ON member_profile.id = tm.user_id
        LEFT JOIN profiles owner_profile ON owner_profile.id = t.owner_id
+       LEFT JOIN travel_invites ti ON ti.travel_id = t.id AND ti.status = 'active'
        LEFT JOIN LATERAL (
         SELECT json_agg(
                  json_build_object(
@@ -294,8 +295,8 @@ export class TravelService {
 
         const insertResult = await client.query(
           `WITH new_travel AS (
-             INSERT INTO travels (owner_id, title, start_date, end_date, country_code, country_name_kr, base_currency, base_exchange_rate, invite_code, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $4 < CURRENT_DATE THEN 'archived' ELSE 'active' END)
+             INSERT INTO travels (owner_id, title, start_date, end_date, country_code, country_name_kr, base_currency, base_exchange_rate, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $4 < CURRENT_DATE THEN 'archived' ELSE 'active' END)
              RETURNING id,
                        title,
                        start_date,
@@ -304,7 +305,6 @@ export class TravelService {
                        country_name_kr,
                        base_currency,
                        base_exchange_rate,
-                       invite_code,
                        status,
                        created_at
            ),
@@ -320,8 +320,8 @@ export class TravelService {
              INSERT INTO travel_invites (travel_id, invite_code, created_by, status)
              SELECT new_travel.id, $9, $1, 'active'
              FROM new_travel
-             ON CONFLICT (invite_code) DO NOTHING
-             RETURNING travel_id
+             ON CONFLICT (invite_code) DO UPDATE SET invite_code = excluded.invite_code
+             RETURNING invite_code
            )
            SELECT new_travel.id::text AS id,
                   new_travel.title,
@@ -331,10 +331,10 @@ export class TravelService {
                   new_travel.country_name_kr,
                   new_travel.base_currency,
                   new_travel.base_exchange_rate,
-                  new_travel.invite_code,
+                  travel_invite.invite_code,
                   new_travel.status,
                   new_travel.created_at::text
-           FROM new_travel`,
+           FROM new_travel, travel_invite`,
           [
             currentUser.id,
             payload.title,
@@ -405,7 +405,7 @@ export class TravelService {
        ut.country_name_kr,
        ut.base_currency,
        ut.base_exchange_rate,
-       ut.invite_code,
+       ti.invite_code,
        ut.computed_status AS status,
        ut.role,
        ut.created_at::text,
@@ -421,6 +421,7 @@ export class TravelService {
         ${statusCondition}
       ) AS ut
       INNER JOIN profiles owner_profile ON owner_profile.id = ut.owner_id
+      LEFT JOIN travel_invites ti ON ti.travel_id = ut.id AND ti.status = 'active'
       LEFT JOIN LATERAL (
         SELECT json_agg(
                  json_build_object(
@@ -460,30 +461,24 @@ export class TravelService {
     const pool = await getPool();
     await this.ensureOwner(travelId, userId, pool);
 
-    const inviteCode = this.generateInviteCode();
-    await this.ensureTransaction(async (client) => {
-      await client.query(
+    // 기존 초대 코드가 있는지 확인
+    const existingInvite = await pool.query(
+      `SELECT invite_code FROM travel_invites WHERE travel_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1`,
+      [travelId]
+    );
+
+    let inviteCode = existingInvite.rows[0]?.invite_code;
+
+    // 없다면 새로 생성
+    if (!inviteCode) {
+      inviteCode = this.generateInviteCode();
+      await pool.query(
         `INSERT INTO travel_invites (travel_id, invite_code, created_by, status)
          VALUES ($1, $2, $3, 'active')
-         ON CONFLICT (invite_code)
-         DO UPDATE SET status = 'active', used_count = 0`,
-        [travelId, inviteCode, userId],
+         ON CONFLICT (invite_code) DO UPDATE SET status = 'active', used_count = 0`,
+        [travelId, inviteCode, userId]
       );
-
-      await client.query(
-        `UPDATE travels SET invite_code = $2 WHERE id = $1`,
-        [travelId, inviteCode],
-      );
-
-      // 초대 코드를 생성한 사용자를 운영 권한(owner)으로 보증
-      await client.query(
-        `UPDATE profiles
-         SET role = 'owner'
-         WHERE id = $1
-           AND role NOT IN ('owner', 'admin', 'super_admin')`,
-        [userId],
-      );
-    });
+    }
 
     return { inviteCode };
   }
