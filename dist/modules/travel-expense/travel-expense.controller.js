@@ -41,6 +41,14 @@ let TravelExpenseController = class TravelExpenseController {
         const expense = await this.travelExpenseService.createExpense(travelId, req.currentUser.id, payload);
         return (0, api_1.success)(expense, 'Expense created');
     }
+    async updateExpense(travelId, expenseId, body, req) {
+        if (!req.currentUser) {
+            throw new common_1.UnauthorizedException('Unauthorized');
+        }
+        const payload = travelExpenseSchemas_1.createExpenseSchema.parse(body);
+        const expense = await this.travelExpenseService.updateExpense(travelId, expenseId, req.currentUser.id, payload);
+        return (0, api_1.success)(expense, 'Expense updated');
+    }
     async deleteExpense(travelId, expenseId, req) {
         if (!req.currentUser) {
             throw new common_1.UnauthorizedException('Unauthorized');
@@ -97,6 +105,41 @@ __decorate([
     __metadata("design:paramtypes", [String, Object, Object]),
     __metadata("design:returntype", Promise)
 ], TravelExpenseController.prototype, "create", null);
+__decorate([
+    (0, common_1.Patch)(':expenseId'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: '여행 지출 수정' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['title', 'amount', 'currency', 'expenseDate'],
+            properties: {
+                title: { type: 'string', example: '라멘 식비', maxLength: 50, description: '지출 제목 (최대 50자)' },
+                note: { type: 'string', example: '신주쿠역 인근', nullable: true },
+                amount: { type: 'number', example: 3500, minimum: 0.01, description: '지출 금액 (필수, 양수)' },
+                currency: { type: 'string', example: 'JPY', description: '지출 통화 (3자리 코드)' },
+                expenseDate: { type: 'string', example: '2025-11-26', description: 'YYYY-MM-DD (오늘까지만 가능, 미래 날짜 불가)' },
+                category: { type: 'string', example: 'food', maxLength: 20, pattern: '^[a-zA-Z0-9가-힣_-]+$', nullable: true, description: '카테고리 (영문/숫자/한글/_/- 만 가능, 최대 20자)' },
+                participantIds: {
+                    type: 'array',
+                    items: { type: 'string', format: 'uuid' },
+                    minItems: 1,
+                    maxItems: 20,
+                    nullable: true,
+                    description: '지출 분배 대상 (1-20명, 중복 불가, 생략 시 모든 팀원)',
+                },
+            },
+        },
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: travel_response_dto_1.TravelExpenseDto }),
+    __param(0, (0, common_1.Param)('travelId')),
+    __param(1, (0, common_1.Param)('expenseId')),
+    __param(2, (0, common_1.Body)()),
+    __param(3, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, Object, Object]),
+    __metadata("design:returntype", Promise)
+], TravelExpenseController.prototype, "updateExpense", null);
 __decorate([
     (0, common_1.Delete)(':expenseId'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),

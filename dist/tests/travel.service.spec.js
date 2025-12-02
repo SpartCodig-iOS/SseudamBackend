@@ -45,6 +45,7 @@ const samplePayload = {
     startDate: '2024-09-01',
     endDate: '2024-09-10',
     countryCode: 'JP',
+    countryNameKr: '일본',
     baseCurrency: 'JPY',
     baseExchangeRate: 111.11,
 };

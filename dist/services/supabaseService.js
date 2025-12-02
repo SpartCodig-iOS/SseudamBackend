@@ -12,12 +12,15 @@ var SupabaseService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SupabaseService = void 0;
 const common_1 = require("@nestjs/common");
+const crypto_1 = require("crypto");
 const supabase_js_1 = require("@supabase/supabase-js");
 const env_1 = require("../config/env");
 let SupabaseService = SupabaseService_1 = class SupabaseService {
     constructor() {
         this.client = null;
         this.logger = new common_1.Logger(SupabaseService_1.name);
+        this.avatarBucket = 'profileimages';
+        this.avatarBucketEnsured = false;
         if (!env_1.env.supabaseUrl || !env_1.env.supabaseServiceRoleKey) {
             console.warn('[SupabaseService] SUPABASE_URL 또는 SUPABASE_SERVICE_ROLE_KEY가 설정되어 있지 않습니다.');
             return;
@@ -301,7 +304,7 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
         const trimmed = avatarUrl.trim();
         if (!trimmed)
             return null;
-        const bucket = 'profileimages';
+        const bucket = this.avatarBucket;
         const normalizedBase = env_1.env.supabaseUrl.replace(/\/$/, '');
         const publicPrefix = `${normalizedBase}/storage/v1/object/public/${bucket}/`;
         if (trimmed.startsWith(publicPrefix)) {
@@ -314,21 +317,42 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
         }
         return null;
     }
-    detectExtension(url, contentType) {
-        const normalized = (url.split('?')[0] ?? '').toLowerCase();
-        const extFromUrl = normalized.split('.').pop() ?? '';
-        const cleanExt = extFromUrl.replace(/[^a-z0-9]/g, '');
-        if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(cleanExt)) {
-            return cleanExt;
-        }
+    detectImageKind(url, contentType) {
         const type = (contentType ?? '').toLowerCase();
         if (type.includes('png'))
             return 'png';
-        if (type.includes('webp'))
-            return 'webp';
-        if (type.includes('gif'))
-            return 'gif';
-        return 'jpg';
+        if (type.includes('jpeg') || type.includes('jpg'))
+            return 'jpeg';
+        const normalized = (url.split('?')[0] ?? '').toLowerCase();
+        const extFromUrl = normalized.split('.').pop() ?? '';
+        const cleanExt = extFromUrl.replace(/[^a-z0-9]/g, '');
+        if (cleanExt === 'png')
+            return 'png';
+        if (cleanExt === 'jpg' || cleanExt === 'jpeg')
+            return 'jpeg';
+        return null;
+    }
+    async ensureAvatarBucket() {
+        if (this.avatarBucketEnsured)
+            return;
+        const client = this.getClient();
+        const { data, error } = await client.storage.getBucket(this.avatarBucket);
+        if (error && !error.message.toLowerCase().includes('not found')) {
+            throw error;
+        }
+        if (!data) {
+            const { error: createError } = await client.storage.createBucket(this.avatarBucket, { public: true });
+            if (createError) {
+                throw createError;
+            }
+        }
+        else if (!data.public) {
+            const { error: updateError } = await client.storage.updateBucket(this.avatarBucket, { public: true });
+            if (updateError) {
+                throw updateError;
+            }
+        }
+        this.avatarBucketEnsured = true;
     }
     async mirrorProfileAvatar(userId, sourceUrl) {
         if (!sourceUrl)
@@ -352,13 +376,27 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
             const arrayBuffer = await response.arrayBuffer();
             const buffer = Buffer.from(arrayBuffer);
             const contentType = response.headers.get('content-type') ?? undefined;
-            const ext = this.detectExtension(trimmedUrl, contentType);
-            const objectPath = `profileimages/${userId}/social-avatar.${ext}`;
+            const kind = this.detectImageKind(trimmedUrl, contentType);
+            // png/jpeg 외 포맷은 건너뛰고 기존 URL 유지
+            if (!kind) {
+                this.logger.warn(`[mirrorProfileAvatar] Skip unsupported image type for user ${userId} (${contentType ?? 'unknown'})`);
+                return null;
+            }
+            const ext = kind === 'png' ? 'png' : 'jpeg';
+            const resolvedContentType = kind === 'png' ? 'image/png' : 'image/jpeg';
+            const objectPath = `${this.avatarBucket}/${userId}/${(0, crypto_1.randomUUID)()}.${ext}`;
             const client = this.getClient();
-            const { error } = await client.storage.from('profileimages').upload(objectPath, buffer, {
-                contentType,
+            await this.ensureAvatarBucket();
+            const upload = async () => client.storage.from(this.avatarBucket).upload(objectPath, buffer, {
+                contentType: resolvedContentType,
                 upsert: true,
             });
+            let { error } = await upload();
+            if (error && error.message.toLowerCase().includes('bucket not found')) {
+                this.avatarBucketEnsured = false;
+                await this.ensureAvatarBucket();
+                ({ error } = await upload());
+            }
             if (error) {
                 throw new Error(`upload failed: ${error.message}`);
             }

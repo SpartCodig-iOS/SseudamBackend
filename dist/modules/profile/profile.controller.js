@@ -32,15 +32,18 @@ let ProfileController = class ProfileController {
             throw new common_1.UnauthorizedException('Unauthorized');
         }
         const dbProfile = await this.profileService.getProfile(req.currentUser.id);
-        const profileData = dbProfile
-            ? {
-                ...(0, mappers_1.toProfileResponse)(dbProfile),
-                loginType: req.loginType ?? 'email',
+        const baseProfile = dbProfile ?? req.currentUser;
+        let profileData = {
+            ...(0, mappers_1.toProfileResponse)(baseProfile),
+            loginType: req.loginType ?? 'email',
+        };
+        // avatar가 없으면 스토리지에서 최신 이미지를 찾아본다
+        if (!profileData.avatarURL) {
+            const fallbackAvatar = await this.profileService.resolveAvatarFromStorage(baseProfile.id);
+            if (fallbackAvatar) {
+                profileData = { ...profileData, avatarURL: fallbackAvatar };
             }
-            : {
-                ...(0, mappers_1.toProfileResponse)(req.currentUser),
-                loginType: req.loginType ?? 'email',
-            };
+        }
         return (0, api_1.success)(profileData);
     }
     async updateProfile(body, file, req) {
@@ -76,8 +79,9 @@ __decorate([
     (0, swagger_1.ApiBody)({
         schema: {
             type: 'object',
+            required: [],
             properties: {
-                name: { type: 'string', example: '김코드', nullable: true },
+                name: { type: 'string', example: '김코드', nullable: true, description: '선택 입력' },
                 avatar: {
                     type: 'string',
                     format: 'binary',

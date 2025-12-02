@@ -24,6 +24,7 @@ let ProfileService = ProfileService_1 = class ProfileService {
         this.logger = new common_1.Logger(ProfileService_1.name);
         this.storageClient = (0, supabase_js_1.createClient)(env_1.env.supabaseUrl, env_1.env.supabaseServiceRoleKey);
         this.avatarBucket = 'profileimages';
+        this.avatarBucketEnsured = false;
         // 프로필 캐시: 10분 TTL, 최대 1000개
         this.profileCache = new Map();
         this.PROFILE_CACHE_TTL = 10 * 60 * 1000; // 10분
@@ -55,6 +56,27 @@ let ProfileService = ProfileService_1 = class ProfileService {
     }
     clearCachedProfile(userId) {
         this.profileCache.delete(userId);
+    }
+    async ensureAvatarBucket() {
+        if (this.avatarBucketEnsured)
+            return;
+        const { data, error } = await this.storageClient.storage.getBucket(this.avatarBucket);
+        if (error && !error.message.toLowerCase().includes('not found')) {
+            throw error;
+        }
+        if (!data) {
+            const { error: createError } = await this.storageClient.storage.createBucket(this.avatarBucket, { public: true });
+            if (createError) {
+                throw createError;
+            }
+        }
+        else if (!data.public) {
+            const { error: updateError } = await this.storageClient.storage.updateBucket(this.avatarBucket, { public: true });
+            if (updateError) {
+                throw updateError;
+            }
+        }
+        this.avatarBucketEnsured = true;
     }
     async getProfile(userId) {
         // 캐시에서 먼저 확인
@@ -113,6 +135,25 @@ let ProfileService = ProfileService_1 = class ProfileService {
             password_hash: '',
         };
     }
+    async resolveAvatarFromStorage(userId) {
+        try {
+            await this.ensureAvatarBucket();
+            const { data, error } = await this.storageClient.storage
+                .from(this.avatarBucket)
+                .list(userId, { sortBy: { column: 'created_at', order: 'desc' }, limit: 1 });
+            if (error || !data || data.length === 0) {
+                return null;
+            }
+            const objectName = data[0].name;
+            const path = `${userId}/${objectName}`;
+            const { data: publicUrlData } = this.storageClient.storage.from(this.avatarBucket).getPublicUrl(path);
+            return publicUrlData.publicUrl ?? null;
+        }
+        catch (error) {
+            this.logger.warn(`[resolveAvatarFromStorage] Failed for user ${userId}`, error);
+            return null;
+        }
+    }
     async updateProfile(userId, payload, file) {
         let avatarURL = payload.avatarURL ?? null;
         if (file) {
@@ -168,12 +209,19 @@ let ProfileService = ProfileService_1 = class ProfileService {
         }
         const filename = `${userId}/${(0, crypto_1.randomUUID)()}-${file.originalname}`;
         const bucket = this.avatarBucket;
-        const { error } = await this.storageClient.storage
+        await this.ensureAvatarBucket();
+        const upload = async () => this.storageClient.storage
             .from(bucket)
             .upload(filename, file.buffer, {
             contentType: file.mimetype,
             upsert: true,
         });
+        let { error } = await upload();
+        if (error && error.message.toLowerCase().includes('bucket not found')) {
+            this.avatarBucketEnsured = false;
+            await this.ensureAvatarBucket();
+            ({ error } = await upload());
+        }
         if (error) {
             throw new common_1.BadRequestException(`이미지 업로드 실패: ${error.message}`);
         }

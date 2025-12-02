@@ -35,6 +35,10 @@ __decorate([
     __metadata("design:type", String)
 ], TravelSummaryDto.prototype, "countryCode", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({ example: '일본', nullable: true, required: false }),
+    __metadata("design:type", String)
+], TravelSummaryDto.prototype, "countryNameKr", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ example: 'JPY' }),
     __metadata("design:type", String)
 ], TravelSummaryDto.prototype, "baseCurrency", void 0);

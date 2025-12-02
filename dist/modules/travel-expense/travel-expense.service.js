@@ -217,6 +217,112 @@ let TravelExpenseService = class TravelExpenseService {
         };
     }
     /**
+     * 지출을 수정합니다.
+     * 권한: 지출 작성자만 수정 가능
+     */
+    async updateExpense(travelId, expenseId, userId, payload) {
+        const pool = await (0, pool_1.getPool)();
+        // 1. 사용자가 여행 멤버인지 확인
+        const context = await this.getTravelContext(travelId, userId);
+        // 2. 기존 지출 정보 조회 및 권한 확인
+        const existingExpenseResult = await pool.query(`SELECT
+         e.id::text,
+         e.travel_id::text,
+         e.author_id::text
+       FROM travel_expenses e
+       WHERE e.id = $1 AND e.travel_id = $2`, [expenseId, travelId]);
+        const existingExpense = existingExpenseResult.rows[0];
+        if (!existingExpense) {
+            throw new common_1.NotFoundException('지출을 찾을 수 없습니다.');
+        }
+        // 3. 권한 확인: 지출 작성자만 수정 가능
+        if (existingExpense.author_id !== userId) {
+            throw new common_1.ForbiddenException('지출 작성자만 수정할 수 있습니다.');
+        }
+        const payerId = payload.payerId ?? userId;
+        this.ensurePayer(context.memberIds, payerId);
+        const participantIds = this.normalizeParticipants(context.memberIds, payload.participantIds);
+        if (participantIds.length === 0) {
+            throw new common_1.BadRequestException('최소 한 명 이상의 참여자가 필요합니다.');
+        }
+        // 환율 변환
+        const convertedAmount = await this.convertAmount(payload.amount, payload.currency, context.baseCurrency);
+        const splitAmount = Number((convertedAmount / participantIds.length).toFixed(2));
+        // 4. 트랜잭션으로 지출 수정
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            // 기존 지출 정보 업데이트
+            const expenseResult = await client.query(`UPDATE travel_expenses
+         SET title = $3,
+             note = $4,
+             amount = $5,
+             currency = $6,
+             converted_amount = $7,
+             expense_date = $8,
+             category = $9,
+             payer_id = $10,
+             updated_at = NOW()
+         WHERE id = $1 AND travel_id = $2
+         RETURNING
+           id::text,
+           title,
+           note,
+           amount,
+           currency,
+           converted_amount,
+           expense_date::text,
+           category,
+           payer_id::text,
+           author_id::text`, [
+                expenseId,
+                travelId,
+                payload.title,
+                payload.note ?? null,
+                payload.amount,
+                payload.currency.toUpperCase(),
+                convertedAmount,
+                payload.expenseDate,
+                payload.category ?? null,
+                payerId,
+            ]);
+            const expense = expenseResult.rows[0];
+            // 기존 참여자 정보 삭제 후 새로 추가
+            await client.query(`DELETE FROM travel_expense_participants WHERE expense_id = $1`, [expenseId]);
+            if (participantIds.length > 0) {
+                await client.query(`INSERT INTO travel_expense_participants (expense_id, member_id, split_amount)
+           SELECT $1, unnest($2::uuid[]), $3`, [expense.id, participantIds, splitAmount]);
+            }
+            await client.query('COMMIT');
+            const payerName = this.getMemberName(context, payerId);
+            const participants = participantIds.map((memberId) => ({
+                memberId,
+                name: this.getMemberName(context, memberId),
+            }));
+            return {
+                id: expense.id,
+                title: expense.title,
+                note: expense.note,
+                amount: Number(expense.amount),
+                currency: expense.currency,
+                convertedAmount: Number(expense.converted_amount),
+                expenseDate: expense.expense_date,
+                category: expense.category,
+                authorId: expense.author_id,
+                payerId: expense.payer_id,
+                payerName,
+                participants,
+            };
+        }
+        catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        }
+        finally {
+            client.release();
+        }
+    }
+    /**
      * 지출을 삭제합니다.
      * 권한: 지출 작성자만 삭제 가능
      */
