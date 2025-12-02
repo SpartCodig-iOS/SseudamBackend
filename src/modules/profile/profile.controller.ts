@@ -40,15 +40,20 @@ export class ProfileController {
     }
 
     const dbProfile = await this.profileService.getProfile(req.currentUser.id);
-    const profileData = dbProfile
-      ? {
-          ...toProfileResponse(dbProfile),
-          loginType: req.loginType ?? 'email',
-        }
-      : {
-          ...toProfileResponse(req.currentUser),
-          loginType: req.loginType ?? 'email',
-        };
+    const baseProfile = dbProfile ?? req.currentUser;
+
+    let profileData = {
+      ...toProfileResponse(baseProfile),
+      loginType: req.loginType ?? 'email',
+    };
+
+    // avatar가 없으면 스토리지에서 최신 이미지를 찾아본다
+    if (!profileData.avatarURL) {
+      const fallbackAvatar = await this.profileService.resolveAvatarFromStorage(baseProfile.id);
+      if (fallbackAvatar) {
+        profileData = { ...profileData, avatarURL: fallbackAvatar };
+      }
+    }
 
     return success(profileData);
   }

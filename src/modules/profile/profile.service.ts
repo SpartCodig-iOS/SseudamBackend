@@ -143,6 +143,27 @@ export class ProfileService {
     };
   }
 
+  private async resolveAvatarFromStorage(userId: string): Promise<string | null> {
+    try {
+      await this.ensureAvatarBucket();
+      const { data, error } = await this.storageClient.storage
+        .from(this.avatarBucket)
+        .list(userId, { sortBy: { column: 'created_at', order: 'desc' }, limit: 1 });
+
+      if (error || !data || data.length === 0) {
+        return null;
+      }
+
+      const objectName = data[0].name;
+      const path = `${userId}/${objectName}`;
+      const { data: publicUrlData } = this.storageClient.storage.from(this.avatarBucket).getPublicUrl(path);
+      return publicUrlData.publicUrl ?? null;
+    } catch (error) {
+      this.logger.warn(`[resolveAvatarFromStorage] Failed for user ${userId}`, error as Error);
+      return null;
+    }
+  }
+
   async updateProfile(
     userId: string,
     payload: UpdateProfileInput,
