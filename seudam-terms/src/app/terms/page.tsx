@@ -1,17 +1,32 @@
 import React from 'react';
+import Link from 'next/link';
+import Image from 'next/image';
 
 export default function TermsOfService() {
   return (
-    <div className="py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-8 md:p-12">
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">쓰담 서비스 이용약관</h1>
-          <div className="w-24 h-1 bg-blue-500 mx-auto"></div>
+    <div className="min-h-screen py-6 px-3 sm:py-12 sm:px-6 lg:px-8 bg-gray-50">
+      <div className="max-w-4xl mx-auto bg-white rounded-lg shadow-lg p-4 sm:p-8 md:p-12">
+        <div className="text-center mb-8 sm:mb-12">
+          <div className="flex flex-col items-center mb-4 sm:mb-6">
+            <Link href="/" className="flex items-center space-x-2 mb-4">
+              <Image
+                src="/logo.svg"
+                alt="쓰담 로고"
+                width={48}
+                height={48}
+                className="w-10 h-10 sm:w-12 sm:h-12"
+              />
+              <span className="text-xl sm:text-2xl font-bold text-gray-900">쓰담</span>
+            </Link>
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-gray-900 mb-3 sm:mb-4">쓰담 서비스 이용약관</h1>
+          </div>
+          <div className="w-16 sm:w-24 h-1 bg-blue-500 mx-auto mb-4 sm:mb-6"></div>
+          <p className="text-base sm:text-lg text-gray-600">쓰담(SseuDam) 서비스</p>
         </div>
 
         {/* 총칙 */}
-        <section className="mb-12">
-          <h2 className="text-2xl font-bold text-gray-800 mb-6 border-l-4 border-blue-500 pl-4">
+        <section className="mb-6 sm:mb-8">
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4 sm:mb-6 border-l-4 border-blue-500 pl-3 sm:pl-4">
             총칙
           </h2>
 
@@ -118,8 +133,8 @@ export default function TermsOfService() {
         </section>
 
         {/* 이용자 관리 및 보호 */}
-        <section className="mb-12">
-          <h2 className="text-2xl font-bold text-gray-800 mb-6 border-l-4 border-blue-500 pl-4">
+        <section className="mb-6 sm:mb-8">
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4 sm:mb-6 border-l-4 border-blue-500 pl-3 sm:pl-4">
             이용자 관리 및 보호
           </h2>
 
@@ -169,8 +184,8 @@ export default function TermsOfService() {
         </section>
 
         {/* 기타 */}
-        <section className="mb-12">
-          <h2 className="text-2xl font-bold text-gray-800 mb-6 border-l-4 border-blue-500 pl-4">
+        <section className="mb-6 sm:mb-8">
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4 sm:mb-6 border-l-4 border-blue-500 pl-3 sm:pl-4">
             기타
           </h2>
 
@@ -215,21 +230,49 @@ export default function TermsOfService() {
         </section>
 
         {/* 부칙 */}
-        <section className="mb-12">
-          <h2 className="text-2xl font-bold text-gray-800 mb-6 border-l-4 border-blue-500 pl-4">
+        <section className="mb-6 sm:mb-8">
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-800 mb-4 sm:mb-6 border-l-4 border-blue-500 pl-3 sm:pl-4">
             부칙
           </h2>
 
-          <div className="bg-blue-50 rounded-lg p-6 text-center">
-            <p className="text-lg font-semibold text-blue-900 mb-2">이용약관 버전 1.1</p>
-            <p className="text-blue-800">본 이용약관 시행일자: 2025년 11월 24일</p>
+          <div className="bg-blue-50 rounded-lg p-4 sm:p-6 text-center">
+            <p className="text-base sm:text-lg font-semibold text-blue-900 mb-2">이용약관 버전 1.1</p>
+            <p className="text-sm sm:text-base text-blue-800">본 이용약관 시행일자: 2025년 11월 24일</p>
           </div>
         </section>
 
-        {/* 푸터 */}
-        <footer className="bg-gray-800 text-white rounded-lg p-6 text-center">
-          <h3 className="text-2xl font-bold mb-2">쓰담</h3>
-          <p className="text-gray-300">여행 후 복잡한 정산 과정을 쉽고 투명하고 간편하게 해결하는 서비스</p>
+        {/* 네비게이션 링크 */}
+        <div className="mt-8 sm:mt-12 pt-6 sm:pt-8 border-t border-gray-200">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
+            <Link
+              href="/"
+              className="bg-blue-600 text-white px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors text-center text-sm sm:text-base"
+            >
+              홈으로 돌아가기
+            </Link>
+            <Link
+              href="/privacy"
+              className="border border-blue-600 text-blue-600 px-4 sm:px-6 py-2.5 sm:py-3 rounded-lg font-semibold hover:bg-blue-50 transition-colors text-center text-sm sm:text-base"
+            >
+              개인정보처리방침 보기
+            </Link>
+          </div>
+        </div>
+
+        {/* 푸터 - 쓰담 텍스트 가시성 개선 */}
+        <footer className="bg-gray-900 text-white rounded-lg p-4 sm:p-6 text-center mt-8 sm:mt-12 border border-gray-700">
+          <div className="flex flex-col items-center mb-4">
+            <Image
+              src="/logo.svg"
+              alt="쓰담 로고"
+              width={32}
+              height={32}
+              className="w-6 h-6 sm:w-8 sm:h-8 mb-2 filter brightness-0 invert"
+            />
+            <h3 className="text-2xl sm:text-3xl font-bold text-white">쓰담</h3>
+          </div>
+          <p className="text-gray-200 mb-3 text-sm sm:text-base leading-relaxed">여행 후 복잡한 정산 과정을 쉽고 투명하고 간편하게 해결하는 서비스</p>
+          <p className="text-xs sm:text-sm text-gray-300">개인정보 보호책임자: 쓰담 (suhwj81@gmail.com)</p>
         </footer>
       </div>
     </div>
@@ -239,9 +282,9 @@ export default function TermsOfService() {
 // 재사용 가능한 Article Section 컴포넌트
 function ArticleSection({ title, content }: { title: string; content: React.ReactNode | string }) {
   return (
-    <div className="bg-gray-50 rounded-lg p-6 mb-6 border-l-4 border-blue-500">
-      <h3 className="text-lg font-bold text-gray-900 mb-4">{title}</h3>
-      <div className="text-gray-700 leading-relaxed">
+    <div className="bg-gray-50 rounded-lg p-4 sm:p-6 mb-4 sm:mb-6 border-l-4 border-blue-500">
+      <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 sm:mb-4">{title}</h3>
+      <div className="text-sm sm:text-base text-gray-700 leading-relaxed">
         {typeof content === 'string' ? <p>{content}</p> : content}
       </div>
     </div>

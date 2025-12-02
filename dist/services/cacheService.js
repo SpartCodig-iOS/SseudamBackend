@@ -22,6 +22,9 @@ let CacheService = CacheService_1 = class CacheService {
         this.defaultTTL = 300; // 5분
         this.redisUrl = env_1.env.redisUrl;
         this.redisConfigLogged = false;
+        this.redisFailureCount = 0;
+        this.redisNextRetryAt = 0;
+        this.redisCooldownMs = 30000;
     }
     async getRedisClient() {
         if (!this.redisUrl) {
@@ -29,6 +32,10 @@ let CacheService = CacheService_1 = class CacheService {
                 this.logger.log('🪣 Redis URL not configured - using in-memory cache only');
                 this.redisConfigLogged = true;
             }
+            return null;
+        }
+        const now = Date.now();
+        if (now < this.redisNextRetryAt) {
             return null;
         }
         if (this.redis)
@@ -47,18 +54,26 @@ let CacheService = CacheService_1 = class CacheService {
             this.redis.on('error', (err) => {
                 this.logger.warn(`⚠️ Redis error, falling back to memory cache (${err.message})`);
                 this.redis = null;
+                this.redisFailureCount += 1;
+                this.redisNextRetryAt = Date.now() + Math.min(this.redisCooldownMs * this.redisFailureCount, 5 * this.redisCooldownMs);
             });
             this.redis.on('close', () => {
                 this.logger.warn('🔌 Redis connection closed');
                 this.redis = null;
+                this.redisFailureCount += 1;
+                this.redisNextRetryAt = Date.now() + Math.min(this.redisCooldownMs * this.redisFailureCount, 5 * this.redisCooldownMs);
             });
             // 연결 테스트
             await this.redis.ping();
+            this.redisFailureCount = 0;
+            this.redisNextRetryAt = 0;
             return this.redis;
         }
         catch (error) {
             this.logger.warn('📝 Redis unavailable, using memory cache as fallback');
             this.redis = null;
+            this.redisFailureCount += 1;
+            this.redisNextRetryAt = Date.now() + Math.min(this.redisCooldownMs * this.redisFailureCount, 5 * this.redisCooldownMs);
             return null;
         }
     }

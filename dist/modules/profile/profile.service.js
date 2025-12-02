@@ -27,7 +27,7 @@ let ProfileService = ProfileService_1 = class ProfileService {
         this.avatarBucketEnsured = false;
         // 프로필 캐시: 10분 TTL, 최대 1000개
         this.profileCache = new Map();
-        this.PROFILE_CACHE_TTL = 10 * 60 * 1000; // 10분
+        this.PROFILE_CACHE_TTL = 15 * 60 * 1000; // 15분으로 확대해 캐시 적중률 향상
         this.MAX_CACHE_SIZE = 1000;
     }
     // 프로필 캐시 관리

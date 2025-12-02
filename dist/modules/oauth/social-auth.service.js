@@ -26,21 +26,27 @@ const auth_service_1 = require("../auth/auth.service");
 const mappers_1 = require("../../utils/mappers");
 const env_1 = require("../../config/env");
 const pool_1 = require("../../db/pool");
+const background_job_service_1 = require("../../services/background-job.service");
 let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
-    constructor(supabaseService, cacheService, authService) {
+    constructor(supabaseService, cacheService, authService, backgroundJobService) {
         this.supabaseService = supabaseService;
         this.cacheService = cacheService;
         this.authService = authService;
+        this.backgroundJobService = backgroundJobService;
         this.logger = new common_1.Logger(SocialAuthService_1.name);
         // Apple JWT 토큰 캐싱 (10분 TTL)
         this.appleClientSecretCache = null;
         // OAuth 토큰 교환 요청 캐싱 (중복 요청 방지)
         this.tokenExchangePromises = new Map();
-        this.OAUTH_USER_CACHE_TTL_SECONDS = 5 * 60;
+        this.OAUTH_USER_CACHE_TTL_SECONDS = 10 * 60; // 10분으로 확대하여 캐시 적중률 상승
         this.OAUTH_TOKEN_CACHE_PREFIX = 'oauth:token';
         this.OAUTH_USER_INDEX_PREFIX = 'oauth:user-index';
         this.OAUTH_USER_INDEX_TTL_SECONDS = 60 * 30; // 30분
         this.OAUTH_USER_INDEX_LIMIT = 12;
+        this.oauthCheckCache = new Map();
+        this.OAUTH_CHECK_CACHE_TTL = 5 * 60 * 1000; // 5분
+        this.localTokenCache = new Map();
+        this.LOCAL_TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5분
         // 네트워크 타임아웃 설정 (빠른 실패)
         this.NETWORK_TIMEOUT = 8000; // 8초
     }
@@ -57,6 +63,22 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
     getTokenCacheKey(accessToken) {
         return (0, node_crypto_1.createHash)('sha256').update(accessToken).digest('hex');
     }
+    getLocalCachedUser(accessToken) {
+        const cached = this.localTokenCache.get(accessToken);
+        if (!cached)
+            return null;
+        if (Date.now() > cached.expiresAt) {
+            this.localTokenCache.delete(accessToken);
+            return null;
+        }
+        return cached.user;
+    }
+    setLocalCachedUser(accessToken, user) {
+        this.localTokenCache.set(accessToken, {
+            user,
+            expiresAt: Date.now() + this.LOCAL_TOKEN_CACHE_TTL,
+        });
+    }
     async profileExists(userId) {
         const pool = await (0, pool_1.getPool)();
         const result = await pool.query(`SELECT 1 FROM profiles WHERE id = $1 LIMIT 1`, [userId]);
@@ -64,13 +86,21 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
     }
     // Redis 기반 OAuth 사용자 캐시 (fallback으로 내부 CacheService 메모리 캐시 사용)
     async getCachedOAuthUser(accessToken) {
+        const local = this.getLocalCachedUser(accessToken);
+        if (local) {
+            return local;
+        }
         const cacheKey = this.getTokenCacheKey(accessToken);
         const cached = await this.cacheService.get(cacheKey, {
             prefix: this.OAUTH_TOKEN_CACHE_PREFIX,
         });
+        if (cached) {
+            this.setLocalCachedUser(accessToken, cached);
+        }
         return cached ?? null;
     }
     async setCachedOAuthUser(accessToken, user) {
+        this.setLocalCachedUser(accessToken, user);
         const cacheKey = this.getTokenCacheKey(accessToken);
         await this.cacheService.set(cacheKey, user, {
             prefix: this.OAUTH_TOKEN_CACHE_PREFIX,
@@ -96,6 +126,22 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             await Promise.all(tokenKeys.map((tokenKey) => this.cacheService.del(tokenKey, { prefix: this.OAUTH_TOKEN_CACHE_PREFIX })));
         }
         await this.cacheService.del(userId, { prefix: this.OAUTH_USER_INDEX_PREFIX });
+    }
+    getCachedCheck(accessToken) {
+        const cached = this.oauthCheckCache.get(accessToken);
+        if (!cached)
+            return null;
+        if (Date.now() > cached.expiresAt) {
+            this.oauthCheckCache.delete(accessToken);
+            return null;
+        }
+        return { registered: cached.registered };
+    }
+    setCachedCheck(accessToken, registered) {
+        this.oauthCheckCache.set(accessToken, {
+            registered,
+            expiresAt: Date.now() + this.OAUTH_CHECK_CACHE_TTL,
+        });
     }
     buildAppleClientSecret() {
         // 캐시된 토큰이 있고 아직 유효하면 재사용
@@ -163,7 +209,9 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             return authSession;
         }
         // 캐시 미스: 사용자 정보 조회 및 프로필 생성을 병렬 처리
+        const supabaseFetchStart = Date.now();
         const supabaseUser = await this.supabaseService.getUserFromToken(accessToken);
+        const supabaseFetchDuration = Date.now() - supabaseFetchStart;
         if (!supabaseUser) {
             throw new common_1.UnauthorizedException('Invalid Supabase access token');
         }
@@ -195,35 +243,51 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         ]);
         const preferDisplayName = loginType !== 'email' && loginType !== 'username';
         const user = (0, mappers_1.fromSupabaseUser)(supabaseUser, { preferDisplayName });
-        // 소셜 프로필 이미지를 스토리지로 미러링 (가능하면)
-        if (user.avatar_url) {
-            const mirrored = await this.supabaseService.mirrorProfileAvatar(user.id, user.avatar_url);
-            if (mirrored) {
-                user.avatar_url = mirrored;
-            }
-        }
         // 사용자 정보를 캐시에 저장 (다음 로그인 최적화)
         await this.setCachedOAuthUser(accessToken, user);
-        // 토큰 저장 작업도 병렬로 처리
-        const saveTokenTasks = [];
+        // 세션은 즉시 생성하고, 부가 작업은 백그라운드로 처리해 응답 지연을 최소화
+        const sessionStart = Date.now();
+        const authSession = await this.authService.createAuthSession(user, loginType);
+        const sessionDuration = Date.now() - sessionStart;
+        const backgroundTasks = [];
+        // 소셜 프로필 이미지를 스토리지로 미러링 (가능하면)
+        if (user.avatar_url) {
+            backgroundTasks.push(new Promise((resolve) => {
+                this.backgroundJobService.enqueue(`[social-avatar] ${user.id}`, async () => {
+                    const mirrored = await this.supabaseService.mirrorProfileAvatar(user.id, user.avatar_url);
+                    if (mirrored) {
+                        user.avatar_url = mirrored;
+                    }
+                    resolve();
+                });
+            }));
+        }
+        // 토큰 저장 작업을 백그라운드로 처리
         if (loginType === 'apple' && finalAppleRefreshToken) {
-            saveTokenTasks.push(this.supabaseService.saveAppleRefreshToken(user.id, finalAppleRefreshToken));
+            this.backgroundJobService.enqueue(`[apple-refresh] ${user.id}`, async () => {
+                await this.supabaseService.saveAppleRefreshToken(user.id, finalAppleRefreshToken);
+            });
         }
         if (loginType === 'google' && finalGoogleRefreshToken) {
-            saveTokenTasks.push(this.supabaseService.saveGoogleRefreshToken(user.id, finalGoogleRefreshToken));
+            this.backgroundJobService.enqueue(`[google-refresh] ${user.id}`, async () => {
+                await this.supabaseService.saveGoogleRefreshToken(user.id, finalGoogleRefreshToken);
+            });
         }
-        // 토큰 저장과 세션 생성을 병렬로 처리
-        const [authSession] = await Promise.all([
-            this.authService.createAuthSession(user, loginType),
-            this.authService.markLastLogin(user.id),
-            ...saveTokenTasks
-        ]);
+        // 마지막 로그인 기록도 비동기 처리
+        this.backgroundJobService.enqueue(`[markLastLogin] ${user.id}`, async () => {
+            await this.authService.markLastLogin(user.id);
+        });
+        void Promise.allSettled(backgroundTasks);
         this.authService.warmAuthCaches(user);
         const duration = Date.now() - startTime;
-        this.logger.debug(`OAuth login completed in ${duration}ms for ${user.email}`);
+        this.logger.debug(`OAuth login completed in ${duration}ms for ${user.email} (supabase ${supabaseFetchDuration}ms, session ${sessionDuration}ms)`);
         return authSession;
     }
     async checkOAuthAccount(accessToken, loginType = 'email') {
+        const cachedCheck = this.getCachedCheck(accessToken);
+        if (cachedCheck) {
+            return cachedCheck;
+        }
         if (!accessToken) {
             throw new common_1.UnauthorizedException('Missing Supabase access token');
         }
@@ -232,7 +296,9 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             throw new common_1.UnauthorizedException('Invalid Supabase access token');
         }
         const profile = await this.supabaseService.findProfileById(supabaseUser.id);
-        return { registered: Boolean(profile) };
+        const result = { registered: Boolean(profile) };
+        this.setCachedCheck(accessToken, result.registered);
+        return result;
     }
     async revokeAppleConnection(userId, refreshToken) {
         try {
@@ -428,5 +494,6 @@ exports.SocialAuthService = SocialAuthService = SocialAuthService_1 = __decorate
     __param(2, (0, common_1.Inject)((0, common_1.forwardRef)(() => auth_service_1.AuthService))),
     __metadata("design:paramtypes", [supabaseService_1.SupabaseService,
         cacheService_1.CacheService,
-        auth_service_1.AuthService])
+        auth_service_1.AuthService,
+        background_job_service_1.BackgroundJobService])
 ], SocialAuthService);

@@ -24,11 +24,30 @@ let SessionService = SessionService_1 = class SessionService {
         this.lastCleanupRun = 0;
         // 세션 캐시: 10분 TTL, 최대 2000개 세션
         this.sessionCache = new Map();
-        this.SESSION_CACHE_TTL = 10 * 60 * 1000; // 10분
+        this.SESSION_CACHE_TTL = 15 * 60 * 1000; // 15분으로 확대해 캐시 적중률 향상
         this.MAX_CACHE_SIZE = 2000;
+        this.indexesEnsured = false;
     }
     async getClient() {
         return (0, pool_1.getPool)();
+    }
+    async ensureIndexes() {
+        if (this.indexesEnsured)
+            return;
+        const pool = await this.getClient();
+        const statements = [
+            `CREATE INDEX IF NOT EXISTS idx_user_sessions_session_id ON user_sessions (session_id)`,
+            `CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions (user_id)`,
+        ];
+        for (const sql of statements) {
+            try {
+                await pool.query(sql);
+            }
+            catch (error) {
+                this.logger.warn(`[ensureIndexes] Failed: ${sql} -> ${error instanceof Error ? error.message : String(error)}`);
+            }
+        }
+        this.indexesEnsured = true;
     }
     // 세션 캐시 관리
     getCachedSession(sessionId) {
@@ -146,6 +165,7 @@ let SessionService = SessionService_1 = class SessionService {
         this.clearUserSessions(userId);
         // 만료 세션 정리는 백그라운드로 (첫 로그인 속도 향상)
         this.scheduleCleanup();
+        await this.ensureIndexes();
         const pool = await this.getClient();
         const ttlHours = this.defaultTTLHours;
         const newSessionId = (0, crypto_1.randomUUID)();

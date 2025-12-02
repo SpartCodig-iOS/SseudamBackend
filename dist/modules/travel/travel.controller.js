@@ -291,7 +291,7 @@ __decorate([
 __decorate([
     (0, common_1.Delete)(':travelId/leave'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    (0, swagger_1.ApiOperation)({ summary: '여행 나가기 (본인만, 멤버만 가능)' }),
+    (0, swagger_1.ApiOperation)({ summary: '여행 나가기 (멤버만 가능, 호스트 불가)' }),
     __param(0, (0, common_1.Param)('travelId', new common_1.ParseUUIDPipe({ version: '4' }))),
     __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),

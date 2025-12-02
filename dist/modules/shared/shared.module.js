@@ -17,6 +17,7 @@ const sessionService_1 = require("../../services/sessionService");
 const rateLimitService_1 = require("../../services/rateLimitService");
 const smart_cache_service_1 = require("../../services/smart-cache.service");
 const cacheService_1 = require("../../services/cacheService");
+const background_job_service_1 = require("../../services/background-job.service");
 const optimized_oauth_service_1 = require("../oauth/optimized-oauth.service");
 const optimized_delete_service_1 = require("../auth/optimized-delete.service");
 const social_auth_service_1 = require("../oauth/social-auth.service");
@@ -40,6 +41,7 @@ exports.SharedModule = SharedModule = __decorate([
             optimized_delete_service_1.OptimizedDeleteService,
             sessionService_1.SessionService,
             rateLimitService_1.RateLimitService,
+            background_job_service_1.BackgroundJobService,
             auth_guard_1.AuthGuard,
             roles_guard_1.RolesGuard,
             rate_limit_guard_1.RateLimitGuard,
@@ -56,6 +58,7 @@ exports.SharedModule = SharedModule = __decorate([
             optimized_delete_service_1.OptimizedDeleteService,
             sessionService_1.SessionService,
             rateLimitService_1.RateLimitService,
+            background_job_service_1.BackgroundJobService,
             auth_guard_1.AuthGuard,
             roles_guard_1.RolesGuard,
             rate_limit_guard_1.RateLimitGuard,
