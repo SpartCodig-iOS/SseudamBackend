@@ -16,6 +16,9 @@ export class TravelSummaryDto {
   @ApiProperty({ example: 'JP' })
   countryCode!: string;
 
+  @ApiProperty({ example: '일본', nullable: true, required: false })
+  countryNameKr?: string;
+
   @ApiProperty({ example: 'JPY' })
   baseCurrency!: string;
 

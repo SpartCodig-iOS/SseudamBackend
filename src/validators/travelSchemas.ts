@@ -20,6 +20,7 @@ export const createTravelSchema = z
     startDate: isoDateSchema,
     endDate: isoDateSchema,
     countryCode: z.string().length(2, 'countryCode 는 2자리 ISO 코드여야 합니다.'),
+    countryNameKr: z.string().min(1).max(50).optional(),
     baseCurrency: z.string().length(3, 'baseCurrency 는 3자리 통화 코드여야 합니다.'),
     baseExchangeRate: exchangeRateSchema,
   })
@@ -32,6 +33,7 @@ export const createTravelSchema = z
     startDate: data.startDate,
     endDate: data.endDate,
     countryCode: data.countryCode.toUpperCase(),
+    countryNameKr: data.countryNameKr?.trim(),
     baseCurrency: data.baseCurrency.toUpperCase(),
     baseExchangeRate: data.baseExchangeRate,
   }));

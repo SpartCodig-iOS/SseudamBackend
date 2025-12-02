@@ -83,6 +83,11 @@ export class TravelController {
           example: 'JP',
           description: '여행 국가 ISO 3166-1 alpha-2 코드',
         },
+        countryNameKr: {
+          type: 'string',
+          example: '일본',
+          description: '여행 국가 한국어 이름 (선택사항)',
+        },
         baseCurrency: {
           type: 'string',
           example: 'KRW',
@@ -122,6 +127,11 @@ export class TravelController {
         startDate: { type: 'string', example: '2025-12-01' },
         endDate: { type: 'string', example: '2025-12-05' },
         countryCode: { type: 'string', example: 'JP' },
+        countryNameKr: {
+          type: 'string',
+          example: '일본',
+          description: '여행 국가 한국어 이름 (선택사항)',
+        },
         baseCurrency: { type: 'string', example: 'KRW' },
         baseExchangeRate: { type: 'number', example: 105.6 },
       },

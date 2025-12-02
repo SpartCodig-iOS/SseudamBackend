@@ -19,6 +19,7 @@ export interface TravelSummary {
   startDate: string;
   endDate: string;
   countryCode: string;
+  countryNameKr?: string;
   baseCurrency: string;
   baseExchangeRate: number;
   destinationCurrency: string;
@@ -142,6 +143,7 @@ export class TravelService {
          t.start_date::text,
          t.end_date::text,
          t.country_code,
+         t.country_name_kr,
          t.base_currency,
          t.base_exchange_rate,
          t.invite_code,
@@ -161,7 +163,9 @@ export class TravelService {
                    'name', p.name,
                    'role', COALESCE(tm2.role, p.role)
                  )
-                 ORDER BY tm2.joined_at
+                 ORDER BY
+                   CASE WHEN tm2.user_id = $2 THEN 0 ELSE 1 END,
+                   tm2.joined_at
                ) AS members
         FROM travel_members tm2
         LEFT JOIN profiles p ON p.id = tm2.user_id
@@ -186,6 +190,7 @@ export class TravelService {
       startDate: row.start_date,
       endDate: row.end_date,
       countryCode: row.country_code,
+      countryNameKr: row.country_name_kr ?? undefined,
       baseCurrency: row.base_currency,
       baseExchangeRate: Number(row.base_exchange_rate),
       destinationCurrency,
@@ -286,13 +291,14 @@ export class TravelService {
 
         const insertResult = await client.query(
           `WITH new_travel AS (
-             INSERT INTO travels (owner_id, title, start_date, end_date, country_code, base_currency, base_exchange_rate, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $4 < CURRENT_DATE THEN 'archived' ELSE 'active' END)
+             INSERT INTO travels (owner_id, title, start_date, end_date, country_code, country_name_kr, base_currency, base_exchange_rate, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $4 < CURRENT_DATE THEN 'archived' ELSE 'active' END)
              RETURNING id,
                        title,
                        start_date,
                        end_date,
                        country_code,
+                       country_name_kr,
                        base_currency,
                        base_exchange_rate,
                        NULL::text AS invite_code,
@@ -324,6 +330,7 @@ export class TravelService {
             payload.startDate,
             payload.endDate,
             payload.countryCode,
+            payload.countryNameKr,
             payload.baseCurrency,
             payload.baseExchangeRate,
           ]
@@ -383,6 +390,7 @@ export class TravelService {
        ut.start_date::text,
        ut.end_date::text,
        ut.country_code,
+       ut.country_name_kr,
        ut.base_currency,
        ut.base_exchange_rate,
        ut.invite_code,
@@ -408,7 +416,9 @@ export class TravelService {
                    'name', p.name,
                    'role', COALESCE(tm2.role, p.role)
                  )
-                 ORDER BY tm2.joined_at
+                 ORDER BY
+                   CASE WHEN tm2.user_id = $1 THEN 0 ELSE 1 END,
+                   tm2.joined_at
                ) AS members
         FROM travel_members tm2
         LEFT JOIN profiles p ON p.id = tm2.user_id
@@ -655,8 +665,9 @@ export class TravelService {
            start_date = $4,
            end_date = $5,
            country_code = $6,
-           base_currency = $7,
-           base_exchange_rate = $8,
+           country_name_kr = $7,
+           base_currency = $8,
+           base_exchange_rate = $9,
            status = CASE WHEN $5 < CURRENT_DATE THEN 'archived' ELSE 'active' END,
            updated_at = NOW()
        WHERE id = $1 AND owner_id = $2
@@ -666,6 +677,7 @@ export class TravelService {
          start_date::text,
          end_date::text,
          country_code,
+         country_name_kr,
          base_currency,
          base_exchange_rate,
          invite_code,
@@ -678,6 +690,7 @@ export class TravelService {
         payload.startDate,
         payload.endDate,
         payload.countryCode,
+        payload.countryNameKr,
         payload.baseCurrency,
         payload.baseExchangeRate,
       ],

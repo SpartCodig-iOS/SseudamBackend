@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RequestWithUser } from '../../types/request';
@@ -67,6 +67,46 @@ export class TravelExpenseController {
     const payload = createExpenseSchema.parse(body);
     const expense = await this.travelExpenseService.createExpense(travelId, req.currentUser.id, payload);
     return success(expense, 'Expense created');
+  }
+
+  @Patch(':expenseId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '여행 지출 수정' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['title', 'amount', 'currency', 'expenseDate'],
+      properties: {
+        title: { type: 'string', example: '라멘 식비', maxLength: 50, description: '지출 제목 (최대 50자)' },
+        note: { type: 'string', example: '신주쿠역 인근', nullable: true },
+        amount: { type: 'number', example: 3500, minimum: 0.01, description: '지출 금액 (필수, 양수)' },
+        currency: { type: 'string', example: 'JPY', description: '지출 통화 (3자리 코드)' },
+        expenseDate: { type: 'string', example: '2025-11-26', description: 'YYYY-MM-DD (오늘까지만 가능, 미래 날짜 불가)' },
+        category: { type: 'string', example: 'food', maxLength: 20, pattern: '^[a-zA-Z0-9가-힣_-]+$', nullable: true, description: '카테고리 (영문/숫자/한글/_/- 만 가능, 최대 20자)' },
+        participantIds: {
+          type: 'array',
+          items: { type: 'string', format: 'uuid' },
+          minItems: 1,
+          maxItems: 20,
+          nullable: true,
+          description: '지출 분배 대상 (1-20명, 중복 불가, 생략 시 모든 팀원)',
+        },
+      },
+    },
+  })
+  @ApiOkResponse({ type: TravelExpenseDto })
+  async updateExpense(
+    @Param('travelId') travelId: string,
+    @Param('expenseId') expenseId: string,
+    @Body() body: unknown,
+    @Req() req: RequestWithUser,
+  ) {
+    if (!req.currentUser) {
+      throw new UnauthorizedException('Unauthorized');
+    }
+    const payload = createExpenseSchema.parse(body);
+    const expense = await this.travelExpenseService.updateExpense(travelId, expenseId, req.currentUser.id, payload);
+    return success(expense, 'Expense updated');
   }
 
   @Delete(':expenseId')
