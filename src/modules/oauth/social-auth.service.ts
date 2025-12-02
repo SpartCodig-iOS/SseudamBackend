@@ -40,6 +40,8 @@ export class SocialAuthService {
   private readonly OAUTH_USER_INDEX_LIMIT = 12;
   private readonly oauthCheckCache = new Map<string, { registered: boolean; expiresAt: number }>();
   private readonly OAUTH_CHECK_CACHE_TTL = 5 * 60 * 1000; // 5분
+  private readonly localTokenCache = new Map<string, { user: UserRecord; expiresAt: number }>();
+  private readonly LOCAL_TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5분
 
   // 네트워크 타임아웃 설정 (빠른 실패)
   private readonly NETWORK_TIMEOUT = 8000; // 8초
@@ -68,6 +70,23 @@ export class SocialAuthService {
     return createHash('sha256').update(accessToken).digest('hex');
   }
 
+  private getLocalCachedUser(accessToken: string): UserRecord | null {
+    const cached = this.localTokenCache.get(accessToken);
+    if (!cached) return null;
+    if (Date.now() > cached.expiresAt) {
+      this.localTokenCache.delete(accessToken);
+      return null;
+    }
+    return cached.user;
+  }
+
+  private setLocalCachedUser(accessToken: string, user: UserRecord): void {
+    this.localTokenCache.set(accessToken, {
+      user,
+      expiresAt: Date.now() + this.LOCAL_TOKEN_CACHE_TTL,
+    });
+  }
+
   private async profileExists(userId: string): Promise<boolean> {
     const pool = await getPool();
     const result = await pool.query(
@@ -79,14 +98,23 @@ export class SocialAuthService {
 
   // Redis 기반 OAuth 사용자 캐시 (fallback으로 내부 CacheService 메모리 캐시 사용)
   private async getCachedOAuthUser(accessToken: string): Promise<UserRecord | null> {
+    const local = this.getLocalCachedUser(accessToken);
+    if (local) {
+      return local;
+    }
+
     const cacheKey = this.getTokenCacheKey(accessToken);
     const cached = await this.cacheService.get<UserRecord>(cacheKey, {
       prefix: this.OAUTH_TOKEN_CACHE_PREFIX,
     });
+    if (cached) {
+      this.setLocalCachedUser(accessToken, cached);
+    }
     return cached ?? null;
   }
 
   private async setCachedOAuthUser(accessToken: string, user: UserRecord): Promise<void> {
+    this.setLocalCachedUser(accessToken, user);
     const cacheKey = this.getTokenCacheKey(accessToken);
     await this.cacheService.set(cacheKey, user, {
       prefix: this.OAUTH_TOKEN_CACHE_PREFIX,
