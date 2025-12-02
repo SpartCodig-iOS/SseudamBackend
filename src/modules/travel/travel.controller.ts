@@ -246,7 +246,7 @@ export class TravelController {
 
   @Delete(':travelId/leave')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '여행 나가기 (본인만, 멤버만 가능)' })
+  @ApiOperation({ summary: '여행 나가기 (멤버만 가능, 호스트 불가)' })
   async leaveTravel(
     @Param('travelId', new ParseUUIDPipe({ version: '4' })) travelId: string,
     @Req() req: RequestWithUser,

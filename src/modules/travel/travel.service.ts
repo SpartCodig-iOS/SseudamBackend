@@ -289,10 +289,13 @@ export class TravelService {
         const startTime = Date.now();
         const ownerName = currentUser.name ?? currentUser.email ?? '알 수 없는 사용자';
 
+        // inviteCode 자동 생성
+        const inviteCode = this.generateInviteCode();
+
         const insertResult = await client.query(
           `WITH new_travel AS (
-             INSERT INTO travels (owner_id, title, start_date, end_date, country_code, country_name_kr, base_currency, base_exchange_rate, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $4 < CURRENT_DATE THEN 'archived' ELSE 'active' END)
+             INSERT INTO travels (owner_id, title, start_date, end_date, country_code, country_name_kr, base_currency, base_exchange_rate, invite_code, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $4 < CURRENT_DATE THEN 'archived' ELSE 'active' END)
              RETURNING id,
                        title,
                        start_date,
@@ -301,7 +304,7 @@ export class TravelService {
                        country_name_kr,
                        base_currency,
                        base_exchange_rate,
-                       NULL::text AS invite_code,
+                       invite_code,
                        status,
                        created_at
            ),
@@ -311,6 +314,13 @@ export class TravelService {
              FROM new_travel
              ON CONFLICT (travel_id, user_id) DO UPDATE
              SET role = EXCLUDED.role
+             RETURNING travel_id
+           ),
+           travel_invite AS (
+             INSERT INTO travel_invites (travel_id, invite_code, created_by, status)
+             SELECT new_travel.id, $9, $1, 'active'
+             FROM new_travel
+             ON CONFLICT (invite_code) DO NOTHING
              RETURNING travel_id
            )
            SELECT new_travel.id::text AS id,
@@ -334,6 +344,7 @@ export class TravelService {
             payload.countryNameKr,
             payload.baseCurrency,
             payload.baseExchangeRate,
+            inviteCode,
           ]
         );
 
@@ -614,6 +625,19 @@ export class TravelService {
       );
     });
 
+    // 새 멤버 참여 후 캐시 무효화
+    this.invalidateUserTravelCache(userId);
+    this.invalidateTravelDetailCache(inviteRow.travel_id);
+
+    // 기존 멤버들의 여행 목록 캐시도 무효화 (멤버 정보가 변경되므로)
+    const existingMembers = await pool.query(
+      `SELECT user_id FROM travel_members WHERE travel_id = $1`,
+      [inviteRow.travel_id]
+    );
+    existingMembers.rows.forEach(member => {
+      this.invalidateUserTravelCache(member.user_id);
+    });
+
     return this.fetchSummaryForMember(inviteRow.travel_id, userId);
   }
 
@@ -634,24 +658,22 @@ export class TravelService {
       throw new NotFoundException('여행을 찾을 수 없거나 멤버가 아닙니다.');
     }
 
-    // 관리자가 아닌 일반 멤버 탈퇴: 멤버만 제거, 데이터 유지
-    if (row.role !== 'owner' && row.owner_id !== userId) {
-      await pool.query(
-        `DELETE FROM travel_members WHERE travel_id = $1 AND user_id = $2`,
-        [travelId, userId],
-      );
-      return { deletedTravel: false };
+    // 소유자(owner)는 여행을 나갈 수 없음
+    if (row.role === 'owner' || row.owner_id === userId) {
+      throw new ForbiddenException('여행 호스트는 나갈 수 없습니다. 다른 멤버에게 호스트 권한을 위임하거나 여행을 삭제해주세요.');
     }
 
-    // 관리자(호스트) 탈퇴 처리
-    const memberCount = row.member_count ?? 1;
-    if (memberCount > 1) {
-      throw new BadRequestException('탈퇴하려면 먼저 다른 멤버에게 관리자 권한을 위임해야 합니다.');
-    }
+    // 일반 멤버 탈퇴: 멤버만 제거, 데이터 유지
+    await pool.query(
+      `DELETE FROM travel_members WHERE travel_id = $1 AND user_id = $2`,
+      [travelId, userId],
+    );
 
-    // 마지막 멤버(호스트)라면 프로젝트 자체 삭제
-    await this.deleteTravel(travelId, userId);
-    return { deletedTravel: true };
+    // 멤버 탈퇴 후 관련 캐시 무효화
+    this.invalidateUserTravelCache(userId);
+    this.invalidateTravelDetailCache(travelId);
+
+    return { deletedTravel: false };
   }
 
   async updateTravel(
@@ -705,6 +727,18 @@ export class TravelService {
       throw new ForbiddenException('여행 수정 권한이 없습니다.');
     }
 
+    // 수정 후 관련 캐시 무효화
+    this.invalidateTravelDetailCache(travelId);
+
+    // 여행에 참여한 모든 멤버의 목록 캐시도 무효화
+    const members = await pool.query(
+      `SELECT user_id FROM travel_members WHERE travel_id = $1`,
+      [travelId]
+    );
+    members.rows.forEach(member => {
+      this.invalidateUserTravelCache(member.user_id);
+    });
+
     return this.fetchSummaryForMember(travelId, userId);
   }
 
@@ -719,5 +753,18 @@ export class TravelService {
       `DELETE FROM travel_members WHERE travel_id = $1 AND user_id = $2`,
       [travelId, memberId],
     );
+
+    // 멤버 삭제 후 캐시 무효화
+    this.invalidateUserTravelCache(memberId);
+    this.invalidateTravelDetailCache(travelId);
+
+    // 다른 멤버들의 여행 목록 캐시도 무효화 (멤버 정보가 변경되므로)
+    const remainingMembers = await pool.query(
+      `SELECT user_id FROM travel_members WHERE travel_id = $1`,
+      [travelId]
+    );
+    remainingMembers.rows.forEach(member => {
+      this.invalidateUserTravelCache(member.user_id);
+    });
   }
 }
