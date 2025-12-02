@@ -38,6 +38,8 @@ export class SocialAuthService {
   private readonly OAUTH_USER_INDEX_PREFIX = 'oauth:user-index';
   private readonly OAUTH_USER_INDEX_TTL_SECONDS = 60 * 30; // 30분
   private readonly OAUTH_USER_INDEX_LIMIT = 12;
+  private readonly oauthCheckCache = new Map<string, { registered: boolean; expiresAt: number }>();
+  private readonly OAUTH_CHECK_CACHE_TTL = 5 * 60 * 1000; // 5분
 
   // 네트워크 타임아웃 설정 (빠른 실패)
   private readonly NETWORK_TIMEOUT = 8000; // 8초
@@ -126,6 +128,23 @@ export class SocialAuthService {
     }
 
     await this.cacheService.del(userId, { prefix: this.OAUTH_USER_INDEX_PREFIX });
+  }
+
+  private getCachedCheck(accessToken: string): { registered: boolean } | null {
+    const cached = this.oauthCheckCache.get(accessToken);
+    if (!cached) return null;
+    if (Date.now() > cached.expiresAt) {
+      this.oauthCheckCache.delete(accessToken);
+      return null;
+    }
+    return { registered: cached.registered };
+  }
+
+  private setCachedCheck(accessToken: string, registered: boolean): void {
+    this.oauthCheckCache.set(accessToken, {
+      registered,
+      expiresAt: Date.now() + this.OAUTH_CHECK_CACHE_TTL,
+    });
   }
 
   private buildAppleClientSecret() {
@@ -312,6 +331,11 @@ export class SocialAuthService {
     accessToken: string,
     loginType: LoginType = 'email',
   ): Promise<SocialLookupResult> {
+    const cachedCheck = this.getCachedCheck(accessToken);
+    if (cachedCheck) {
+      return cachedCheck;
+    }
+
     if (!accessToken) {
       throw new UnauthorizedException('Missing Supabase access token');
     }
@@ -321,7 +345,9 @@ export class SocialAuthService {
     }
 
     const profile = await this.supabaseService.findProfileById(supabaseUser.id);
-    return { registered: Boolean(profile) };
+    const result = { registered: Boolean(profile) };
+    this.setCachedCheck(accessToken, result.registered);
+    return result;
   }
 
   async revokeAppleConnection(userId: string, refreshToken?: string): Promise<void> {
