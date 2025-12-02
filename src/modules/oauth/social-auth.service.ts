@@ -9,6 +9,7 @@ import { AuthService, AuthSessionPayload } from '../auth/auth.service';
 import { fromSupabaseUser } from '../../utils/mappers';
 import { env } from '../../config/env';
 import { getPool } from '../../db/pool';
+import { BackgroundJobService } from '../../services/background-job.service';
 
 export interface SocialLookupResult {
   registered: boolean;
@@ -32,7 +33,7 @@ export class SocialAuthService {
   // OAuth 토큰 교환 요청 캐싱 (중복 요청 방지)
   private readonly tokenExchangePromises = new Map<string, Promise<string>>();
 
-  private readonly OAUTH_USER_CACHE_TTL_SECONDS = 5 * 60;
+  private readonly OAUTH_USER_CACHE_TTL_SECONDS = 10 * 60; // 10분으로 확대하여 캐시 적중률 상승
   private readonly OAUTH_TOKEN_CACHE_PREFIX = 'oauth:token';
   private readonly OAUTH_USER_INDEX_PREFIX = 'oauth:user-index';
   private readonly OAUTH_USER_INDEX_TTL_SECONDS = 60 * 30; // 30분
@@ -46,6 +47,7 @@ export class SocialAuthService {
     private readonly cacheService: CacheService,
     @Inject(forwardRef(() => AuthService))
     private readonly authService: AuthService,
+    private readonly backgroundJobService: BackgroundJobService,
   ) {}
 
   private ensureAppleEnv() {
@@ -210,7 +212,9 @@ export class SocialAuthService {
     }
 
     // 캐시 미스: 사용자 정보 조회 및 프로필 생성을 병렬 처리
+    const supabaseFetchStart = Date.now();
     const supabaseUser = await this.supabaseService.getUserFromToken(accessToken);
+    const supabaseFetchDuration = Date.now() - supabaseFetchStart;
 
     if (!supabaseUser) {
       throw new UnauthorizedException('Invalid Supabase access token');
@@ -256,47 +260,50 @@ export class SocialAuthService {
     await this.setCachedOAuthUser(accessToken, user);
 
     // 세션은 즉시 생성하고, 부가 작업은 백그라운드로 처리해 응답 지연을 최소화
+    const sessionStart = Date.now();
     const authSession = await this.authService.createAuthSession(user, loginType);
+    const sessionDuration = Date.now() - sessionStart;
 
     const backgroundTasks: Promise<unknown>[] = [];
 
     // 소셜 프로필 이미지를 스토리지로 미러링 (가능하면)
     if (user.avatar_url) {
       backgroundTasks.push(
-        this.supabaseService.mirrorProfileAvatar(user.id, user.avatar_url).then((mirrored) => {
-          if (mirrored) {
-            user.avatar_url = mirrored;
-          }
-        }).catch((error) => this.logger.warn(`[social-avatar] mirror failed for ${user.id}`, error as Error))
+        new Promise<void>((resolve) => {
+          this.backgroundJobService.enqueue(`[social-avatar] ${user.id}`, async () => {
+            const mirrored = await this.supabaseService.mirrorProfileAvatar(user.id, user.avatar_url);
+            if (mirrored) {
+              user.avatar_url = mirrored;
+            }
+            resolve();
+          });
+        })
       );
     }
 
     // 토큰 저장 작업을 백그라운드로 처리
     if (loginType === 'apple' && finalAppleRefreshToken) {
-      backgroundTasks.push(
-        this.supabaseService.saveAppleRefreshToken(user.id, finalAppleRefreshToken)
-          .catch((error) => this.logger.warn(`[apple-refresh] save failed for ${user.id}`, error as Error))
-      );
+      this.backgroundJobService.enqueue(`[apple-refresh] ${user.id}`, async () => {
+        await this.supabaseService.saveAppleRefreshToken(user.id, finalAppleRefreshToken);
+      });
     }
 
     if (loginType === 'google' && finalGoogleRefreshToken) {
-      backgroundTasks.push(
-        this.supabaseService.saveGoogleRefreshToken(user.id, finalGoogleRefreshToken)
-          .catch((error) => this.logger.warn(`[google-refresh] save failed for ${user.id}`, error as Error))
-      );
+      this.backgroundJobService.enqueue(`[google-refresh] ${user.id}`, async () => {
+        await this.supabaseService.saveGoogleRefreshToken(user.id, finalGoogleRefreshToken);
+      });
     }
 
     // 마지막 로그인 기록도 비동기 처리
-    backgroundTasks.push(
-      this.authService.markLastLogin(user.id)
-        .catch((error) => this.logger.warn(`[markLastLogin] failed for ${user.id}`, error as Error))
-    );
+    this.backgroundJobService.enqueue(`[markLastLogin] ${user.id}`, async () => {
+      await this.authService.markLastLogin(user.id);
+    });
 
     void Promise.allSettled(backgroundTasks);
     this.authService.warmAuthCaches(user);
 
     const duration = Date.now() - startTime;
-    this.logger.debug(`OAuth login completed in ${duration}ms for ${user.email}`);
+    this.logger.debug(`OAuth login completed in ${duration}ms for ${user.email} (supabase ${supabaseFetchDuration}ms, session ${sessionDuration}ms)`);
 
     return authSession;
   }

@@ -30,11 +30,29 @@ export class SessionService {
 
   // 세션 캐시: 10분 TTL, 최대 2000개 세션
   private readonly sessionCache = new Map<string, { data: SessionRecord; expiresAt: number }>();
-  private readonly SESSION_CACHE_TTL = 10 * 60 * 1000; // 10분
+  private readonly SESSION_CACHE_TTL = 15 * 60 * 1000; // 15분으로 확대해 캐시 적중률 향상
   private readonly MAX_CACHE_SIZE = 2000;
+  private indexesEnsured = false;
 
   private async getClient() {
     return getPool();
+  }
+
+  private async ensureIndexes(): Promise<void> {
+    if (this.indexesEnsured) return;
+    const pool = await this.getClient();
+    const statements = [
+      `CREATE INDEX IF NOT EXISTS idx_user_sessions_session_id ON user_sessions (session_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions (user_id)`,
+    ];
+    for (const sql of statements) {
+      try {
+        await pool.query(sql);
+      } catch (error) {
+        this.logger.warn(`[ensureIndexes] Failed: ${sql} -> ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    this.indexesEnsured = true;
   }
 
   // 세션 캐시 관리
@@ -174,6 +192,7 @@ export class SessionService {
     // 만료 세션 정리는 백그라운드로 (첫 로그인 속도 향상)
     this.scheduleCleanup();
 
+    await this.ensureIndexes();
     const pool = await this.getClient();
     const ttlHours = this.defaultTTLHours;
 

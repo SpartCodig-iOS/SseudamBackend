@@ -20,7 +20,7 @@ export class ProfileService {
 
   // 프로필 캐시: 10분 TTL, 최대 1000개
   private readonly profileCache = new Map<string, { data: UserRecord; expiresAt: number }>();
-  private readonly PROFILE_CACHE_TTL = 10 * 60 * 1000; // 10분
+  private readonly PROFILE_CACHE_TTL = 15 * 60 * 1000; // 15분으로 확대해 캐시 적중률 향상
   private readonly MAX_CACHE_SIZE = 1000;
 
   // 프로필 캐시 관리

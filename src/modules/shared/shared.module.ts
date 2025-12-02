@@ -8,6 +8,7 @@ import { SessionService } from '../../services/sessionService';
 import { RateLimitService } from '../../services/rateLimitService';
 import { SmartCacheService } from '../../services/smart-cache.service';
 import { CacheService } from '../../services/cacheService';
+import { BackgroundJobService } from '../../services/background-job.service';
 import { OptimizedOAuthService } from '../oauth/optimized-oauth.service';
 import { OptimizedDeleteService } from '../auth/optimized-delete.service';
 import { SocialAuthService } from '../oauth/social-auth.service';
@@ -28,6 +29,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
     OptimizedDeleteService,
     SessionService,
     RateLimitService,
+    BackgroundJobService,
     AuthGuard,
     RolesGuard,
     RateLimitGuard,
@@ -44,6 +46,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
     OptimizedDeleteService,
     SessionService,
     RateLimitService,
+    BackgroundJobService,
     AuthGuard,
     RolesGuard,
     RateLimitGuard,
