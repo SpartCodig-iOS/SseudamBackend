@@ -15,6 +15,9 @@ export class CacheService {
   private readonly defaultTTL = 300; // 5분
   private readonly redisUrl = env.redisUrl;
   private redisConfigLogged = false;
+  private redisFailureCount = 0;
+  private redisNextRetryAt = 0;
+  private readonly redisCooldownMs = 30_000;
 
   async getRedisClient(): Promise<Redis | null> {
     if (!this.redisUrl) {
@@ -22,6 +25,11 @@ export class CacheService {
         this.logger.log('🪣 Redis URL not configured - using in-memory cache only');
         this.redisConfigLogged = true;
       }
+      return null;
+    }
+
+    const now = Date.now();
+    if (now < this.redisNextRetryAt) {
       return null;
     }
 
@@ -43,19 +51,27 @@ export class CacheService {
       this.redis.on('error', (err: Error) => {
         this.logger.warn(`⚠️ Redis error, falling back to memory cache (${err.message})`);
         this.redis = null;
+        this.redisFailureCount += 1;
+        this.redisNextRetryAt = Date.now() + Math.min(this.redisCooldownMs * this.redisFailureCount, 5 * this.redisCooldownMs);
       });
 
       this.redis.on('close', () => {
         this.logger.warn('🔌 Redis connection closed');
         this.redis = null;
+        this.redisFailureCount += 1;
+        this.redisNextRetryAt = Date.now() + Math.min(this.redisCooldownMs * this.redisFailureCount, 5 * this.redisCooldownMs);
       });
 
       // 연결 테스트
       await this.redis.ping();
+      this.redisFailureCount = 0;
+      this.redisNextRetryAt = 0;
       return this.redis;
     } catch (error) {
       this.logger.warn('📝 Redis unavailable, using memory cache as fallback');
       this.redis = null;
+      this.redisFailureCount += 1;
+      this.redisNextRetryAt = Date.now() + Math.min(this.redisCooldownMs * this.redisFailureCount, 5 * this.redisCooldownMs);
       return null;
     }
   }
