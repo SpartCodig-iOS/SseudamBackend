@@ -143,7 +143,7 @@ export class ProfileService {
     };
   }
 
-  private async resolveAvatarFromStorage(userId: string): Promise<string | null> {
+  async resolveAvatarFromStorage(userId: string): Promise<string | null> {
     try {
       await this.ensureAvatarBucket();
       const { data, error } = await this.storageClient.storage
