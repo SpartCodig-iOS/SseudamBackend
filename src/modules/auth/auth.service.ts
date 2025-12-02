@@ -318,6 +318,16 @@ export class AuthService {
   async createAuthSession(user: UserRecord, loginType: LoginType): Promise<AuthSessionPayload> {
     const startTime = Date.now();
 
+    // 세션 생성 전 프로필 레코드가 확실히 존재하도록 보장 (FK 오류 방지)
+    await this.supabaseService.upsertProfile({
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      username: user.username,
+      loginType,
+      avatarUrl: user.avatar_url,
+    });
+
     // 세션 생성과 토큰 생성을 병렬로 처리 (성능 최적화)
     const [session] = await Promise.all([
       this.sessionService.createSession(user.id, loginType)
