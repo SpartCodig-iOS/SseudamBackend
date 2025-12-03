@@ -356,7 +356,11 @@ export class SupabaseService {
       existingProfileUsername ??
       (await this.ensureUniqueUsername(proposedUsername, user.id, client));
 
-    const resolvedName = this.resolveNameFromUser(user, loginType) ?? existingProfileName ?? null;
+    const resolvedName =
+      this.resolveNameFromUser(user, loginType) ??
+      existingProfileName ??
+      user.email?.split('@')[0] ??
+      user.id;
 
     // 소셜 로그인에서 아바타 URL 추출 (identity 데이터 포함)
     const avatarUrl = this.resolveAvatarFromUser(user);

@@ -389,13 +389,47 @@ export class SocialAuthService {
     const cachedUser = await this.getCachedOAuthUser(accessToken);
     if (cachedUser) {
       this.logger.debug(`OAuth user cache hit for token ${accessToken.substring(0, 10)}...`);
+      const resolvedLoginType = this.resolveLoginType(loginType);
+      let userForSession = cachedUser;
 
-      // 캐시된 사용자로 즉시 세션 생성
-      const authSession = await this.authService.createAuthSession(cachedUser, loginType);
+      // 캐시에 이름/아바타가 없거나 소셜 로그인이라면 Supabase 데이터로 즉시 보강
+      if (!cachedUser.name || !cachedUser.avatar_url || (resolvedLoginType !== 'email' && resolvedLoginType !== 'username')) {
+        try {
+          const supabaseUser = await this.supabaseService.getUserFromToken(accessToken);
+          const detectedLoginType = this.resolveLoginType(resolvedLoginType, supabaseUser);
+          await this.supabaseService.ensureProfileFromSupabaseUser(supabaseUser, detectedLoginType);
+          userForSession = fromSupabaseUser(supabaseUser, {
+            preferDisplayName: detectedLoginType !== 'email' && detectedLoginType !== 'username',
+          });
+          await this.setCachedOAuthUser(accessToken, userForSession);
+          // 소셜 리프레시 토큰 저장/교환도 병렬 처리
+          const [finalAppleRefreshToken, finalGoogleRefreshToken] = await Promise.all([
+            detectedLoginType === 'apple' && !options.appleRefreshToken && options.authorizationCode
+              ? this.exchangeAppleAuthorizationCode(options.authorizationCode)
+              : Promise.resolve(options.appleRefreshToken ?? null),
+            detectedLoginType === 'google' && !options.googleRefreshToken && options.authorizationCode
+              ? this.exchangeGoogleAuthorizationCode(options.authorizationCode, {
+                  codeVerifier: options.codeVerifier,
+                  redirectUri: options.redirectUri,
+                })
+              : Promise.resolve(options.googleRefreshToken ?? null),
+          ]);
+          if (detectedLoginType === 'apple' && finalAppleRefreshToken) {
+            await this.supabaseService.saveAppleRefreshToken(userForSession.id, finalAppleRefreshToken);
+          }
+          if (detectedLoginType === 'google' && finalGoogleRefreshToken) {
+            await this.supabaseService.saveGoogleRefreshToken(userForSession.id, finalGoogleRefreshToken);
+          }
+        } catch (error) {
+          this.logger.warn(`Cache-hit profile refresh skipped: ${error instanceof Error ? error.message : error}`);
+        }
+      }
+
+      const authSession = await this.authService.createAuthSession(userForSession, resolvedLoginType);
 
       // 백그라운드에서 캐시 워밍 (응답에 영향 없음)
       setImmediate(() => {
-        this.authService.warmAuthCaches(cachedUser);
+        this.authService.warmAuthCaches(userForSession);
       });
 
       const duration = Date.now() - startTime;
@@ -489,9 +523,20 @@ export class SocialAuthService {
     );
 
     // 7단계: 모든 백그라운드 작업을 비동기로 처리 (응답 지연 최소화)
-    const backgroundTasks = [];
+    // 리프레시 토큰 저장은 동기적으로 처리해 누락 방지
+    const [finalAppleRefreshToken, finalGoogleRefreshToken] = await Promise.all([
+      appleTokenPromise,
+      googleTokenPromise,
+    ]);
+    if (resolvedLoginType === 'apple' && finalAppleRefreshToken) {
+      await this.supabaseService.saveAppleRefreshToken(userRecord.id, finalAppleRefreshToken);
+    }
+    if (resolvedLoginType === 'google' && finalGoogleRefreshToken) {
+      await this.supabaseService.saveGoogleRefreshToken(userRecord.id, finalGoogleRefreshToken);
+    }
 
-    // 프로필 이미지 미러링
+    // 나머지 부가 작업은 백그라운드로 실행
+    const backgroundTasks = [];
     if (userRecord.avatar_url) {
       backgroundTasks.push(
         this.backgroundJobService.enqueue(`[social-avatar] ${userRecord.id}`, async () => {
@@ -502,31 +547,11 @@ export class SocialAuthService {
         })
       );
     }
-
-    // 토큰 저장
-    backgroundTasks.push(
-      this.backgroundJobService.enqueue(`[oauth-refresh-save] ${userRecord.id}`, async () => {
-        const [finalAppleRefreshToken, finalGoogleRefreshToken] = await Promise.all([
-          appleTokenPromise,
-          googleTokenPromise,
-        ]);
-    if (resolvedLoginType === 'apple' && finalAppleRefreshToken) {
-      await this.supabaseService.saveAppleRefreshToken(userRecord.id, finalAppleRefreshToken);
-    }
-    if (resolvedLoginType === 'google' && finalGoogleRefreshToken) {
-      await this.supabaseService.saveGoogleRefreshToken(userRecord.id, finalGoogleRefreshToken);
-    }
-      })
-    );
-
-    // 로그인 기록
     backgroundTasks.push(
       this.backgroundJobService.enqueue(`[markLastLogin] ${userRecord.id}`, async () => {
         await this.authService.markLastLogin(userRecord.id);
       })
     );
-
-    // 모든 백그라운드 작업을 시작 (await하지 않음)
     Promise.allSettled(backgroundTasks);
 
     const duration = Date.now() - startTime;
