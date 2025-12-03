@@ -154,6 +154,11 @@ export class TravelService {
       prefix: this.TRAVEL_DETAIL_REDIS_PREFIX,
       ttl: Math.floor(this.TRAVEL_DETAIL_CACHE_TTL / 1000),
     }).catch(() => undefined);
+
+    // 멤버십 캐시도 함께 갱신해 상세 조회 시 DB 조회를 줄임
+    travel.members?.forEach(member => {
+      this.setMemberCache(travelId, member.userId, true);
+    });
   }
 
   private invalidateUserTravelCache(userId: string): void {
@@ -419,14 +424,15 @@ export class TravelService {
   }
 
   async getTravelDetail(travelId: string, userId: string): Promise<TravelDetail> {
-    // 멤버십 검증을 먼저 수행하여 캐시된 데이터로 인한 권한 우회 방지
-    const member = await this.isMember(travelId, userId);
-    if (!member) {
-      throw new ForbiddenException('여행에 참여 중인 사용자만 조회할 수 있습니다.');
-    }
-
     const cached = await this.getCachedTravelDetail(travelId);
     if (cached) {
+      const hasMembership = cached.members?.some(m => m.userId === userId) ?? false;
+      if (hasMembership) {
+        this.setMemberCache(travelId, userId, true);
+        const hydrated = this.attachLinks(cached);
+        return this.reorderMembersForUser(hydrated, userId);
+      }
+
       let travelWithMembers = cached;
       // 멤버가 비어 있거나 누락된 경우 최신 멤버를 채워 캐시 갱신
       if (!cached.members || cached.members.length === 0) {
@@ -437,10 +443,21 @@ export class TravelService {
           this.setMemberListCache(travelId, travelWithMembers.members);
         }
       }
+      // 캐시에 있으나 멤버십이 없다고 판단된 경우 DB로 확인 후 진행
+      const memberCheck = await this.isMember(travelId, userId);
+      if (!memberCheck) {
+        throw new ForbiddenException('여행에 참여 중인 사용자만 조회할 수 있습니다.');
+      }
+      this.setMemberCache(travelId, userId, true);
       const hydrated = this.attachLinks(travelWithMembers);
       return this.reorderMembersForUser(hydrated, userId);
     }
 
+    // 캐시에 없으면 DB에서 확인
+    const member = await this.isMember(travelId, userId);
+    if (!member) {
+      throw new ForbiddenException('여행에 참여 중인 사용자만 조회할 수 있습니다.');
+    }
     const travel = this.attachLinks(await this.fetchSummaryForMember(travelId, userId));
     this.setCachedTravelDetail(travelId, travel);
     if (travel.members) {
