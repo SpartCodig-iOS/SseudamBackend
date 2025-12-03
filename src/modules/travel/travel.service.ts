@@ -13,6 +13,7 @@ import { CreateTravelInput } from '../../validators/travelSchemas';
 import { UserRecord } from '../../types/user';
 import { MetaService } from '../meta/meta.service';
 import { CacheService } from '../../services/cacheService';
+import { env } from '../../config/env';
 
 export interface TravelSummary {
   id: string;
@@ -25,17 +26,20 @@ export interface TravelSummary {
   baseExchangeRate: number;
   destinationCurrency: string;
   inviteCode?: string;
+  deepLink?: string;
+  shareUrl?: string;
   status: string;
   createdAt: string;
   ownerName: string | null;
   members?: TravelMember[];
-  deepLink?: string;
 }
 
 export interface TravelDetail extends TravelSummary {}
 
 export interface TravelInvitePayload {
   inviteCode: string;
+  deepLink: string;
+  shareUrl: string;
 }
 
 export interface TravelMember {
@@ -344,6 +348,9 @@ export class TravelService {
 
   private mapSummary(row: any, members?: TravelMember[]): TravelSummary {
     const destinationCurrency = this.resolveDestinationCurrency(row.country_code, row.base_currency);
+    const inviteCode = row.invite_code ?? undefined;
+    const deepLink = inviteCode ? this.generateDeepLink(inviteCode) : undefined;
+    const shareUrl = inviteCode ? this.generateShareLink(inviteCode) : undefined;
     return {
       id: row.id,
       title: row.title,
@@ -354,7 +361,9 @@ export class TravelService {
       baseCurrency: row.base_currency,
       baseExchangeRate: Number(row.base_exchange_rate),
       destinationCurrency,
-      inviteCode: row.invite_code ?? undefined,
+      inviteCode,
+      deepLink,
+      shareUrl,
       status: row.status,
       createdAt: row.created_at,
       ownerName: row.owner_name ?? null,
@@ -371,19 +380,11 @@ export class TravelService {
 
     const cached = await this.getCachedTravelDetail(travelId);
     if (cached) {
-      // 딥링크 추가
-      if (cached.inviteCode) {
-        cached.deepLink = this.generateDeepLink(cached.inviteCode);
-      }
-      return this.reorderMembersForUser(cached, userId);
+      const hydrated = this.attachLinks(cached);
+      return this.reorderMembersForUser(hydrated, userId);
     }
 
-    const travel = await this.fetchSummaryForMember(travelId, userId);
-
-    // 딥링크 추가
-    if (travel.inviteCode) {
-      travel.deepLink = this.generateDeepLink(travel.inviteCode);
-    }
+    const travel = this.attachLinks(await this.fetchSummaryForMember(travelId, userId));
 
     this.setCachedTravelDetail(travelId, travel);
     return this.reorderMembersForUser(travel, userId);
@@ -542,11 +543,6 @@ export class TravelService {
         return this.mapSummary(optimizedResult, optimizedResult.members);
       });
 
-      // 딥링크 추가
-      if (travel.inviteCode) {
-        travel.deepLink = this.generateDeepLink(travel.inviteCode);
-      }
-
       // 캐시 업데이트/무효화 (응답을 기다리지 않음)
       this.invalidateUserTravelCache(currentUser.id);
       this.setCachedTravelDetail(travel.id, travel);
@@ -573,12 +569,9 @@ export class TravelService {
 
     const cachedList = await this.getCachedTravelList(cacheKey);
     if (cachedList) {
-      // 캐시된 데이터에 딥링크 추가
-      const itemsWithDeepLink = cachedList.map(item => ({
-        ...item,
-        deepLink: item.inviteCode ? this.generateDeepLink(item.inviteCode) : undefined
-      }));
-      return { total: cachedList.length, page, limit, items: itemsWithDeepLink };
+      // 캐시된 데이터에 딥링크/공유 링크 보강
+      const itemsWithLinks = cachedList.map(item => this.attachLinks(item));
+      return { total: cachedList.length, page, limit, items: itemsWithLinks };
     }
 
     const totalPromise = pool.query(
@@ -627,12 +620,6 @@ export class TravelService {
     const membersMap = await this.loadMembersForTravels(travelIds, userId);
     const items = listResult.rows.map((row) => this.mapSummary(row, membersMap.get(row.id)));
 
-    // 딥링크 추가
-    const itemsWithDeepLink = items.map(item => ({
-      ...item,
-      deepLink: item.inviteCode ? this.generateDeepLink(item.inviteCode) : undefined
-    }));
-
     // 캐시에 저장 (Redis + 메모리) - 딥링크 없이 저장
     this.setCachedTravelList(cacheKey, items);
 
@@ -640,7 +627,7 @@ export class TravelService {
       total,
       page,
       limit,
-      items: itemsWithDeepLink,
+      items: items.map(item => this.attachLinks(item)),
     };
   }
 
@@ -649,7 +636,14 @@ export class TravelService {
   }
 
   private generateDeepLink(inviteCode: string): string {
-    return `sseudam://join?code=${inviteCode}`;
+    // 카카오톡 공유용으로 웹 URL 형식 사용
+    const base = (env.appBaseUrl || '').replace(/\/$/, '') || 'https://sseudam.up.railway.app';
+    return `${base}/deeplink?inviteCode=${encodeURIComponent(inviteCode)}`;
+  }
+
+  private generateShareLink(inviteCode: string): string {
+    const base = (env.appBaseUrl || '').replace(/\/$/, '') || 'https://sseudam.up.railway.app';
+    return `${base}/deeplink?inviteCode=${encodeURIComponent(inviteCode)}`;
   }
 
   async createInvite(travelId: string, userId: string): Promise<TravelInvitePayload> {
@@ -699,7 +693,20 @@ export class TravelService {
       travel_status: travelStatus,
     });
 
-    return { inviteCode };
+    return {
+      inviteCode,
+      deepLink: this.generateDeepLink(inviteCode),
+      shareUrl: this.generateShareLink(inviteCode),
+    };
+  }
+
+  private attachLinks(travel: TravelSummary): TravelSummary {
+    if (!travel.inviteCode) return travel;
+    return {
+      ...travel,
+      deepLink: travel.deepLink ?? this.generateDeepLink(travel.inviteCode),
+      shareUrl: travel.shareUrl ?? this.generateShareLink(travel.inviteCode),
+    };
   }
 
   async deleteTravel(travelId: string, userId: string): Promise<void> {

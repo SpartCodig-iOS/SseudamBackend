@@ -31,6 +31,12 @@ export class TravelSummaryDto {
   @ApiProperty({ example: 'ab12cd34', nullable: true, required: false })
   inviteCode?: string;
 
+  @ApiProperty({ example: 'https://sseudam.up.railway.app/deeplink?inviteCode=ab12cd34', nullable: true, required: false })
+  deepLink?: string;
+
+  @ApiProperty({ example: 'https://sseudam.up.railway.app/deeplink?inviteCode=ab12cd34', nullable: true, required: false })
+  shareUrl?: string;
+
   @ApiProperty({ example: 'active' })
   status!: string;
 
@@ -42,6 +48,20 @@ export class TravelSummaryDto {
 
   @ApiProperty({ type: () => TravelMemberDto, isArray: true, required: false })
   members?: TravelMemberDto[];
+}
+
+export class TravelListResponseDto {
+  @ApiProperty({ example: 42 })
+  total!: number;
+
+  @ApiProperty({ example: 1 })
+  page!: number;
+
+  @ApiProperty({ example: 20 })
+  limit!: number;
+
+  @ApiProperty({ type: () => TravelSummaryDto, isArray: true })
+  items!: TravelSummaryDto[];
 }
 
 export class TravelMemberDto {
@@ -104,4 +124,10 @@ export class TravelExpenseDto {
 export class TravelInviteResponseDto {
   @ApiProperty({ example: 'a1b2c3d4' })
   inviteCode!: string;
+
+  @ApiProperty({ example: 'https://sseudam.up.railway.app/deeplink?inviteCode=a1b2c3d4' })
+  deepLink!: string;
+
+  @ApiProperty({ example: 'https://sseudam.up.railway.app/deeplink?inviteCode=a1b2c3d4' })
+  shareUrl!: string;
 }
