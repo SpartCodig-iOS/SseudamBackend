@@ -129,7 +129,7 @@ export class SupabaseService {
     try {
       const pool = await getPool();
       const result = await pool.query(
-        `SELECT id::text, email, username, name, login_type, avatar_url, created_at, updated_at
+        `SELECT id::text, email, username, name, login_type, avatar_url, role, created_at, updated_at
          FROM ${env.supabaseProfileTable}
          WHERE id = $1
          LIMIT 1`,
@@ -144,6 +144,7 @@ export class SupabaseService {
           name: (row.name as string | null) ?? null,
           login_type: (row.login_type as string | null) ?? null,
           avatar_url: (row.avatar_url as string | null) ?? null,
+          role: (row.role as string | null) ?? null,
           created_at: row.created_at,
           updated_at: row.updated_at,
         };
@@ -156,7 +157,7 @@ export class SupabaseService {
     const client = this.getClient();
     const { data, error } = await client
       .from(env.supabaseProfileTable)
-      .select('id, email, username, name, login_type, avatar_url, created_at, updated_at')
+      .select('id, email, username, name, login_type, avatar_url, role, created_at, updated_at')
       .eq('id', id)
       .limit(1)
       .maybeSingle();

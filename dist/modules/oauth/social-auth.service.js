@@ -322,6 +322,35 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             this.logger.debug(`ULTRA-FAST OAuth login completed in ${duration}ms (cache hit)`);
             return authSession;
         }
+        // ⚡ OFFLINE DECODE PATH: Supabase 네트워크 스킵, 프로필 DB 기반
+        const decoded = this.decodeAccessToken(accessToken);
+        if (decoded?.sub) {
+            try {
+                const profile = await this.supabaseService.findProfileById(decoded.sub);
+                if (profile && profile.email) {
+                    const userRecord = {
+                        id: profile.id,
+                        email: profile.email,
+                        name: profile.name ?? null,
+                        avatar_url: profile.avatar_url ?? null,
+                        username: profile.username ?? profile.email?.split('@')[0] ?? profile.id,
+                        password_hash: '',
+                        role: profile.role ?? 'user',
+                        created_at: profile.created_at ? new Date(profile.created_at) : null,
+                        updated_at: profile.updated_at ? new Date(profile.updated_at) : null,
+                    };
+                    const authSession = await this.authService.createAuthSession(userRecord, loginType);
+                    void this.setCachedOAuthUser(accessToken, userRecord);
+                    void this.authService.warmAuthCaches(userRecord);
+                    const duration = Date.now() - startTime;
+                    this.logger.debug(`ULTRA-FAST OAuth login via offline profile path in ${duration}ms`);
+                    return authSession;
+                }
+            }
+            catch (error) {
+                this.logger.warn(`Offline OAuth login path failed, falling back to Supabase`, error);
+            }
+        }
         // 2단계: 병렬 처리로 최적화된 캐시 미스 처리
         const [supabaseUser, existingCheck] = await Promise.allSettled([
             this.supabaseService.getUserFromToken(accessToken),

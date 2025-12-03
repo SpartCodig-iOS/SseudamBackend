@@ -25,6 +25,8 @@ let CacheService = CacheService_1 = class CacheService {
         this.redisFailureCount = 0;
         this.redisNextRetryAt = 0;
         this.redisCooldownMs = 30000;
+        this.redisKeepAliveTimer = null;
+        this.redisKeepAliveMs = 240000; // 4분 간격 ping으로 sleep 방지
     }
     async getRedisClient() {
         if (!this.redisUrl) {
@@ -50,18 +52,37 @@ let CacheService = CacheService_1 = class CacheService {
             });
             this.redis.on('connect', () => {
                 this.logger.log('🚀 Redis connected successfully');
+                // Sleep 방지용 keep-alive
+                if (this.redisKeepAliveTimer) {
+                    clearInterval(this.redisKeepAliveTimer);
+                }
+                this.redisKeepAliveTimer = setInterval(() => {
+                    if (!this.redis)
+                        return;
+                    this.redis.ping().catch((err) => {
+                        this.logger.warn(`Redis keep-alive ping failed: ${err.message}`);
+                    });
+                }, this.redisKeepAliveMs);
             });
             this.redis.on('error', (err) => {
                 this.logger.warn(`⚠️ Redis error, falling back to memory cache (${err.message})`);
                 this.redis = null;
                 this.redisFailureCount += 1;
                 this.redisNextRetryAt = Date.now() + Math.min(this.redisCooldownMs * this.redisFailureCount, 5 * this.redisCooldownMs);
+                if (this.redisKeepAliveTimer) {
+                    clearInterval(this.redisKeepAliveTimer);
+                    this.redisKeepAliveTimer = null;
+                }
             });
             this.redis.on('close', () => {
                 this.logger.warn('🔌 Redis connection closed');
                 this.redis = null;
                 this.redisFailureCount += 1;
                 this.redisNextRetryAt = Date.now() + Math.min(this.redisCooldownMs * this.redisFailureCount, 5 * this.redisCooldownMs);
+                if (this.redisKeepAliveTimer) {
+                    clearInterval(this.redisKeepAliveTimer);
+                    this.redisKeepAliveTimer = null;
+                }
             });
             // 연결 테스트
             await this.redis.ping();
