@@ -133,6 +133,15 @@ let TravelService = TravelService_1 = class TravelService {
             return null;
         }
     }
+    // 요청자 기준으로 멤버 배열을 재정렬 (요청자 우선)
+    reorderMembersForUser(travel, userId) {
+        if (!travel.members || travel.members.length === 0) {
+            return travel;
+        }
+        const mine = travel.members.filter(m => m.userId === userId);
+        const others = travel.members.filter(m => m.userId !== userId);
+        return { ...travel, members: [...mine, ...others] };
+    }
     async setCachedInvite(inviteCode, payload) {
         this.cacheService.set(inviteCode, payload, { prefix: this.INVITE_REDIS_PREFIX, ttl: this.INVITE_TTL_SECONDS }).catch(() => undefined);
     }
@@ -228,11 +237,11 @@ let TravelService = TravelService_1 = class TravelService {
         }
         const cached = await this.getCachedTravelDetail(travelId);
         if (cached) {
-            return cached;
+            return this.reorderMembersForUser(cached, userId);
         }
         const travel = await this.fetchSummaryForMember(travelId, userId);
         this.setCachedTravelDetail(travelId, travel);
-        return travel;
+        return this.reorderMembersForUser(travel, userId);
     }
     async ensureCountryCurrencyMap() {
         if (this.countryCurrencyLoaded)

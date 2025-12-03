@@ -175,6 +175,16 @@ export class TravelService {
     }
   }
 
+  // 요청자 기준으로 멤버 배열을 재정렬 (요청자 우선)
+  private reorderMembersForUser<T extends { members?: TravelMember[] }>(travel: T, userId: string): T {
+    if (!travel.members || travel.members.length === 0) {
+      return travel;
+    }
+    const mine = travel.members.filter(m => m.userId === userId);
+    const others = travel.members.filter(m => m.userId !== userId);
+    return { ...travel, members: [...mine, ...others] };
+  }
+
   private async setCachedInvite(inviteCode: string, payload: any): Promise<void> {
     this.cacheService.set(inviteCode, payload, { prefix: this.INVITE_REDIS_PREFIX, ttl: this.INVITE_TTL_SECONDS }).catch(() => undefined);
   }
@@ -287,12 +297,12 @@ export class TravelService {
 
     const cached = await this.getCachedTravelDetail(travelId);
     if (cached) {
-      return cached;
+      return this.reorderMembersForUser(cached, userId);
     }
 
     const travel = await this.fetchSummaryForMember(travelId, userId);
     this.setCachedTravelDetail(travelId, travel);
-    return travel;
+    return this.reorderMembersForUser(travel, userId);
   }
 
   private async ensureCountryCurrencyMap(): Promise<void> {
