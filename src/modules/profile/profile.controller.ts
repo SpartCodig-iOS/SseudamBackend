@@ -23,6 +23,12 @@ import { updateProfileSchema } from '../../validators/profileSchemas';
 import { ProfileService } from './profile.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 
+const formatDate = (value: Date | string | null | undefined): string | null => {
+  if (!value) return null;
+  const date = typeof value === 'string' ? new Date(value) : value;
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+
 @ApiTags('Profile')
 @Controller('api/v1/profile')
 export class ProfileController {
@@ -41,19 +47,22 @@ export class ProfileController {
     }
 
     // 🚀 HYBRID-FAST: JWT 기본 정보 + 실시간 avatar URL 조회
-    const [avatarURL] = await Promise.all([
+    const [profile, avatarURL] = await Promise.all([
+      this.profileService.getProfileQuick(req.currentUser.id, req.currentUser),
       this.profileService.getAvatarUrlOnly(req.currentUser.id)
     ]);
 
+    const resolvedAvatar = avatarURL ?? profile.avatar_url ?? req.currentUser.avatar_url;
+
     return success({
-      id: req.currentUser.id,
-      userId: req.currentUser.username || req.currentUser.email?.split('@')[0] || 'user',
-      email: req.currentUser.email || '',
-      name: req.currentUser.name,
-      avatarURL: avatarURL || req.currentUser.avatar_url, // 실시간 또는 JWT fallback
-      role: req.currentUser.role || 'user',
-      createdAt: req.currentUser.created_at,
-      updatedAt: req.currentUser.updated_at,
+      id: profile.id,
+      userId: profile.username || profile.email?.split('@')[0] || req.currentUser.username || 'user',
+      email: profile.email || '',
+      name: profile.name,
+      avatarURL: resolvedAvatar || null, // 실시간 또는 JWT fallback
+      role: profile.role || req.currentUser.role || 'user',
+      createdAt: formatDate(profile.created_at),
+      updatedAt: formatDate(profile.updated_at),
       loginType: req.loginType ?? 'email'
     });
   }

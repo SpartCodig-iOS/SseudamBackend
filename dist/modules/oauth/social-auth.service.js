@@ -44,9 +44,14 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         this.OAUTH_USER_INDEX_TTL_SECONDS = 60 * 30; // 30분
         this.OAUTH_USER_INDEX_LIMIT = 12;
         this.oauthCheckCache = new Map();
+        this.lookupPromiseCache = new Map();
+        this.profileExistenceCache = new Map();
         this.OAUTH_CHECK_CACHE_TTL = 5 * 60 * 1000; // 5분
+        this.LOOKUP_INFLIGHT_TTL = 5 * 1000; // 동일 토큰 연속 호출 병합용 (5초)
+        this.PROFILE_EXISTS_TTL = 60 * 1000; // 프로필 존재 여부 캐시
         this.localTokenCache = new Map();
         this.LOCAL_TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5분
+        this.dbWarmupPromise = null;
         // 네트워크 타임아웃 설정 (빠른 실패)
         this.NETWORK_TIMEOUT = 8000; // 8초
     }
@@ -80,9 +85,36 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         });
     }
     async profileExists(userId) {
-        const pool = await (0, pool_1.getPool)();
-        const result = await pool.query(`SELECT 1 FROM profiles WHERE id = $1 LIMIT 1`, [userId]);
-        return Boolean(result.rows[0]);
+        const cached = this.profileExistenceCache.get(userId);
+        if (cached && cached.expiresAt > Date.now()) {
+            return cached.exists;
+        }
+        try {
+            const pool = await (0, pool_1.getPool)();
+            const result = await pool.query(`SELECT 1 FROM profiles WHERE id = $1 LIMIT 1`, [userId]);
+            const exists = Boolean(result.rows[0]);
+            this.profileExistenceCache.set(userId, {
+                exists,
+                expiresAt: Date.now() + this.PROFILE_EXISTS_TTL,
+            });
+            return exists;
+        }
+        catch (error) {
+            this.logger.warn(`Fast profile existence check failed for user ${userId}, falling back to Supabase`, error);
+            try {
+                const profile = await this.supabaseService.findProfileById(userId);
+                const exists = Boolean(profile);
+                this.profileExistenceCache.set(userId, {
+                    exists,
+                    expiresAt: Date.now() + Math.floor(this.PROFILE_EXISTS_TTL / 2),
+                });
+                return exists;
+            }
+            catch (fallbackError) {
+                this.logger.warn(`Profile existence fallback failed for user ${userId}`, fallbackError);
+                return false;
+            }
+        }
     }
     // Redis 기반 OAuth 사용자 캐시 (fallback으로 내부 CacheService 메모리 캐시 사용)
     async getCachedOAuthUser(accessToken) {
@@ -142,6 +174,45 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             registered,
             expiresAt: Date.now() + this.OAUTH_CHECK_CACHE_TTL,
         });
+    }
+    getInFlightLookup(accessToken) {
+        const inFlight = this.lookupPromiseCache.get(accessToken);
+        if (!inFlight || inFlight.expiresAt < Date.now()) {
+            return null;
+        }
+        return inFlight.promise;
+    }
+    setInFlightLookup(accessToken, promise) {
+        this.lookupPromiseCache.set(accessToken, {
+            promise,
+            expiresAt: Date.now() + this.LOOKUP_INFLIGHT_TTL,
+        });
+    }
+    clearInFlightLookup(accessToken) {
+        this.lookupPromiseCache.delete(accessToken);
+    }
+    primeLookupCaches(accessToken, cacheKey, result) {
+        this.setCachedCheck(accessToken, result.registered);
+        // Redis/메모리 캐시는 비동기로 워밍, 실패는 무시
+        this.cacheService.set(cacheKey, result, { ttl: 300 }).catch(() => undefined);
+    }
+    async warmupDbConnection() {
+        if (this.dbWarmupPromise) {
+            return this.dbWarmupPromise;
+        }
+        this.dbWarmupPromise = (async () => {
+            try {
+                const pool = await (0, pool_1.getPool)();
+                await pool.query('SELECT 1');
+            }
+            catch (error) {
+                this.logger.warn('DB warmup skipped due to error', error);
+            }
+            finally {
+                this.dbWarmupPromise = null;
+            }
+        })();
+        return this.dbWarmupPromise;
     }
     buildAppleClientSecret() {
         // 캐시된 토큰이 있고 아직 유효하면 재사용
@@ -298,18 +369,38 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         const cachedCheck = this.getCachedCheck(accessToken);
         if (cachedCheck) {
             const duration = Date.now() - startTime;
-            this.logger.debug(`ULTRA-FAST OAuth check cache hit: ${duration}ms`);
+            this.logger.debug(`⚡ ULTRA-FAST OAuth check cache hit: ${duration}ms`);
             return cachedCheck;
         }
-        // 🚀 FAST: Redis 캐시와 사용자 토큰을 병렬로 확인
-        const cacheKey = `oauth_check:${this.getTokenCacheKey(accessToken)}`;
+        // 🔁 동일 토큰 중복 호출은 진행 중인 Promise 재사용
+        const inFlight = this.getInFlightLookup(accessToken);
+        if (inFlight) {
+            const duration = Date.now() - startTime;
+            this.logger.debug(`⚡ SHARED OAuth lookup (in-flight reuse): ${duration}ms`);
+            return inFlight;
+        }
+        const lookupPromise = this.performOAuthLookup(accessToken, loginType, startTime);
+        this.setInFlightLookup(accessToken, lookupPromise);
+        try {
+            return await lookupPromise;
+        }
+        finally {
+            this.clearInFlightLookup(accessToken);
+        }
+    }
+    async performOAuthLookup(accessToken, _loginType, startTime) {
+        // 🔥 CACHE WARMING: 토큰 해시 기반 빠른 캐시 키 생성
+        const tokenHash = this.getTokenCacheKey(accessToken);
+        const cacheKey = `oauth_check:${tokenHash}`;
+        // 🚀 TURBO-FAST: Redis 캐시, 사용자 캐시, DB 커넥션 워밍을 병렬 실행
         const [redisCached, cachedUser] = await Promise.allSettled([
             this.cacheService.get(cacheKey),
-            this.getCachedOAuthUser(accessToken)
+            this.getCachedOAuthUser(accessToken),
+            this.warmupDbConnection(), // DB 커넥션 미리 준비
         ]);
         // Redis 캐시 적중
         if (redisCached.status === 'fulfilled' && redisCached.value) {
-            this.setCachedCheck(accessToken, redisCached.value.registered);
+            this.primeLookupCaches(accessToken, cacheKey, redisCached.value);
             const duration = Date.now() - startTime;
             this.logger.debug(`FAST OAuth check Redis hit: ${duration}ms`);
             return redisCached.value;
@@ -317,19 +408,10 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         // 캐시된 사용자 적중 - 빠른 profile 테이블 조회
         if (cachedUser.status === 'fulfilled' && cachedUser.value) {
             try {
-                // 🚀 빠른 profile 조회 (인덱스 최적화된 단순 쿼리)
-                const profile = await this.supabaseService.findProfileById(cachedUser.value.id);
-                const result = { registered: Boolean(profile) };
-                // 백그라운드에서 캐시 업데이트
-                setImmediate(async () => {
-                    try {
-                        this.setCachedCheck(accessToken, result.registered);
-                        await this.cacheService.set(cacheKey, result, { ttl: 300 });
-                    }
-                    catch (error) {
-                        // 백그라운드 캐시 실패는 무시
-                    }
-                });
+                const registered = await this.profileExists(cachedUser.value.id);
+                const result = { registered };
+                // 캐시는 즉시 반영 (두 번째 호출에서 바로 사용 가능)
+                this.primeLookupCaches(accessToken, cacheKey, result);
                 const duration = Date.now() - startTime;
                 this.logger.debug(`FAST OAuth check with cached user + profile: ${duration}ms`);
                 return result;
@@ -346,30 +428,23 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                 throw new common_1.UnauthorizedException('Invalid Supabase access token');
             }
             // 🚀 실제 profile 테이블 확인 (정확한 등록 여부)
-            const profile = await this.supabaseService.findProfileById(supabaseUser.id);
-            const result = { registered: Boolean(profile) };
+            const registered = await this.profileExists(supabaseUser.id);
+            const result = { registered };
+            // 캐시를 즉시 워밍 (메모리 + Redis)
+            this.primeLookupCaches(accessToken, cacheKey, result);
             // 백그라운드에서 사용자 정보 캐싱 (다음 요청 최적화)
-            setImmediate(async () => {
-                try {
-                    // 사용자 정보 캐싱
-                    await this.setCachedOAuthUser(accessToken, {
-                        id: supabaseUser.id,
-                        email: supabaseUser.email || '',
-                        name: supabaseUser.user_metadata?.full_name || supabaseUser.user_metadata?.name || null,
-                        avatar_url: supabaseUser.user_metadata?.avatar_url || null,
-                        username: supabaseUser.email || supabaseUser.id,
-                        password_hash: '',
-                        role: 'user',
-                        created_at: new Date(),
-                        updated_at: new Date(),
-                    });
-                    // 결과 캐싱
-                    this.setCachedCheck(accessToken, result.registered);
-                    await this.cacheService.set(cacheKey, result, { ttl: 300 });
-                }
-                catch (error) {
-                    this.logger.warn(`Background OAuth caching failed:`, error);
-                }
+            void this.setCachedOAuthUser(accessToken, {
+                id: supabaseUser.id,
+                email: supabaseUser.email || '',
+                name: supabaseUser.user_metadata?.full_name || supabaseUser.user_metadata?.name || null,
+                avatar_url: supabaseUser.user_metadata?.avatar_url || null,
+                username: supabaseUser.email || supabaseUser.id,
+                password_hash: '',
+                role: 'user',
+                created_at: new Date(),
+                updated_at: new Date(),
+            }).catch((error) => {
+                this.logger.warn(`Background OAuth caching failed:`, error);
             });
             const duration = Date.now() - startTime;
             this.logger.debug(`OAuth check completed: ${duration}ms (registered: ${result.registered})`);

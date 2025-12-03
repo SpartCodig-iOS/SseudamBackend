@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 import { LoginType } from '../types/auth';
 import { env } from '../config/env';
+import { getPool } from '../db/pool';
 
 @Injectable()
 export class SupabaseService {
@@ -124,10 +125,38 @@ export class SupabaseService {
   }
 
   async findProfileById(id: string) {
+    // 우선 DB 커넥션 풀을 통한 초고속 조회 (PK 인덱스 활용)
+    try {
+      const pool = await getPool();
+      const result = await pool.query(
+        `SELECT id::text, email, username, name, login_type, avatar_url, created_at, updated_at
+         FROM ${env.supabaseProfileTable}
+         WHERE id = $1
+         LIMIT 1`,
+        [id],
+      );
+      const row = result.rows[0];
+      if (row) {
+        return {
+          id: row.id as string,
+          email: row.email as string,
+          username: row.username as string,
+          name: (row.name as string | null) ?? null,
+          login_type: (row.login_type as string | null) ?? null,
+          avatar_url: (row.avatar_url as string | null) ?? null,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+        };
+      }
+    } catch (error) {
+      this.logger.warn('[findProfileById] DB pool lookup failed, falling back to Supabase', error as Error);
+    }
+
+    // 실패 시 Supabase REST 조회로 폴백
     const client = this.getClient();
     const { data, error } = await client
       .from(env.supabaseProfileTable)
-      .select('id, email, username, name, login_type, avatar_url')
+      .select('id, email, username, name, login_type, avatar_url, created_at, updated_at')
       .eq('id', id)
       .limit(1)
       .maybeSingle();

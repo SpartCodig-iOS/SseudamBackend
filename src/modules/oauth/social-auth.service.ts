@@ -39,9 +39,14 @@ export class SocialAuthService {
   private readonly OAUTH_USER_INDEX_TTL_SECONDS = 60 * 30; // 30분
   private readonly OAUTH_USER_INDEX_LIMIT = 12;
   private readonly oauthCheckCache = new Map<string, { registered: boolean; expiresAt: number }>();
+  private readonly lookupPromiseCache = new Map<string, { promise: Promise<SocialLookupResult>; expiresAt: number }>();
+  private readonly profileExistenceCache = new Map<string, { exists: boolean; expiresAt: number }>();
   private readonly OAUTH_CHECK_CACHE_TTL = 5 * 60 * 1000; // 5분
+  private readonly LOOKUP_INFLIGHT_TTL = 5 * 1000; // 동일 토큰 연속 호출 병합용 (5초)
+  private readonly PROFILE_EXISTS_TTL = 60 * 1000; // 프로필 존재 여부 캐시
   private readonly localTokenCache = new Map<string, { user: UserRecord; expiresAt: number }>();
   private readonly LOCAL_TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5분
+  private dbWarmupPromise: Promise<void> | null = null;
 
   // 네트워크 타임아웃 설정 (빠른 실패)
   private readonly NETWORK_TIMEOUT = 8000; // 8초
@@ -88,12 +93,38 @@ export class SocialAuthService {
   }
 
   private async profileExists(userId: string): Promise<boolean> {
-    const pool = await getPool();
-    const result = await pool.query(
-      `SELECT 1 FROM profiles WHERE id = $1 LIMIT 1`,
-      [userId],
-    );
-    return Boolean(result.rows[0]);
+    const cached = this.profileExistenceCache.get(userId);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.exists;
+    }
+
+    try {
+      const pool = await getPool();
+      const result = await pool.query(
+        `SELECT 1 FROM profiles WHERE id = $1 LIMIT 1`,
+        [userId],
+      );
+      const exists = Boolean(result.rows[0]);
+      this.profileExistenceCache.set(userId, {
+        exists,
+        expiresAt: Date.now() + this.PROFILE_EXISTS_TTL,
+      });
+      return exists;
+    } catch (error) {
+      this.logger.warn(`Fast profile existence check failed for user ${userId}, falling back to Supabase`, error as Error);
+      try {
+        const profile = await this.supabaseService.findProfileById(userId);
+        const exists = Boolean(profile);
+        this.profileExistenceCache.set(userId, {
+          exists,
+          expiresAt: Date.now() + Math.floor(this.PROFILE_EXISTS_TTL / 2),
+        });
+        return exists;
+      } catch (fallbackError) {
+        this.logger.warn(`Profile existence fallback failed for user ${userId}`, fallbackError as Error);
+        return false;
+      }
+    }
   }
 
   // Redis 기반 OAuth 사용자 캐시 (fallback으로 내부 CacheService 메모리 캐시 사용)
@@ -173,6 +204,50 @@ export class SocialAuthService {
       registered,
       expiresAt: Date.now() + this.OAUTH_CHECK_CACHE_TTL,
     });
+  }
+
+  private getInFlightLookup(accessToken: string): Promise<SocialLookupResult> | null {
+    const inFlight = this.lookupPromiseCache.get(accessToken);
+    if (!inFlight || inFlight.expiresAt < Date.now()) {
+      return null;
+    }
+    return inFlight.promise;
+  }
+
+  private setInFlightLookup(accessToken: string, promise: Promise<SocialLookupResult>): void {
+    this.lookupPromiseCache.set(accessToken, {
+      promise,
+      expiresAt: Date.now() + this.LOOKUP_INFLIGHT_TTL,
+    });
+  }
+
+  private clearInFlightLookup(accessToken: string): void {
+    this.lookupPromiseCache.delete(accessToken);
+  }
+
+  private primeLookupCaches(accessToken: string, cacheKey: string, result: SocialLookupResult): void {
+    this.setCachedCheck(accessToken, result.registered);
+    // Redis/메모리 캐시는 비동기로 워밍, 실패는 무시
+    this.cacheService.set(cacheKey, result, { ttl: 300 }).catch(() => undefined);
+  }
+
+  private async warmupDbConnection(): Promise<void> {
+    if (this.dbWarmupPromise) {
+      return this.dbWarmupPromise;
+    }
+
+    this.dbWarmupPromise = (async () => {
+      try {
+        const pool = await getPool();
+        await pool.query('SELECT 1');
+      } catch (error) {
+        this.logger.warn('DB warmup skipped due to error', error as Error);
+      } finally {
+        this.dbWarmupPromise = null;
+      }
+    })();
+
+    return this.dbWarmupPromise;
   }
 
   private buildAppleClientSecret() {
@@ -383,20 +458,47 @@ export class SocialAuthService {
     const cachedCheck = this.getCachedCheck(accessToken);
     if (cachedCheck) {
       const duration = Date.now() - startTime;
-      this.logger.debug(`ULTRA-FAST OAuth check cache hit: ${duration}ms`);
+      this.logger.debug(`⚡ ULTRA-FAST OAuth check cache hit: ${duration}ms`);
       return cachedCheck;
     }
 
-    // 🚀 FAST: Redis 캐시와 사용자 토큰을 병렬로 확인
-    const cacheKey = `oauth_check:${this.getTokenCacheKey(accessToken)}`;
+    // 🔁 동일 토큰 중복 호출은 진행 중인 Promise 재사용
+    const inFlight = this.getInFlightLookup(accessToken);
+    if (inFlight) {
+      const duration = Date.now() - startTime;
+      this.logger.debug(`⚡ SHARED OAuth lookup (in-flight reuse): ${duration}ms`);
+      return inFlight;
+    }
+
+    const lookupPromise = this.performOAuthLookup(accessToken, loginType, startTime);
+    this.setInFlightLookup(accessToken, lookupPromise);
+
+    try {
+      return await lookupPromise;
+    } finally {
+      this.clearInFlightLookup(accessToken);
+    }
+  }
+
+  private async performOAuthLookup(
+    accessToken: string,
+    _loginType: LoginType,
+    startTime: number,
+  ): Promise<SocialLookupResult> {
+    // 🔥 CACHE WARMING: 토큰 해시 기반 빠른 캐시 키 생성
+    const tokenHash = this.getTokenCacheKey(accessToken);
+    const cacheKey = `oauth_check:${tokenHash}`;
+
+    // 🚀 TURBO-FAST: Redis 캐시, 사용자 캐시, DB 커넥션 워밍을 병렬 실행
     const [redisCached, cachedUser] = await Promise.allSettled([
       this.cacheService.get<SocialLookupResult>(cacheKey),
-      this.getCachedOAuthUser(accessToken)
+      this.getCachedOAuthUser(accessToken),
+      this.warmupDbConnection(), // DB 커넥션 미리 준비
     ]);
 
     // Redis 캐시 적중
     if (redisCached.status === 'fulfilled' && redisCached.value) {
-      this.setCachedCheck(accessToken, redisCached.value.registered);
+      this.primeLookupCaches(accessToken, cacheKey, redisCached.value);
       const duration = Date.now() - startTime;
       this.logger.debug(`FAST OAuth check Redis hit: ${duration}ms`);
       return redisCached.value;
@@ -405,19 +507,11 @@ export class SocialAuthService {
     // 캐시된 사용자 적중 - 빠른 profile 테이블 조회
     if (cachedUser.status === 'fulfilled' && cachedUser.value) {
       try {
-        // 🚀 빠른 profile 조회 (인덱스 최적화된 단순 쿼리)
-        const profile = await this.supabaseService.findProfileById(cachedUser.value.id);
-        const result = { registered: Boolean(profile) };
+        const registered = await this.profileExists(cachedUser.value.id);
+        const result = { registered };
 
-        // 백그라운드에서 캐시 업데이트
-        setImmediate(async () => {
-          try {
-            this.setCachedCheck(accessToken, result.registered);
-            await this.cacheService.set(cacheKey, result, { ttl: 300 });
-          } catch (error) {
-            // 백그라운드 캐시 실패는 무시
-          }
-        });
+        // 캐시는 즉시 반영 (두 번째 호출에서 바로 사용 가능)
+        this.primeLookupCaches(accessToken, cacheKey, result);
 
         const duration = Date.now() - startTime;
         this.logger.debug(`FAST OAuth check with cached user + profile: ${duration}ms`);
@@ -436,31 +530,25 @@ export class SocialAuthService {
       }
 
       // 🚀 실제 profile 테이블 확인 (정확한 등록 여부)
-      const profile = await this.supabaseService.findProfileById(supabaseUser.id);
-      const result = { registered: Boolean(profile) };
+      const registered = await this.profileExists(supabaseUser.id);
+      const result = { registered };
+
+      // 캐시를 즉시 워밍 (메모리 + Redis)
+      this.primeLookupCaches(accessToken, cacheKey, result);
 
       // 백그라운드에서 사용자 정보 캐싱 (다음 요청 최적화)
-      setImmediate(async () => {
-        try {
-          // 사용자 정보 캐싱
-          await this.setCachedOAuthUser(accessToken, {
-            id: supabaseUser.id,
-            email: supabaseUser.email || '',
-            name: supabaseUser.user_metadata?.full_name || supabaseUser.user_metadata?.name || null,
-            avatar_url: supabaseUser.user_metadata?.avatar_url || null,
-            username: supabaseUser.email || supabaseUser.id,
-            password_hash: '',
-            role: 'user',
-            created_at: new Date(),
-            updated_at: new Date(),
-          });
-
-          // 결과 캐싱
-          this.setCachedCheck(accessToken, result.registered);
-          await this.cacheService.set(cacheKey, result, { ttl: 300 });
-        } catch (error) {
-          this.logger.warn(`Background OAuth caching failed:`, error);
-        }
+      void this.setCachedOAuthUser(accessToken, {
+        id: supabaseUser.id,
+        email: supabaseUser.email || '',
+        name: supabaseUser.user_metadata?.full_name || supabaseUser.user_metadata?.name || null,
+        avatar_url: supabaseUser.user_metadata?.avatar_url || null,
+        username: supabaseUser.email || supabaseUser.id,
+        password_hash: '',
+        role: 'user',
+        created_at: new Date(),
+        updated_at: new Date(),
+      }).catch((error) => {
+        this.logger.warn(`Background OAuth caching failed:`, error);
       });
 
       const duration = Date.now() - startTime;

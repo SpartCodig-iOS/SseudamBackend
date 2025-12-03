@@ -15,6 +15,7 @@ const common_1 = require("@nestjs/common");
 const crypto_1 = require("crypto");
 const supabase_js_1 = require("@supabase/supabase-js");
 const env_1 = require("../config/env");
+const pool_1 = require("../db/pool");
 let SupabaseService = SupabaseService_1 = class SupabaseService {
     constructor() {
         this.client = null;
@@ -114,10 +115,35 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
         return data.user;
     }
     async findProfileById(id) {
+        // 우선 DB 커넥션 풀을 통한 초고속 조회 (PK 인덱스 활용)
+        try {
+            const pool = await (0, pool_1.getPool)();
+            const result = await pool.query(`SELECT id::text, email, username, name, login_type, avatar_url, created_at, updated_at
+         FROM ${env_1.env.supabaseProfileTable}
+         WHERE id = $1
+         LIMIT 1`, [id]);
+            const row = result.rows[0];
+            if (row) {
+                return {
+                    id: row.id,
+                    email: row.email,
+                    username: row.username,
+                    name: row.name ?? null,
+                    login_type: row.login_type ?? null,
+                    avatar_url: row.avatar_url ?? null,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                };
+            }
+        }
+        catch (error) {
+            this.logger.warn('[findProfileById] DB pool lookup failed, falling back to Supabase', error);
+        }
+        // 실패 시 Supabase REST 조회로 폴백
         const client = this.getClient();
         const { data, error } = await client
             .from(env_1.env.supabaseProfileTable)
-            .select('id, email, username, name, login_type, avatar_url')
+            .select('id, email, username, name, login_type, avatar_url, created_at, updated_at')
             .eq('id', id)
             .limit(1)
             .maybeSingle();
