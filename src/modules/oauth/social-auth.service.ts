@@ -441,24 +441,67 @@ export class SocialAuthService {
     const decoded = this.decodeAccessToken(accessToken);
     if (decoded?.sub) {
       try {
-        const profile = await this.supabaseService.findProfileById(decoded.sub);
-        const emailFromProfile = profile?.email as string | undefined;
-        const emailFromToken = decoded.email;
-        const email = emailFromProfile ?? emailFromToken ?? '';
-        if (email) {
-          const userRecord: UserRecord = {
-            id: profile?.id ?? decoded.sub,
-            email,
-            name: (profile?.name as string | null) ?? decoded.name ?? null,
-            avatar_url: (profile?.avatar_url as string | null) ?? null,
-            username: profile?.username ?? email.split('@')[0] ?? decoded.sub,
-            password_hash: '',
-            role: (profile?.role as UserRecord['role']) ?? 'user',
-            created_at: profile?.created_at ? new Date(profile.created_at) : null,
-            updated_at: profile?.updated_at ? new Date(profile.updated_at) : null,
-          };
+        let profile = await this.supabaseService.findProfileById(decoded.sub);
+        let detectedLoginType = this.resolveLoginType(loginType);
+        let supabaseUser: any | null = null;
 
-          const authSession = await this.authService.createAuthSession(userRecord, loginType);
+        // 프로필이 없거나 로그인 타입이 소셜로 확정되지 않았다면 Supabase Admin으로 보강
+        if (!profile || detectedLoginType === 'email' || detectedLoginType === 'username') {
+          try {
+            supabaseUser = await this.supabaseService.getUserById(decoded.sub);
+            detectedLoginType = this.resolveLoginType(detectedLoginType, supabaseUser);
+          } catch (adminError) {
+            this.logger.warn(`Offline path admin fetch failed for ${decoded.sub}:`, adminError as Error);
+          }
+        }
+
+        // 소셜 로그인의 경우 프로필을 강제 생성/업데이트
+        if (supabaseUser && (!profile || detectedLoginType !== 'email')) {
+          await this.supabaseService.ensureProfileFromSupabaseUser(supabaseUser, detectedLoginType);
+          profile = await this.supabaseService.findProfileById(decoded.sub);
+        }
+
+        const email =
+          profile?.email ??
+          (supabaseUser?.email as string | undefined) ??
+          decoded.email ??
+          '';
+
+        if (email) {
+          const preferDisplayName = detectedLoginType !== 'email' && detectedLoginType !== 'username';
+          const userRecord: UserRecord = supabaseUser
+            ? fromSupabaseUser(supabaseUser, { preferDisplayName })
+            : {
+                id: profile?.id ?? decoded.sub,
+                email,
+                name: (profile?.name as string | null) ?? decoded.name ?? null,
+                avatar_url: (profile?.avatar_url as string | null) ?? null,
+                username: profile?.username ?? email.split('@')[0] ?? decoded.sub,
+                password_hash: '',
+                role: (profile?.role as UserRecord['role']) ?? 'user',
+                created_at: profile?.created_at ? new Date(profile.created_at) : null,
+                updated_at: profile?.updated_at ? new Date(profile.updated_at) : null,
+              };
+
+          // 토큰 저장 (supabase user metadata에 담긴 값도 활용)
+          const appleTokenFromUser =
+            (supabaseUser?.user_metadata as any)?.apple_refresh_token ?? null;
+          const googleTokenFromUser =
+            (supabaseUser?.user_metadata as any)?.google_refresh_token ?? null;
+
+          if (detectedLoginType === 'apple') {
+            const finalAppleToken = options.appleRefreshToken ?? appleTokenFromUser;
+            if (finalAppleToken) {
+              await this.supabaseService.saveAppleRefreshToken(userRecord.id, finalAppleToken);
+            }
+          } else if (detectedLoginType === 'google') {
+            const finalGoogleToken = options.googleRefreshToken ?? googleTokenFromUser;
+            if (finalGoogleToken) {
+              await this.supabaseService.saveGoogleRefreshToken(userRecord.id, finalGoogleToken);
+            }
+          }
+
+          const authSession = await this.authService.createAuthSession(userRecord, detectedLoginType);
           void this.setCachedOAuthUser(accessToken, userRecord);
           void this.authService.warmAuthCaches(userRecord);
           void this.verifySupabaseUser(accessToken, decoded.sub).catch(() => undefined);
