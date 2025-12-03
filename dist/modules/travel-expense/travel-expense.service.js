@@ -22,8 +22,31 @@ let TravelExpenseService = class TravelExpenseService {
         this.EXPENSE_DETAIL_PREFIX = 'expense:detail';
         this.EXPENSE_LIST_TTL_SECONDS = 120; // 2분
         this.EXPENSE_DETAIL_TTL_SECONDS = 120; // 2분
+        this.CONTEXT_PREFIX = 'expense:context';
+        this.CONTEXT_TTL_SECONDS = 120; // 2분
+        this.contextCache = new Map();
     }
     async getTravelContext(travelId, userId) {
+        const cached = this.contextCache.get(travelId);
+        if (cached && cached.expiresAt > Date.now()) {
+            if (!cached.data.memberIds.includes(userId)) {
+                throw new common_1.BadRequestException('해당 여행에 접근 권한이 없습니다.');
+            }
+            return cached.data;
+        }
+        try {
+            const redisCached = await this.cacheService.get(travelId, { prefix: this.CONTEXT_PREFIX });
+            if (redisCached) {
+                this.contextCache.set(travelId, { data: redisCached, expiresAt: Date.now() + this.CONTEXT_TTL_SECONDS * 1000 });
+                if (!redisCached.memberIds.includes(userId)) {
+                    throw new common_1.BadRequestException('해당 여행에 접근 권한이 없습니다.');
+                }
+                return redisCached;
+            }
+        }
+        catch {
+            // ignore and fallback to DB
+        }
         const pool = await (0, pool_1.getPool)();
         const result = await pool.query(`SELECT
          t.id::text,
@@ -52,12 +75,15 @@ let TravelExpenseService = class TravelExpenseService {
         rawMembers.forEach((member) => {
             memberNameMap.set(member.id, member.name ?? null);
         });
-        return {
+        const context = {
             id: row.id,
             baseCurrency: row.base_currency,
             memberIds,
             memberNameMap,
         };
+        this.contextCache.set(travelId, { data: context, expiresAt: Date.now() + this.CONTEXT_TTL_SECONDS * 1000 });
+        this.cacheService.set(travelId, context, { prefix: this.CONTEXT_PREFIX, ttl: this.CONTEXT_TTL_SECONDS }).catch(() => undefined);
+        return context;
     }
     async convertAmount(amount, currency, targetCurrency) {
         if (currency === targetCurrency) {
@@ -92,6 +118,9 @@ let TravelExpenseService = class TravelExpenseService {
         }
         // 정산 요약 캐시도 무효화
         this.cacheService.del(travelId, { prefix: 'settlement:summary' }).catch(() => undefined);
+        // 컨텍스트 캐시도 함께 무효화 (멤버 변경 가능성)
+        this.contextCache.delete(travelId);
+        this.cacheService.del(travelId, { prefix: this.CONTEXT_PREFIX }).catch(() => undefined);
     }
     async getCachedExpenseList(cacheKey) {
         try {
@@ -122,6 +151,9 @@ let TravelExpenseService = class TravelExpenseService {
             prefix: this.EXPENSE_DETAIL_PREFIX,
             ttl: this.EXPENSE_DETAIL_TTL_SECONDS,
         }).catch(() => undefined);
+    }
+    async invalidateExpenseListAndDetail(travelId, expenseId) {
+        await this.invalidateExpenseCaches(travelId, expenseId);
     }
     async createExpense(travelId, userId, payload) {
         // 컨텍스트 조회와 환율 변환을 병렬로 처리하기 위해 먼저 컨텍스트만 조회

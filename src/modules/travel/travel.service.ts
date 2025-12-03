@@ -62,6 +62,10 @@ export class TravelService {
   private readonly TRAVEL_DETAIL_REDIS_PREFIX = 'travel:detail';
   private readonly INVITE_REDIS_PREFIX = 'invite:code';
   private readonly INVITE_TTL_SECONDS = 5 * 60;
+  private readonly TRAVEL_MEMBER_CACHE = new Map<string, { exists: boolean; expiresAt: number }>();
+  private readonly TRAVEL_MEMBER_TTL = 2 * 60 * 1000; // 2분
+  private readonly TRAVEL_MEMBER_REDIS_PREFIX = 'travel:member';
+  private readonly TRAVEL_MEMBER_REDIS_TTL = 2 * 60; // 2분
 
   constructor(
     private readonly metaService: MetaService,
@@ -193,6 +197,49 @@ export class TravelService {
     this.cacheService.del(inviteCode, { prefix: this.INVITE_REDIS_PREFIX }).catch(() => undefined);
   }
 
+  private getMembershipCacheKey(travelId: string, userId: string): string {
+    return `${travelId}:${userId}`;
+  }
+
+  private async isMemberCached(travelId: string, userId: string): Promise<boolean | null> {
+    const key = this.getMembershipCacheKey(travelId, userId);
+    const cached = this.TRAVEL_MEMBER_CACHE.get(key);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.exists;
+    }
+    try {
+      const redisCached = await this.cacheService.get<boolean>(key, { prefix: this.TRAVEL_MEMBER_REDIS_PREFIX });
+      if (typeof redisCached === 'boolean') {
+        this.TRAVEL_MEMBER_CACHE.set(key, { exists: redisCached, expiresAt: Date.now() + this.TRAVEL_MEMBER_TTL });
+        return redisCached;
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
+  private setMemberCache(travelId: string, userId: string, exists: boolean): void {
+    const key = this.getMembershipCacheKey(travelId, userId);
+    this.TRAVEL_MEMBER_CACHE.set(key, { exists, expiresAt: Date.now() + this.TRAVEL_MEMBER_TTL });
+    this.cacheService.set(key, exists, {
+      prefix: this.TRAVEL_MEMBER_REDIS_PREFIX,
+      ttl: this.TRAVEL_MEMBER_REDIS_TTL,
+    }).catch(() => undefined);
+  }
+
+  private async invalidateMemberCache(travelId: string, userId: string): Promise<void> {
+    const key = this.getMembershipCacheKey(travelId, userId);
+    this.TRAVEL_MEMBER_CACHE.delete(key);
+    await this.cacheService.del(key, { prefix: this.TRAVEL_MEMBER_REDIS_PREFIX }).catch(() => undefined);
+  }
+
+  private async invalidateMembersCacheForTravel(travelId: string): Promise<void> {
+    const keys = Array.from(this.TRAVEL_MEMBER_CACHE.keys()).filter(k => k.startsWith(`${travelId}:`));
+    keys.forEach(k => this.TRAVEL_MEMBER_CACHE.delete(k));
+    await this.cacheService.delPattern(`${this.TRAVEL_MEMBER_REDIS_PREFIX}:${travelId}:*`).catch(() => undefined);
+  }
+
   private async ensureOwner(travelId: string, userId: string, runner?: Pool | PoolClient): Promise<void> {
     const executor = runner ?? (await getPool());
     const result = await executor.query(
@@ -209,12 +256,17 @@ export class TravelService {
   }
 
   private async isMember(travelId: string, userId: string, runner?: Pool | PoolClient): Promise<boolean> {
+    const cached = await this.isMemberCached(travelId, userId);
+    if (cached !== null) return cached;
+
     const executor = runner ?? (await getPool());
     const result = await executor.query(
       `SELECT 1 FROM travel_members WHERE travel_id = $1 AND user_id = $2 LIMIT 1`,
       [travelId, userId],
     );
-    return Boolean(result.rows[0]);
+    const exists = Boolean(result.rows[0]);
+    this.setMemberCache(travelId, userId, exists);
+    return exists;
   }
 
   private async fetchSummaryForMember(travelId: string, userId: string): Promise<TravelSummary> {
@@ -617,6 +669,7 @@ export class TravelService {
     // 관련 캐시 무효화
     this.invalidateTravelDetailCache(travelId);
     members.rows.forEach(member => this.invalidateUserTravelCache(member.user_id));
+    await this.invalidateMembersCacheForTravel(travelId);
   }
 
   async transferOwnership(travelId: string, currentOwnerId: string, newOwnerId: string): Promise<TravelSummary> {
@@ -762,6 +815,7 @@ export class TravelService {
 
     // 기존 멤버들의 여행 목록 캐시도 무효화 (멤버 정보가 변경되므로)
     await this.invalidateTravelCachesForMembers(inviteRow.travel_id);
+    await this.invalidateMembersCacheForTravel(inviteRow.travel_id);
 
     return this.fetchSummaryForMember(inviteRow.travel_id, userId);
   }
@@ -881,5 +935,6 @@ export class TravelService {
 
     // 다른 멤버들의 여행 목록 캐시도 무효화 (멤버 정보가 변경되므로)
     await this.invalidateTravelCachesForMembers(travelId);
+    await this.invalidateMembersCacheForTravel(travelId);
   }
 }

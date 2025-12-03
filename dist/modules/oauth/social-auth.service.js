@@ -325,28 +325,32 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             this.logger.debug(`ULTRA-FAST OAuth login completed in ${duration}ms (cache hit)`);
             return authSession;
         }
-        // ⚡ OFFLINE DECODE PATH: Supabase 네트워크 스킵, 프로필 DB 기반
+        // ⚡ OFFLINE DECODE PATH: Supabase 네트워크 스킵, 프로필/페이로드 기반
         const decoded = this.decodeAccessToken(accessToken);
         if (decoded?.sub) {
             try {
                 const profile = await this.supabaseService.findProfileById(decoded.sub);
-                if (profile && profile.email) {
+                const emailFromProfile = profile?.email;
+                const emailFromToken = decoded.email;
+                const email = emailFromProfile ?? emailFromToken ?? '';
+                if (email) {
                     const userRecord = {
-                        id: profile.id,
-                        email: profile.email,
-                        name: profile.name ?? null,
-                        avatar_url: profile.avatar_url ?? null,
-                        username: profile.username ?? profile.email?.split('@')[0] ?? profile.id,
+                        id: profile?.id ?? decoded.sub,
+                        email,
+                        name: profile?.name ?? decoded.name ?? null,
+                        avatar_url: profile?.avatar_url ?? null,
+                        username: profile?.username ?? email.split('@')[0] ?? decoded.sub,
                         password_hash: '',
-                        role: profile.role ?? 'user',
-                        created_at: profile.created_at ? new Date(profile.created_at) : null,
-                        updated_at: profile.updated_at ? new Date(profile.updated_at) : null,
+                        role: profile?.role ?? 'user',
+                        created_at: profile?.created_at ? new Date(profile.created_at) : null,
+                        updated_at: profile?.updated_at ? new Date(profile.updated_at) : null,
                     };
                     const authSession = await this.authService.createAuthSession(userRecord, loginType);
                     void this.setCachedOAuthUser(accessToken, userRecord);
                     void this.authService.warmAuthCaches(userRecord);
+                    void this.verifySupabaseUser(accessToken, decoded.sub).catch(() => undefined);
                     const duration = Date.now() - startTime;
-                    this.logger.debug(`ULTRA-FAST OAuth login via offline profile path in ${duration}ms`);
+                    this.logger.debug(`ULTRA-FAST OAuth login via offline profile/token path in ${duration}ms`);
                     return authSession;
                 }
             }

@@ -279,13 +279,13 @@ export class SocialAuthService {
     return this.dbWarmupPromise;
   }
 
-  private decodeAccessToken(accessToken: string): { sub?: string; email?: string; exp?: number } | null {
+  private decodeAccessToken(accessToken: string): { sub?: string; email?: string; exp?: number; name?: string } | null {
     try {
       const parts = accessToken.split('.');
       if (parts.length !== 3) return null;
       const payload = parts[1];
       const decoded = Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
-      const parsed = JSON.parse(decoded) as { sub?: string; email?: string; exp?: number };
+      const parsed = JSON.parse(decoded) as { sub?: string; email?: string; exp?: number; name?: string };
       return parsed;
     } catch {
       return null;
@@ -380,30 +380,34 @@ export class SocialAuthService {
       return authSession;
     }
 
-    // ⚡ OFFLINE DECODE PATH: Supabase 네트워크 스킵, 프로필 DB 기반
+    // ⚡ OFFLINE DECODE PATH: Supabase 네트워크 스킵, 프로필/페이로드 기반
     const decoded = this.decodeAccessToken(accessToken);
     if (decoded?.sub) {
       try {
         const profile = await this.supabaseService.findProfileById(decoded.sub);
-        if (profile && profile.email) {
+        const emailFromProfile = profile?.email as string | undefined;
+        const emailFromToken = decoded.email;
+        const email = emailFromProfile ?? emailFromToken ?? '';
+        if (email) {
           const userRecord: UserRecord = {
-            id: profile.id as string,
-            email: profile.email as string,
-            name: (profile.name as string | null) ?? null,
-            avatar_url: (profile.avatar_url as string | null) ?? null,
-            username: profile.username ?? profile.email?.split('@')[0] ?? profile.id,
+            id: profile?.id ?? decoded.sub,
+            email,
+            name: (profile?.name as string | null) ?? decoded.name ?? null,
+            avatar_url: (profile?.avatar_url as string | null) ?? null,
+            username: profile?.username ?? email.split('@')[0] ?? decoded.sub,
             password_hash: '',
-            role: (profile.role as UserRecord['role']) ?? 'user',
-            created_at: profile.created_at ? new Date(profile.created_at) : null,
-            updated_at: profile.updated_at ? new Date(profile.updated_at) : null,
+            role: (profile?.role as UserRecord['role']) ?? 'user',
+            created_at: profile?.created_at ? new Date(profile.created_at) : null,
+            updated_at: profile?.updated_at ? new Date(profile.updated_at) : null,
           };
 
           const authSession = await this.authService.createAuthSession(userRecord, loginType);
           void this.setCachedOAuthUser(accessToken, userRecord);
           void this.authService.warmAuthCaches(userRecord);
+          void this.verifySupabaseUser(accessToken, decoded.sub).catch(() => undefined);
 
           const duration = Date.now() - startTime;
-          this.logger.debug(`ULTRA-FAST OAuth login via offline profile path in ${duration}ms`);
+          this.logger.debug(`ULTRA-FAST OAuth login via offline profile/token path in ${duration}ms`);
           return authSession;
         }
       } catch (error) {
