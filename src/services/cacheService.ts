@@ -40,9 +40,9 @@ export class CacheService {
     try {
       // Redis 연결 설정
       this.redis = new Redis(this.redisUrl, {
-        maxRetriesPerRequest: 3,
-        connectTimeout: 3000,
-        commandTimeout: 2000,
+        maxRetriesPerRequest: 1,      // 재시도 최소화로 지연 방지
+        connectTimeout: 1000,         // 연결 타임아웃 단축
+        commandTimeout: 500,          // 명령 타임아웃 단축
         enableOfflineQueue: false,
       });
 
