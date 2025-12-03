@@ -33,20 +33,24 @@ export class ProfileController {
   @Get('me')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
-  @ApiOperation({ summary: '현재 사용자 프로필 조회 (극한 최적화)' })
+  @ApiOperation({ summary: '현재 사용자 프로필 조회 (하이브리드 최적화)' })
   @ApiOkResponse({ type: ProfileResponseDto })
-  getProfile(@Req() req: RequestWithUser) {
+  async getProfile(@Req() req: RequestWithUser) {
     if (!req.currentUser) {
       throw new UnauthorizedException('Unauthorized');
     }
 
-    // ⚡ LIGHTNING-FAST: JWT에서 즉시 동기 응답 (어떤 비동기 작업도 없음)
+    // 🚀 HYBRID-FAST: JWT 기본 정보 + 실시간 avatar URL 조회
+    const [avatarURL] = await Promise.all([
+      this.profileService.getAvatarUrlOnly(req.currentUser.id)
+    ]);
+
     return success({
       id: req.currentUser.id,
       userId: req.currentUser.username || req.currentUser.email?.split('@')[0] || 'user',
       email: req.currentUser.email || '',
       name: req.currentUser.name,
-      avatarURL: req.currentUser.avatar_url,
+      avatarURL: avatarURL || req.currentUser.avatar_url, // 실시간 또는 JWT fallback
       role: req.currentUser.role || 'user',
       createdAt: req.currentUser.created_at,
       updatedAt: req.currentUser.updated_at,

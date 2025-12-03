@@ -317,4 +317,29 @@ export class ProfileService {
 
     return publicUrl;
   }
+
+  /**
+   * 🚀 FAST: avatar URL만 빠르게 조회 (캐시 우선)
+   */
+  async getAvatarUrlOnly(userId: string): Promise<string | null> {
+    try {
+      // 1. 캐시에서 먼저 확인
+      const cached = this.getCachedProfile(userId);
+      if (cached?.avatar_url) {
+        return cached.avatar_url;
+      }
+
+      // 2. DB에서 avatar_url만 조회 (최소한의 쿼리)
+      const pool = await getPool();
+      const result = await pool.query(
+        `SELECT avatar_url FROM profiles WHERE id = $1 LIMIT 1`,
+        [userId]
+      );
+
+      return result.rows[0]?.avatar_url || null;
+    } catch (error) {
+      this.logger.warn(`Avatar URL lookup failed for user ${userId}:`, error);
+      return null;
+    }
+  }
 }

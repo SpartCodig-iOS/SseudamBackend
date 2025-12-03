@@ -27,17 +27,20 @@ let ProfileController = class ProfileController {
     constructor(profileService) {
         this.profileService = profileService;
     }
-    getProfile(req) {
+    async getProfile(req) {
         if (!req.currentUser) {
             throw new common_1.UnauthorizedException('Unauthorized');
         }
-        // ⚡ LIGHTNING-FAST: JWT에서 즉시 동기 응답 (어떤 비동기 작업도 없음)
+        // 🚀 HYBRID-FAST: JWT 기본 정보 + 실시간 avatar URL 조회
+        const [avatarURL] = await Promise.all([
+            this.profileService.getAvatarUrlOnly(req.currentUser.id)
+        ]);
         return (0, api_1.success)({
             id: req.currentUser.id,
             userId: req.currentUser.username || req.currentUser.email?.split('@')[0] || 'user',
             email: req.currentUser.email || '',
             name: req.currentUser.name,
-            avatarURL: req.currentUser.avatar_url,
+            avatarURL: avatarURL || req.currentUser.avatar_url, // 실시간 또는 JWT fallback
             role: req.currentUser.role || 'user',
             createdAt: req.currentUser.created_at,
             updatedAt: req.currentUser.updated_at,
@@ -59,12 +62,12 @@ __decorate([
     (0, common_1.Get)('me'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     (0, swagger_1.ApiBearerAuth)(),
-    (0, swagger_1.ApiOperation)({ summary: '현재 사용자 프로필 조회 (극한 최적화)' }),
+    (0, swagger_1.ApiOperation)({ summary: '현재 사용자 프로필 조회 (하이브리드 최적화)' }),
     (0, swagger_1.ApiOkResponse)({ type: profile_response_dto_1.ProfileResponseDto }),
     __param(0, (0, common_1.Req)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
-    __metadata("design:returntype", void 0)
+    __metadata("design:returntype", Promise)
 ], ProfileController.prototype, "getProfile", null);
 __decorate([
     (0, common_1.UseGuards)(auth_guard_1.AuthGuard),
