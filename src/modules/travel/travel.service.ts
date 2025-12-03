@@ -891,13 +891,12 @@ export class TravelService {
     await this.invalidateTravelCachesForMembers(inviteRow.travel_id);
     await this.invalidateMembersCacheForTravel(inviteRow.travel_id);
 
-    // join 응답에는 멤버 정보 불필요 - 성능 개선
-    const travelSummary = await this.fetchSummaryForMember(inviteRow.travel_id, userId, false);
+    // 멤버 포함 최신 상세를 즉시 조회해 캐시에 반영 (join 직후 멤버 목록 비어있는 문제 방지)
+    const travelSummary = this.attachLinks(await this.fetchSummaryForMember(inviteRow.travel_id, userId, true));
 
-    // 결과를 캐시에 저장해서 후속 요청 성능 개선
     this.setCachedTravelDetail(inviteRow.travel_id, travelSummary);
 
-    return travelSummary;
+    return this.reorderMembersForUser(travelSummary, userId);
   }
 
   async leaveTravel(travelId: string, userId: string): Promise<{ deletedTravel: boolean }> {
