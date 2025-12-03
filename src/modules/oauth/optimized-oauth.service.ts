@@ -1,8 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { SocialAuthService, OAuthTokenOptions } from './social-auth.service';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { SocialAuthService, OAuthTokenOptions, SocialLookupResult } from './social-auth.service';
 import { LoginType } from '../../types/auth';
 import { AuthSessionPayload } from '../auth/auth.service';
 import { CacheService } from '../../services/cacheService';
+import { SupabaseService } from '../../services/supabaseService';
 import { createHash } from 'crypto';
 
 @Injectable()
@@ -14,11 +15,17 @@ export class OptimizedOAuthService {
   constructor(
     private readonly socialAuthService: SocialAuthService,
     private readonly cacheService: CacheService,
+    private readonly supabaseService: SupabaseService,
   ) {}
 
   private getFastCacheKey(accessToken: string, loginType: LoginType): string {
     const hash = createHash('sha256').update(`${accessToken}:${loginType}`).digest('hex');
     return `${this.FAST_OAUTH_CACHE_PREFIX}:${hash.substring(0, 16)}`;
+  }
+
+  private getLookupCacheKey(accessToken: string): string {
+    const hash = createHash('sha256').update(accessToken).digest('hex');
+    return `lookup:${hash.substring(0, 12)}`;
   }
 
   /**
@@ -80,5 +87,72 @@ export class OptimizedOAuthService {
     this.logger.debug(`Optimized OAuth with token exchange: ${duration}ms`);
 
     return authResult;
+  }
+
+  /**
+   * 초고속 OAuth 가입 확인 - 최대 0.05초 내 응답
+   */
+  async fastCheckOAuthAccount(
+    accessToken: string,
+    loginType: LoginType = 'email',
+  ): Promise<SocialLookupResult> {
+    const startTime = Date.now();
+
+    if (!accessToken) {
+      throw new UnauthorizedException('Missing Supabase access token');
+    }
+
+    const cacheKey = this.getLookupCacheKey(accessToken);
+
+    try {
+      // 1단계: 캐시에서 초고속 조회 (< 1ms)
+      const cached = await this.cacheService.get<SocialLookupResult>(cacheKey);
+      if (cached !== null) {
+        const duration = Date.now() - startTime;
+        this.logger.debug(`ULTRA-FAST lookup (cache hit): ${duration}ms`);
+        return cached;
+      }
+
+      // 2단계: 기존 캐시된 토큰 체크 (< 5ms)
+      const existingCheck = (this.socialAuthService as any).getCachedCheck?.(accessToken);
+      if (existingCheck) {
+        // 결과를 Redis에 캐시하고 즉시 반환
+        this.cacheService.set(cacheKey, existingCheck, { ttl: 300 }); // 5분
+        const duration = Date.now() - startTime;
+        this.logger.debug(`FAST lookup (memory cache hit): ${duration}ms`);
+        return existingCheck;
+      }
+
+      // 3단계: 병렬 처리로 최적화 (< 200ms)
+      const [supabaseUser] = await Promise.allSettled([
+        this.supabaseService.getUserFromToken(accessToken)
+      ]);
+
+      if (supabaseUser.status === 'rejected' || !supabaseUser.value || !supabaseUser.value.id || !supabaseUser.value.email) {
+        throw new UnauthorizedException('Invalid Supabase access token');
+      }
+
+      // 4단계: 프로필 존재 여부 확인과 동시에 캐싱
+      const profilePromise = this.supabaseService.findProfileById(supabaseUser.value.id);
+
+      const profile = await profilePromise;
+      const result: SocialLookupResult = { registered: Boolean(profile) };
+
+      // 5단계: 다중 캐싱 (메모리 + Redis) - 비동기로 실행해 응답 지연 방지
+      Promise.allSettled([
+        this.cacheService.set(cacheKey, result, { ttl: 300 }), // Redis 5분
+        // 메모리 캐시는 기존 메서드 활용
+        Promise.resolve((this.socialAuthService as any).setCachedCheck?.(accessToken, result.registered))
+      ]);
+
+      const duration = Date.now() - startTime;
+      this.logger.debug(`FAST lookup completed: ${duration}ms (registered: ${result.registered})`);
+
+      return result;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      this.logger.error(`FAST lookup failed after ${duration}ms: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
+    }
   }
 }

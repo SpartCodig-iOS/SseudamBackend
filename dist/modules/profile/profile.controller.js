@@ -27,6 +27,22 @@ let ProfileController = class ProfileController {
     constructor(profileService) {
         this.profileService = profileService;
     }
+    async getProfileQuick(req) {
+        if (!req.currentUser) {
+            throw new common_1.UnauthorizedException('Unauthorized');
+        }
+        // 캐시 우선 조회로 DB 접근 최소화
+        const profile = await this.profileService.getProfileQuick(req.currentUser.id, req.currentUser);
+        // 최소한의 데이터만 반환하여 응답 크기 최적화
+        return {
+            id: profile.id,
+            name: profile.name,
+            email: profile.email,
+            avatarURL: profile.avatar_url,
+            role: profile.role,
+            loginType: req.loginType ?? 'email'
+        };
+    }
     async getProfile(req) {
         if (!req.currentUser) {
             throw new common_1.UnauthorizedException('Unauthorized');
@@ -56,6 +72,17 @@ let ProfileController = class ProfileController {
     }
 };
 exports.ProfileController = ProfileController;
+__decorate([
+    (0, common_1.UseGuards)(auth_guard_1.AuthGuard),
+    (0, common_1.Get)('me/quick'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiBearerAuth)(),
+    (0, swagger_1.ApiOperation)({ summary: '현재 사용자 프로필 빠른 조회 (최적화된 응답)' }),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], ProfileController.prototype, "getProfileQuick", null);
 __decorate([
     (0, common_1.UseGuards)(auth_guard_1.AuthGuard),
     (0, common_1.Get)('me'),

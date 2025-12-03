@@ -156,8 +156,18 @@ export class AuthGuard implements CanActivate {
     }
   }
 
+  // 역할 캐시 추가 (10분 TTL)
+  private readonly roleCache = new Map<string, { role: string; timestamp: number }>();
+  private readonly ROLE_CACHE_TTL = 10 * 60 * 1000; // 10분
+
   // 최신 role을 DB에서 확인해 요청 사용자에 반영 (재로그인 없이 즉시 반영)
   private async hydrateUserRole(user: UserRecord): Promise<UserRecord> {
+    // 🚀 ULTRA-FAST: 역할 캐시 확인
+    const cached = this.roleCache.get(user.id);
+    if (cached && (Date.now() - cached.timestamp < this.ROLE_CACHE_TTL)) {
+      return { ...user, role: cached.role as UserRecord['role'] };
+    }
+
     try {
       const pool = await getPool();
       const result = await pool.query(
@@ -174,10 +184,22 @@ export class AuthGuard implements CanActivate {
            ON CONFLICT (id) DO NOTHING`,
           [user.id, user.email, user.name, user.role ?? 'user']
         );
-        return { ...user, role: (user.role ?? 'user') as UserRecord['role'] };
+        const finalRole = user.role ?? 'user';
+        this.roleCache.set(user.id, { role: finalRole, timestamp: Date.now() });
+        return { ...user, role: finalRole as UserRecord['role'] };
       }
 
-      return { ...user, role: (dbRole ?? user.role ?? 'user') as UserRecord['role'] };
+      const finalRole = dbRole ?? user.role ?? 'user';
+      // 역할을 캐시에 저장
+      this.roleCache.set(user.id, { role: finalRole, timestamp: Date.now() });
+
+      // 캐시 크기 제한
+      if (this.roleCache.size > 500) {
+        const firstKey = this.roleCache.keys().next().value;
+        if (firstKey) this.roleCache.delete(firstKey);
+      }
+
+      return { ...user, role: finalRole as UserRecord['role'] };
     } catch (error) {
       // DB 실패 시 기존 역할 유지
       return { ...user, role: user.role ?? 'user' };

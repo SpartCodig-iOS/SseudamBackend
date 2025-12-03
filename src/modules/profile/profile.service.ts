@@ -109,6 +109,62 @@ export class ProfileService {
     return null;
   }
 
+  /**
+   * 빠른 프로필 조회 - 캐시 우선, DB 접근 최소화, avatar storage 조회 스킵
+   */
+  async getProfileQuick(userId: string, fallbackUser?: UserRecord): Promise<UserRecord> {
+    // 1. 메모리 캐시 확인 (가장 빠름)
+    const cachedProfile = this.getCachedProfile(userId);
+    if (cachedProfile) {
+      return cachedProfile;
+    }
+
+    // 2. Redis 캐시 확인 (두 번째로 빠름)
+    try {
+      const redisProfile = await this.cacheService.get<UserRecord>(`profile:${userId}`);
+      if (redisProfile) {
+        this.setCachedProfile(userId, redisProfile);
+        return redisProfile;
+      }
+    } catch (error) {
+      // Redis 오류는 무시하고 계속 진행
+      this.logger.warn(`Redis cache error for user ${userId}:`, error);
+    }
+
+    // 3. DB 조회 (가장 느림)
+    try {
+      const dbProfile = await this.getProfileFromDB(userId);
+      if (dbProfile) {
+        // 캐시에 저장 (비동기)
+        Promise.allSettled([
+          Promise.resolve(this.setCachedProfile(userId, dbProfile)),
+          this.cacheService.set(`profile:${userId}`, dbProfile, { ttl: 600 })
+        ]);
+        return dbProfile;
+      }
+    } catch (error) {
+      this.logger.warn(`DB query error for user ${userId}:`, error);
+    }
+
+    // 4. 모든 조회가 실패한 경우 fallback 사용
+    if (fallbackUser) {
+      return fallbackUser;
+    }
+
+    // 5. 최후의 수단: 기본 프로필 생성
+    return {
+      id: userId,
+      email: '',
+      name: null,
+      avatar_url: null,
+      username: userId,
+      password_hash: '',
+      role: 'user',
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+  }
+
   private async getProfileFromDB(userId: string): Promise<UserRecord | null> {
     const pool = await getPool();
     const result = await pool.query(

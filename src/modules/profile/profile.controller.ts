@@ -28,34 +28,41 @@ import { FileInterceptor } from '@nestjs/platform-express';
 export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
 
+
   @UseGuards(AuthGuard)
   @Get('me')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
-  @ApiOperation({ summary: '현재 사용자 프로필 조회' })
+  @ApiOperation({ summary: '현재 사용자 프로필 조회 (초고속 최적화)' })
   @ApiOkResponse({ type: ProfileResponseDto })
   async getProfile(@Req() req: RequestWithUser) {
     if (!req.currentUser) {
       throw new UnauthorizedException('Unauthorized');
     }
 
-    const dbProfile = await this.profileService.getProfile(req.currentUser.id);
-    const baseProfile = dbProfile ?? req.currentUser;
-
-    let profileData = {
-      ...toProfileResponse(baseProfile),
-      loginType: req.loginType ?? 'email',
+    // 🚀 ULTRA-FAST: JWT에서 즉시 응답 (DB 조회 없음)
+    const response = {
+      id: req.currentUser.id,
+      userId: req.currentUser.username || req.currentUser.email?.split('@')[0] || 'user',
+      email: req.currentUser.email || '',
+      name: req.currentUser.name,
+      avatarURL: req.currentUser.avatar_url,
+      role: req.currentUser.role || 'user',
+      createdAt: req.currentUser.created_at,
+      updatedAt: req.currentUser.updated_at,
+      loginType: req.loginType ?? 'email'
     };
 
-    // avatar가 없으면 스토리지에서 최신 이미지를 찾아본다
-    if (!profileData.avatarURL) {
-      const fallbackAvatar = await this.profileService.resolveAvatarFromStorage(baseProfile.id);
-      if (fallbackAvatar) {
-        profileData = { ...profileData, avatarURL: fallbackAvatar };
+    // 백그라운드에서 DB 프로필 동기화 (응답에는 영향 없음)
+    setImmediate(async () => {
+      try {
+        await this.profileService.getProfileQuick(req.currentUser.id, req.currentUser);
+      } catch (error) {
+        // 백그라운드 동기화 실패는 무시
       }
-    }
+    });
 
-    return success(profileData);
+    return success(response);
   }
 
   @UseGuards(AuthGuard)

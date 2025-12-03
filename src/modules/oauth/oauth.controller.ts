@@ -116,7 +116,7 @@ export class OAuthController {
 
   @Post('lookup')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '소셜/OAuth access token으로 가입 여부 확인' })
+  @ApiOperation({ summary: '소셜/OAuth access token으로 가입 여부 확인 (최적화)' })
   @ApiBody({
     schema: {
       type: 'object',
