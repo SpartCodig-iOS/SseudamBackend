@@ -69,9 +69,8 @@ export class PerformanceInterceptor implements NestInterceptor {
     return next.handle().pipe(
       tap((data) => {
         const endTime = process.hrtime.bigint();
-        const duration = Number(endTime - startTime) / 1000000; // 나노초를 밀리초로 변환
+        const duration = Number(endTime - startTime) / 1000000; // ms
 
-        // 응답 헤더에 성능 정보 추가
         response.set({
           'X-Response-Time': `${duration.toFixed(2)}ms`,
           'X-Request-ID': `req_${startTime}`,
@@ -79,7 +78,6 @@ export class PerformanceInterceptor implements NestInterceptor {
 
         const shouldLog = Math.random() <= this.logSampleRate;
 
-        // 느린 요청 로깅 (환경 변수 기준, 기본 300ms)
         if (duration > this.warnThresholdMs && shouldLog) {
           this.logger.warn('Slow request detected', {
             method,
@@ -90,15 +88,20 @@ export class PerformanceInterceptor implements NestInterceptor {
           });
         }
 
-        // 매우 느린 요청은 더 자세히 로깅 (환경 변수 기준, 기본 800ms)
         if (duration > this.errorThresholdMs && shouldLog) {
           const responseSize = data ? Buffer.byteLength(JSON.stringify(data), 'utf8') : 0;
+          const handlerTime = request.get('X-Handler-Time');
+          const dbTime = request.get('X-DB-Time');
+          const cacheTime = request.get('X-Cache-Time');
           this.logger.error('Very slow request', {
             method,
             url,
             duration: `${duration.toFixed(2)}ms`,
             userAgent,
             responseSize,
+            handlerTime,
+            dbTime,
+            cacheTime,
             timestamp: new Date().toISOString(),
           });
         }
