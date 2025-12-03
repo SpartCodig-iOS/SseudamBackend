@@ -33,15 +33,15 @@ export class ProfileController {
   @Get('me')
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth()
-  @ApiOperation({ summary: '현재 사용자 프로필 조회 (초고속 최적화)' })
+  @ApiOperation({ summary: '현재 사용자 프로필 조회 (극한 최적화)' })
   @ApiOkResponse({ type: ProfileResponseDto })
-  async getProfile(@Req() req: RequestWithUser) {
+  getProfile(@Req() req: RequestWithUser) {
     if (!req.currentUser) {
       throw new UnauthorizedException('Unauthorized');
     }
 
-    // 🚀 ULTRA-FAST: JWT에서 즉시 응답 (DB 조회 없음)
-    const response = {
+    // ⚡ LIGHTNING-FAST: JWT에서 즉시 동기 응답 (어떤 비동기 작업도 없음)
+    return success({
       id: req.currentUser.id,
       userId: req.currentUser.username || req.currentUser.email?.split('@')[0] || 'user',
       email: req.currentUser.email || '',
@@ -51,20 +51,7 @@ export class ProfileController {
       createdAt: req.currentUser.created_at,
       updatedAt: req.currentUser.updated_at,
       loginType: req.loginType ?? 'email'
-    };
-
-    // 백그라운드에서 DB 프로필 동기화 (응답에는 영향 없음)
-    setImmediate(async () => {
-      try {
-        if (req.currentUser) {
-          await this.profileService.getProfileQuick(req.currentUser.id, req.currentUser);
-        }
-      } catch (error) {
-        // 백그라운드 동기화 실패는 무시
-      }
     });
-
-    return success(response);
   }
 
   @UseGuards(AuthGuard)

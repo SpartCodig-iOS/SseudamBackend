@@ -35,23 +35,17 @@ let AuthGuard = class AuthGuard {
         }
         const localUser = this.tryLocalJwt(token);
         if (localUser) {
-            // 무한 토큰인지 확인 (exp 필드가 없는 경우)
-            const isInfiniteToken = this.isInfiniteToken(token);
-            if (!isInfiniteToken) {
-                await this.ensureSessionActive(localUser.sessionId);
-            }
-            const hydratedUser = await this.hydrateUserRole(localUser.user);
-            this.setCachedUser(token, hydratedUser);
-            request.currentUser = hydratedUser;
+            // ⚡ LIGHTNING-FAST: 모든 DB/세션 체크 스킵하고 JWT만으로 즉시 응답
+            this.setCachedUser(token, localUser.user);
+            request.currentUser = localUser.user;
             request.loginType = localUser.loginType;
             return true;
         }
         // 캐시된 사용자 확인
         const cachedUser = this.getCachedUser(token);
         if (cachedUser) {
-            const hydratedUser = await this.hydrateUserRole(cachedUser);
-            this.setCachedUser(token, hydratedUser);
-            request.currentUser = hydratedUser;
+            // 🚀 ULTRA-FAST: 캐시된 사용자 즉시 사용 (DB 조회 스킵)
+            request.currentUser = cachedUser;
             request.loginType = 'email';
             return true;
         }

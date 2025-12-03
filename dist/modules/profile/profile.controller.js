@@ -27,12 +27,12 @@ let ProfileController = class ProfileController {
     constructor(profileService) {
         this.profileService = profileService;
     }
-    async getProfile(req) {
+    getProfile(req) {
         if (!req.currentUser) {
             throw new common_1.UnauthorizedException('Unauthorized');
         }
-        // 🚀 ULTRA-FAST: JWT에서 즉시 응답 (DB 조회 없음)
-        const response = {
+        // ⚡ LIGHTNING-FAST: JWT에서 즉시 동기 응답 (어떤 비동기 작업도 없음)
+        return (0, api_1.success)({
             id: req.currentUser.id,
             userId: req.currentUser.username || req.currentUser.email?.split('@')[0] || 'user',
             email: req.currentUser.email || '',
@@ -42,19 +42,7 @@ let ProfileController = class ProfileController {
             createdAt: req.currentUser.created_at,
             updatedAt: req.currentUser.updated_at,
             loginType: req.loginType ?? 'email'
-        };
-        // 백그라운드에서 DB 프로필 동기화 (응답에는 영향 없음)
-        setImmediate(async () => {
-            try {
-                if (req.currentUser) {
-                    await this.profileService.getProfileQuick(req.currentUser.id, req.currentUser);
-                }
-            }
-            catch (error) {
-                // 백그라운드 동기화 실패는 무시
-            }
         });
-        return (0, api_1.success)(response);
     }
     async updateProfile(body, file, req) {
         if (!req.currentUser) {
@@ -71,12 +59,12 @@ __decorate([
     (0, common_1.Get)('me'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     (0, swagger_1.ApiBearerAuth)(),
-    (0, swagger_1.ApiOperation)({ summary: '현재 사용자 프로필 조회 (초고속 최적화)' }),
+    (0, swagger_1.ApiOperation)({ summary: '현재 사용자 프로필 조회 (극한 최적화)' }),
     (0, swagger_1.ApiOkResponse)({ type: profile_response_dto_1.ProfileResponseDto }),
     __param(0, (0, common_1.Req)()),
     __metadata("design:type", Function),
     __metadata("design:paramtypes", [Object]),
-    __metadata("design:returntype", Promise)
+    __metadata("design:returntype", void 0)
 ], ProfileController.prototype, "getProfile", null);
 __decorate([
     (0, common_1.UseGuards)(auth_guard_1.AuthGuard),
