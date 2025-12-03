@@ -34,9 +34,6 @@ export class TravelSummaryDto {
   @ApiProperty({ example: 'https://sseudam.up.railway.app/deeplink?inviteCode=ab12cd34', nullable: true, required: false })
   deepLink?: string;
 
-  @ApiProperty({ example: 'https://sseudam.up.railway.app/deeplink?inviteCode=ab12cd34', nullable: true, required: false })
-  shareUrl?: string;
-
   @ApiProperty({ example: 'active' })
   status!: string;
 
@@ -127,7 +124,4 @@ export class TravelInviteResponseDto {
 
   @ApiProperty({ example: 'https://sseudam.up.railway.app/deeplink?inviteCode=a1b2c3d4' })
   deepLink!: string;
-
-  @ApiProperty({ example: 'https://sseudam.up.railway.app/deeplink?inviteCode=a1b2c3d4' })
-  shareUrl!: string;
 }

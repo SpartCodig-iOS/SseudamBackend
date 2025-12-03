@@ -276,7 +276,6 @@ let TravelService = TravelService_1 = class TravelService {
         const destinationCurrency = this.resolveDestinationCurrency(row.country_code, row.base_currency);
         const inviteCode = row.invite_code ?? undefined;
         const deepLink = inviteCode ? this.generateDeepLink(inviteCode) : undefined;
-        const shareUrl = inviteCode ? this.generateShareLink(inviteCode) : undefined;
         return {
             id: row.id,
             title: row.title,
@@ -289,7 +288,6 @@ let TravelService = TravelService_1 = class TravelService {
             destinationCurrency,
             inviteCode,
             deepLink,
-            shareUrl,
             status: row.status,
             createdAt: row.created_at,
             ownerName: row.owner_name ?? null,
@@ -527,10 +525,6 @@ let TravelService = TravelService_1 = class TravelService {
         const base = (env_1.env.appBaseUrl || '').replace(/\/$/, '') || 'https://sseudam.up.railway.app';
         return `${base}/deeplink?inviteCode=${encodeURIComponent(inviteCode)}`;
     }
-    generateShareLink(inviteCode) {
-        const base = (env_1.env.appBaseUrl || '').replace(/\/$/, '') || 'https://sseudam.up.railway.app';
-        return `${base}/deeplink?inviteCode=${encodeURIComponent(inviteCode)}`;
-    }
     async createInvite(travelId, userId) {
         const pool = await (0, pool_1.getPool)();
         await this.ensureOwner(travelId, userId, pool);
@@ -566,7 +560,6 @@ let TravelService = TravelService_1 = class TravelService {
         return {
             inviteCode,
             deepLink: this.generateDeepLink(inviteCode),
-            shareUrl: this.generateShareLink(inviteCode),
         };
     }
     attachLinks(travel) {
@@ -574,8 +567,7 @@ let TravelService = TravelService_1 = class TravelService {
             return travel;
         return {
             ...travel,
-            deepLink: travel.deepLink ?? this.generateDeepLink(travel.inviteCode),
-            shareUrl: travel.shareUrl ?? this.generateShareLink(travel.inviteCode),
+            deepLink: this.generateDeepLink(travel.inviteCode),
         };
     }
     async deleteTravel(travelId, userId) {

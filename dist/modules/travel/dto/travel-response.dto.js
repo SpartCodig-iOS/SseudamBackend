@@ -59,10 +59,6 @@ __decorate([
     __metadata("design:type", String)
 ], TravelSummaryDto.prototype, "deepLink", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 'https://sseudam.up.railway.app/deeplink?inviteCode=ab12cd34', nullable: true, required: false }),
-    __metadata("design:type", String)
-], TravelSummaryDto.prototype, "shareUrl", void 0);
-__decorate([
     (0, swagger_1.ApiProperty)({ example: 'active' }),
     __metadata("design:type", String)
 ], TravelSummaryDto.prototype, "status", void 0);
@@ -185,7 +181,3 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: 'https://sseudam.up.railway.app/deeplink?inviteCode=a1b2c3d4' }),
     __metadata("design:type", String)
 ], TravelInviteResponseDto.prototype, "deepLink", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'https://sseudam.up.railway.app/deeplink?inviteCode=a1b2c3d4' }),
-    __metadata("design:type", String)
-], TravelInviteResponseDto.prototype, "shareUrl", void 0);

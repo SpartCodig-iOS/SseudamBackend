@@ -27,7 +27,6 @@ export interface TravelSummary {
   destinationCurrency: string;
   inviteCode?: string;
   deepLink?: string;
-  shareUrl?: string;
   status: string;
   createdAt: string;
   ownerName: string | null;
@@ -39,7 +38,6 @@ export interface TravelDetail extends TravelSummary {}
 export interface TravelInvitePayload {
   inviteCode: string;
   deepLink: string;
-  shareUrl: string;
 }
 
 export interface TravelMember {
@@ -350,7 +348,6 @@ export class TravelService {
     const destinationCurrency = this.resolveDestinationCurrency(row.country_code, row.base_currency);
     const inviteCode = row.invite_code ?? undefined;
     const deepLink = inviteCode ? this.generateDeepLink(inviteCode) : undefined;
-    const shareUrl = inviteCode ? this.generateShareLink(inviteCode) : undefined;
     return {
       id: row.id,
       title: row.title,
@@ -363,7 +360,6 @@ export class TravelService {
       destinationCurrency,
       inviteCode,
       deepLink,
-      shareUrl,
       status: row.status,
       createdAt: row.created_at,
       ownerName: row.owner_name ?? null,
@@ -641,10 +637,6 @@ export class TravelService {
     return `${base}/deeplink?inviteCode=${encodeURIComponent(inviteCode)}`;
   }
 
-  private generateShareLink(inviteCode: string): string {
-    const base = (env.appBaseUrl || '').replace(/\/$/, '') || 'https://sseudam.up.railway.app';
-    return `${base}/deeplink?inviteCode=${encodeURIComponent(inviteCode)}`;
-  }
 
   async createInvite(travelId: string, userId: string): Promise<TravelInvitePayload> {
     const pool = await getPool();
@@ -696,7 +688,6 @@ export class TravelService {
     return {
       inviteCode,
       deepLink: this.generateDeepLink(inviteCode),
-      shareUrl: this.generateShareLink(inviteCode),
     };
   }
 
@@ -704,8 +695,7 @@ export class TravelService {
     if (!travel.inviteCode) return travel;
     return {
       ...travel,
-      deepLink: travel.deepLink ?? this.generateDeepLink(travel.inviteCode),
-      shareUrl: travel.shareUrl ?? this.generateShareLink(travel.inviteCode),
+      deepLink: this.generateDeepLink(travel.inviteCode),
     };
   }
 
