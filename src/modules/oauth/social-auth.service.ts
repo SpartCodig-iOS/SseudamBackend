@@ -230,6 +230,9 @@ export class SocialAuthService {
       registered,
       expiresAt: Date.now() + this.OAUTH_CHECK_CACHE_TTL,
     });
+    // Redis에도 캐싱
+    const tokenHash = this.getTokenCacheKey(accessToken);
+    this.cacheService.set(`oauth_check:${tokenHash}`, { registered }, { ttl: 300 }).catch(() => undefined);
   }
 
   private getInFlightLookup(accessToken: string): Promise<SocialLookupResult> | null {

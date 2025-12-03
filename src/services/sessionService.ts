@@ -38,6 +38,7 @@ export class SessionService {
   private readonly MAX_CACHE_SIZE = 2000;
   private readonly SESSION_REDIS_PREFIX = 'session';
   private readonly SESSION_REDIS_TTL = 15 * 60; // 15분
+  private readonly SESSION_USER_INDEX_PREFIX = 'session:user';
   // Supabase 세션 유효성 캐시: 5분 TTL
   private readonly supabaseValidityCache = new Map<string, { valid: boolean; expiresAt: number }>();
   private readonly SUPABASE_VALIDITY_TTL = 5 * 60 * 1000;
@@ -136,6 +137,16 @@ export class SessionService {
         this.sessionCache.delete(sessionId);
       }
     }
+    // Redis 세션 인덱스 기반 삭제
+    this.cacheService.get<string[]>(userId, { prefix: this.SESSION_USER_INDEX_PREFIX })
+      .then(async (sessionIds) => {
+        if (!sessionIds || sessionIds.length === 0) return;
+        await Promise.all(
+          sessionIds.map(id => this.cacheService.del(id, { prefix: this.SESSION_REDIS_PREFIX }).catch(() => undefined))
+        );
+        await this.cacheService.del(userId, { prefix: this.SESSION_USER_INDEX_PREFIX }).catch(() => undefined);
+      })
+      .catch(() => undefined);
   }
 
   private async getRedisSession(sessionId: string): Promise<SessionRecord | null> {
@@ -153,6 +164,14 @@ export class SessionService {
     try {
       await this.cacheService.set(sessionId, session, {
         prefix: this.SESSION_REDIS_PREFIX,
+        ttl: this.SESSION_REDIS_TTL,
+      });
+      // 사용자별 세션 인덱스에 세션 ID 추가
+      const indexKey = session.userId;
+      const existing = (await this.cacheService.get<string[]>(indexKey, { prefix: this.SESSION_USER_INDEX_PREFIX })) ?? [];
+      const updated = Array.from(new Set([sessionId, ...existing])).slice(0, 20);
+      await this.cacheService.set(indexKey, updated, {
+        prefix: this.SESSION_USER_INDEX_PREFIX,
         ttl: this.SESSION_REDIS_TTL,
       });
     } catch {

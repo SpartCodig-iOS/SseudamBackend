@@ -200,6 +200,9 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             registered,
             expiresAt: Date.now() + this.OAUTH_CHECK_CACHE_TTL,
         });
+        // Redis에도 캐싱
+        const tokenHash = this.getTokenCacheKey(accessToken);
+        this.cacheService.set(`oauth_check:${tokenHash}`, { registered }, { ttl: 300 }).catch(() => undefined);
     }
     getInFlightLookup(accessToken) {
         const inFlight = this.lookupPromiseCache.get(accessToken);
