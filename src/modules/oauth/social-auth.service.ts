@@ -927,21 +927,6 @@ export class SocialAuthService {
   }
 
   /**
-   * 🚀 REDIS-FIRST: DB 커넥션 워밍 및 Redis 캐시 적극 활용
-   */
-  private async warmupDbConnection(): Promise<boolean> {
-    try {
-      const { getPool } = await import('../../db/pool');
-      const pool = await getPool();
-      await pool.query('SELECT 1'); // DB 커넥션 워밍
-      return true;
-    } catch (error) {
-      this.logger.warn('DB connection warmup failed:', error);
-      return false;
-    }
-  }
-
-  /**
    * 🚀 ULTRA-FAST: Profile 존재 여부만 Redis-first로 초고속 확인
    */
   private async fastProfileCheck(userId: string): Promise<boolean> {

@@ -33,6 +33,46 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
             },
         });
     }
+    getIdentityData(user) {
+        return (user.identities ?? [])
+            .map((identity) => identity.identity_data)
+            .filter((data) => Boolean(data));
+    }
+    resolveNameFromUser(user, loginType) {
+        const metadata = user.user_metadata ?? {};
+        const identityDataList = this.getIdentityData(user);
+        const displayNameFromMetadata = metadata.display_name ??
+            metadata.full_name ??
+            null;
+        const nameFromMetadata = metadata.name ??
+            metadata.full_name ??
+            null;
+        const identityName = identityDataList
+            .map((data) => data.full_name ??
+            data.name ??
+            data.given_name ??
+            null)
+            .find((value) => Boolean(value)) ?? null;
+        const shouldPreferDisplay = loginType !== 'email' && loginType !== 'username';
+        const displayCandidate = displayNameFromMetadata ?? identityName;
+        const nameCandidate = nameFromMetadata ?? identityName;
+        return shouldPreferDisplay ? displayCandidate ?? nameCandidate : nameCandidate ?? displayCandidate;
+    }
+    resolveAvatarFromUser(user) {
+        const metadata = user.user_metadata ?? {};
+        const identityDataList = this.getIdentityData(user);
+        const avatarFromMetadata = metadata.avatar_url ??
+            metadata.picture ??
+            metadata.photo ??
+            null;
+        const avatarFromIdentity = identityDataList
+            .map((data) => data.avatar_url ??
+            data.picture ??
+            data.photo ??
+            null)
+            .find((value) => Boolean(value)) ?? null;
+        return avatarFromMetadata ?? avatarFromIdentity ?? null;
+    }
     isConfigured() {
         return Boolean(this.client);
     }
@@ -254,18 +294,9 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
             user.id;
         const username = existingProfileUsername ??
             (await this.ensureUniqueUsername(proposedUsername, user.id, client));
-        const metadata = user.user_metadata ?? {};
-        const displayName = metadata.display_name ?? null;
-        const standardName = metadata.name ??
-            metadata.full_name ??
-            null;
-        const shouldUseDisplayName = loginType !== 'email' && loginType !== 'username';
-        const resolvedName = shouldUseDisplayName ? displayName ?? standardName : standardName ?? displayName;
-        // 소셜 로그인에서 아바타 URL 추출
-        const avatarUrl = metadata.avatar_url ??
-            metadata.picture ??
-            metadata.photo ??
-            null;
+        const resolvedName = this.resolveNameFromUser(user, loginType) ?? existingProfile?.name ?? null;
+        // 소셜 로그인에서 아바타 URL 추출 (identity 데이터 포함)
+        const avatarUrl = this.resolveAvatarFromUser(user);
         await this.upsertProfile({
             id: user.id,
             email: user.email,

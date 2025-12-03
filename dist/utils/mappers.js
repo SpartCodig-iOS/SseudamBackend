@@ -28,13 +28,21 @@ const toProfileResponse = (user) => ({
     updatedAt: formatDate(user.updated_at),
 });
 exports.toProfileResponse = toProfileResponse;
+const getIdentityData = (user) => (user.identities ?? [])
+    .map((identity) => identity.identity_data)
+    .filter((data) => Boolean(data));
 const resolveUserName = (user, options) => {
     const metadata = user.user_metadata ?? {};
+    const identityData = getIdentityData(user);
     const displayName = metadata.display_name ??
         metadata.full_name ??
+        identityData.map((data) => data.full_name ?? data.name ?? data.given_name ?? null)
+            .find((value) => Boolean(value)) ??
         null;
     const regularName = metadata.name ??
         metadata.full_name ??
+        identityData.map((data) => data.name ?? data.full_name ?? data.given_name ?? null)
+            .find((value) => Boolean(value)) ??
         null;
     if (options?.preferDisplayName) {
         return displayName ?? regularName;
@@ -45,7 +53,11 @@ const fromSupabaseUser = (supabaseUser, options) => ({
     id: supabaseUser.id,
     email: supabaseUser.email ?? '',
     name: resolveUserName(supabaseUser, options),
-    avatar_url: supabaseUser.user_metadata?.avatar_url ?? null,
+    avatar_url: supabaseUser.user_metadata?.avatar_url ??
+        getIdentityData(supabaseUser)
+            .map((data) => data.avatar_url ?? data.picture ?? data.photo ?? null)
+            .find((value) => Boolean(value)) ??
+        null,
     username: supabaseUser.email?.split('@')[0] || supabaseUser.id,
     password_hash: '',
     role: 'user',
