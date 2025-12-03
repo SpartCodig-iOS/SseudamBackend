@@ -193,8 +193,21 @@ let MetaService = class MetaService {
             this.getOrCreateRatePromise(cacheKey, normalizedBase, normalizedQuote).catch(() => { });
             return computeResult(fallback);
         }
-        const rate = await this.getOrCreateRatePromise(cacheKey, normalizedBase, normalizedQuote);
-        return computeResult(rate);
+        try {
+            const rate = await this.getOrCreateRatePromise(cacheKey, normalizedBase, normalizedQuote);
+            return computeResult(rate);
+        }
+        catch (error) {
+            // 최후 폴백: 정의되지 않은 통화쌍도 1:1로 반환
+            const fallback = {
+                baseCurrency: normalizedBase,
+                quoteCurrency: normalizedQuote,
+                rate: 1,
+                date: new Date().toISOString().slice(0, 10),
+            };
+            this.rateCache.set(cacheKey, { data: fallback, expiresAt: Date.now() + this.rateCacheTTL / 2 });
+            return computeResult(fallback);
+        }
     }
     // 여러 환율을 병렬로 조회 (성능 최적화)
     async getMultipleExchangeRates(baseCurrency, quoteCurrencies, baseAmount = 1000) {
@@ -230,13 +243,29 @@ let MetaService = class MetaService {
         return promise;
     }
     async fetchAndCacheRate(cacheKey, base, quote) {
-        const rate = await this.requestExchangeRate(base, quote);
-        this.rateCache.set(cacheKey, {
-            data: rate,
-            expiresAt: Date.now() + this.rateCacheTTL,
-        });
-        this.cleanupRateCache();
-        return rate;
+        try {
+            const rate = await this.requestExchangeRate(base, quote);
+            this.rateCache.set(cacheKey, {
+                data: rate,
+                expiresAt: Date.now() + this.rateCacheTTL,
+            });
+            this.cleanupRateCache();
+            return rate;
+        }
+        catch (error) {
+            // 실패 시에도 1:1 임시 환율로 캐싱해 503을 피함
+            const fallback = {
+                baseCurrency: base,
+                quoteCurrency: quote,
+                rate: this.fallbackRates[base]?.[quote] ?? 1,
+                date: new Date().toISOString().slice(0, 10),
+            };
+            this.rateCache.set(cacheKey, {
+                data: fallback,
+                expiresAt: Date.now() + this.rateCacheTTL / 2,
+            });
+            return fallback;
+        }
     }
     async requestExchangeRate(base, quote) {
         try {
@@ -261,7 +290,13 @@ let MetaService = class MetaService {
             }
             const fallbackRate = this.fallbackRates[base]?.[quote];
             if (!fallbackRate) {
-                throw error;
+                // 정의되지 않은 통화쌍도 1:1 임시 환율로 응답해 503을 피함
+                return {
+                    baseCurrency: base,
+                    quoteCurrency: quote,
+                    rate: 1,
+                    date: new Date().toISOString().slice(0, 10),
+                };
             }
             return {
                 baseCurrency: base,

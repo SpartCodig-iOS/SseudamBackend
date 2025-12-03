@@ -186,24 +186,15 @@ export class TravelSettlementService {
       updatedAt: new Date().toISOString(),
     }));
 
-    return {
+    const summary = {
       balances,
       savedSettlements,
       recommendedSettlements,
     };
 
-    // 캐시 저장
-    this.cacheService.set(cacheKey, {
-      balances,
-      savedSettlements,
-      recommendedSettlements,
-    }, { prefix: this.SETTLEMENT_PREFIX, ttl: this.SETTLEMENT_TTL }).catch(() => undefined);
+    this.cacheService.set(cacheKey, summary, { prefix: this.SETTLEMENT_PREFIX, ttl: this.SETTLEMENT_TTL }).catch(() => undefined);
 
-    return {
-      balances,
-      savedSettlements,
-      recommendedSettlements,
-    };
+    return summary;
   }
 
   async saveComputedSettlements(travelId: string, userId: string): Promise<SettlementSummary> {

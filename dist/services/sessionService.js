@@ -33,6 +33,8 @@ let SessionService = SessionService_1 = class SessionService {
         // Supabase 세션 유효성 캐시: 5분 TTL
         this.supabaseValidityCache = new Map();
         this.SUPABASE_VALIDITY_TTL = 5 * 60 * 1000;
+        this.SUPABASE_VALIDITY_REDIS_PREFIX = 'session:valid';
+        this.SUPABASE_VALIDITY_REDIS_TTL = 5 * 60;
         this.indexesEnsured = false;
     }
     async getClient() {
@@ -140,13 +142,10 @@ let SessionService = SessionService_1 = class SessionService {
     }
     getCachedSupabaseValidity(userId) {
         const cached = this.supabaseValidityCache.get(userId);
-        if (!cached)
-            return null;
-        if (Date.now() > cached.expiresAt) {
-            this.supabaseValidityCache.delete(userId);
-            return null;
+        if (cached && Date.now() <= cached.expiresAt) {
+            return cached.valid;
         }
-        return cached.valid;
+        return null;
     }
     setCachedSupabaseValidity(userId, valid) {
         this.supabaseValidityCache.set(userId, {
@@ -159,6 +158,11 @@ let SessionService = SessionService_1 = class SessionService {
             if (firstKey)
                 this.supabaseValidityCache.delete(firstKey);
         }
+        // Redis에도 캐싱
+        this.cacheService.set(userId, valid, {
+            prefix: this.SUPABASE_VALIDITY_REDIS_PREFIX,
+            ttl: this.SUPABASE_VALIDITY_REDIS_TTL,
+        }).catch(() => undefined);
     }
     /**
      * Supabase 세션 유효성 확인 (빠른 검증)
@@ -167,6 +171,18 @@ let SessionService = SessionService_1 = class SessionService {
         const cached = this.getCachedSupabaseValidity(userId);
         if (cached !== null)
             return cached;
+        try {
+            const redisValidity = await this.cacheService.get(userId, {
+                prefix: this.SUPABASE_VALIDITY_REDIS_PREFIX,
+            });
+            if (typeof redisValidity === 'boolean') {
+                this.setCachedSupabaseValidity(userId, redisValidity);
+                return redisValidity;
+            }
+        }
+        catch {
+            // ignore redis miss
+        }
         try {
             // Supabase에서 사용자 정보 조회로 세션 유효성 확인
             const user = await this.supabaseService.getUserById(userId);

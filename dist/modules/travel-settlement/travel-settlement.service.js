@@ -148,22 +148,13 @@ let TravelSettlementService = class TravelSettlementService {
             status: 'pending',
             updatedAt: new Date().toISOString(),
         }));
-        return {
+        const summary = {
             balances,
             savedSettlements,
             recommendedSettlements,
         };
-        // 캐시 저장
-        this.cacheService.set(cacheKey, {
-            balances,
-            savedSettlements,
-            recommendedSettlements,
-        }, { prefix: this.SETTLEMENT_PREFIX, ttl: this.SETTLEMENT_TTL }).catch(() => undefined);
-        return {
-            balances,
-            savedSettlements,
-            recommendedSettlements,
-        };
+        this.cacheService.set(cacheKey, summary, { prefix: this.SETTLEMENT_PREFIX, ttl: this.SETTLEMENT_TTL }).catch(() => undefined);
+        return summary;
     }
     async saveComputedSettlements(travelId, userId) {
         const pool = await (0, pool_1.getPool)();

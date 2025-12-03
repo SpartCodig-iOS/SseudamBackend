@@ -33,6 +33,8 @@ let TravelService = TravelService_1 = class TravelService {
         this.TRAVEL_DETAIL_CACHE_TTL = 10 * 60 * 1000; // 10분
         this.TRAVEL_LIST_REDIS_PREFIX = 'travel:list';
         this.TRAVEL_DETAIL_REDIS_PREFIX = 'travel:detail';
+        this.INVITE_REDIS_PREFIX = 'invite:code';
+        this.INVITE_TTL_SECONDS = 5 * 60;
     }
     async getCachedTravelList(key, rawKey = false) {
         const cacheKey = rawKey ? key : `${key}`;
@@ -117,6 +119,20 @@ let TravelService = TravelService_1 = class TravelService {
     invalidateTravelDetailCache(travelId) {
         this.travelDetailCache.delete(travelId);
         this.cacheService.del(travelId, { prefix: this.TRAVEL_DETAIL_REDIS_PREFIX }).catch(() => undefined);
+    }
+    async getCachedInvite(inviteCode) {
+        try {
+            return await this.cacheService.get(inviteCode, { prefix: this.INVITE_REDIS_PREFIX });
+        }
+        catch {
+            return null;
+        }
+    }
+    async setCachedInvite(inviteCode, payload) {
+        this.cacheService.set(inviteCode, payload, { prefix: this.INVITE_REDIS_PREFIX, ttl: this.INVITE_TTL_SECONDS }).catch(() => undefined);
+    }
+    invalidateInvite(inviteCode) {
+        this.cacheService.del(inviteCode, { prefix: this.INVITE_REDIS_PREFIX }).catch(() => undefined);
     }
     async ensureOwner(travelId, userId, runner) {
         const executor = runner ?? (await (0, pool_1.getPool)());
@@ -441,11 +457,20 @@ let TravelService = TravelService_1 = class TravelService {
          VALUES ($1, $2, $3, 'active')
          ON CONFLICT (invite_code) DO UPDATE SET status = 'active', used_count = 0`, [travelId, inviteCode, userId]);
         }
+        await this.setCachedInvite(inviteCode, {
+            travel_id: travelId,
+            status: 'active',
+            used_count: 0,
+            max_uses: null,
+            expires_at: null,
+            travel_status: 'active',
+        });
         return { inviteCode };
     }
     async deleteTravel(travelId, userId) {
         const pool = await (0, pool_1.getPool)();
         await this.ensureOwner(travelId, userId, pool);
+        const members = await pool.query(`SELECT user_id FROM travel_members WHERE travel_id = $1`, [travelId]);
         await this.ensureTransaction(async (client) => {
             await client.query(`DELETE FROM travel_expense_participants
          WHERE expense_id IN (
@@ -457,6 +482,11 @@ let TravelService = TravelService_1 = class TravelService {
             await client.query(`DELETE FROM travel_members WHERE travel_id = $1`, [travelId]);
             await client.query(`DELETE FROM travels WHERE id = $1`, [travelId]);
         });
+        // 초대 코드 캐시 전부 무효화 (travelId별 키가 없으므로 패턴 삭제)
+        this.cacheService.delPattern(`${this.INVITE_REDIS_PREFIX}:*`).catch(() => undefined);
+        // 관련 캐시 무효화
+        this.invalidateTravelDetailCache(travelId);
+        members.rows.forEach(member => this.invalidateUserTravelCache(member.user_id));
     }
     async transferOwnership(travelId, currentOwnerId, newOwnerId) {
         const pool = await (0, pool_1.getPool)();
@@ -491,24 +521,35 @@ let TravelService = TravelService_1 = class TravelService {
          WHERE id = $1`, [travelId, newOwnerId]);
         });
         // 트랜잭션 커밋 후 최신 상태 조회
-        return this.fetchSummaryForMember(travelId, newOwnerId);
+        const summary = await this.fetchSummaryForMember(travelId, newOwnerId);
+        // 캐시 무효화 및 최신 상세 캐시 저장
+        this.invalidateTravelDetailCache(travelId);
+        this.setCachedTravelDetail(travelId, summary);
+        // 모든 멤버의 리스트 캐시 무효화
+        const members = await pool.query(`SELECT user_id FROM travel_members WHERE travel_id = $1`, [travelId]);
+        members.rows.forEach(member => this.invalidateUserTravelCache(member.user_id));
+        return summary;
     }
     async joinByInviteCode(userId, inviteCode) {
         const pool = await (0, pool_1.getPool)();
-        const inviteResult = await pool.query(`SELECT ti.travel_id,
-              ti.status,
-              ti.used_count,
-              ti.max_uses,
-              ti.expires_at,
-              CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS travel_status
-       FROM travel_invites ti
-       INNER JOIN travels t ON t.id = ti.travel_id
-       WHERE ti.invite_code = $1
-       ORDER BY ti.created_at DESC
-       LIMIT 1`, [inviteCode]);
-        const inviteRow = inviteResult.rows[0];
+        let inviteRow = await this.getCachedInvite(inviteCode);
         if (!inviteRow) {
-            throw new common_1.NotFoundException('유효하지 않은 초대 코드입니다.');
+            const inviteResult = await pool.query(`SELECT ti.travel_id,
+                ti.status,
+                ti.used_count,
+                ti.max_uses,
+                ti.expires_at,
+                CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS travel_status
+         FROM travel_invites ti
+         INNER JOIN travels t ON t.id = ti.travel_id
+         WHERE ti.invite_code = $1
+         ORDER BY ti.created_at DESC
+         LIMIT 1`, [inviteCode]);
+            inviteRow = inviteResult.rows[0];
+            if (!inviteRow) {
+                throw new common_1.NotFoundException('유효하지 않은 초대 코드입니다.');
+            }
+            await this.setCachedInvite(inviteCode, inviteRow);
         }
         if (inviteRow.status !== 'active' || inviteRow.travel_status !== 'active') {
             throw new common_1.BadRequestException('만료되었거나 비활성화된 초대 코드입니다.');
@@ -535,6 +576,8 @@ let TravelService = TravelService_1 = class TravelService {
          WHERE id = $1
            AND role = 'user'`, [userId]);
         });
+        // 초대 코드 캐시 무효화
+        this.invalidateInvite(inviteCode);
         // 새 멤버 참여 후 캐시 무효화
         this.invalidateUserTravelCache(userId);
         this.invalidateTravelDetailCache(inviteRow.travel_id);
@@ -618,7 +661,9 @@ let TravelService = TravelService_1 = class TravelService {
         members.rows.forEach(member => {
             this.invalidateUserTravelCache(member.user_id);
         });
-        return this.fetchSummaryForMember(travelId, userId);
+        const summary = await this.fetchSummaryForMember(travelId, userId);
+        this.setCachedTravelDetail(travelId, summary);
+        return summary;
     }
     async removeMember(travelId, ownerId, memberId) {
         const pool = await (0, pool_1.getPool)();
