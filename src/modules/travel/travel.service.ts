@@ -69,6 +69,8 @@ export class TravelService {
   private readonly TRAVEL_MEMBER_TTL = 2 * 60 * 1000; // 2분
   private readonly TRAVEL_MEMBER_REDIS_PREFIX = 'travel:member';
   private readonly TRAVEL_MEMBER_REDIS_TTL = 2 * 60; // 2분
+  private readonly MEMBER_LIST_REDIS_PREFIX = 'travel:members';
+  private readonly MEMBER_LIST_REDIS_TTL = 30; // 30초
 
   constructor(
     private readonly metaService: MetaService,
@@ -249,6 +251,14 @@ export class TravelService {
     const keys = Array.from(this.TRAVEL_MEMBER_CACHE.keys()).filter(k => k.startsWith(`${travelId}:`));
     keys.forEach(k => this.TRAVEL_MEMBER_CACHE.delete(k));
     await this.cacheService.delPattern(`${this.TRAVEL_MEMBER_REDIS_PREFIX}:${travelId}:*`).catch(() => undefined);
+    await this.cacheService.del(travelId, { prefix: this.MEMBER_LIST_REDIS_PREFIX }).catch(() => undefined);
+  }
+
+  private setMemberListCache(travelId: string, members: TravelMember[]): void {
+    this.cacheService.set(travelId, members, {
+      prefix: this.MEMBER_LIST_REDIS_PREFIX,
+      ttl: this.MEMBER_LIST_REDIS_TTL,
+    }).catch(() => undefined);
   }
 
   private async loadMembersForTravels(travelIds: string[], requesterId: string): Promise<Map<string, TravelMember[]>> {
@@ -257,31 +267,60 @@ export class TravelService {
       return membersMap;
     }
 
-    const pool = await getPool();
-    const result = await pool.query(
-      `SELECT
-         tm.travel_id::text AS travel_id,
-         tm.user_id::text AS user_id,
-         tm.role,
-         p.name,
-         tm.joined_at
-       FROM travel_members tm
-       LEFT JOIN profiles p ON p.id = tm.user_id
-       WHERE tm.travel_id = ANY($1::uuid[])
-       ORDER BY tm.travel_id,
-                CASE WHEN tm.user_id = $2 THEN 0 ELSE 1 END,
-                tm.joined_at`,
-      [travelIds, requesterId],
-    );
+    let cachedLists: (TravelMember[] | null)[] = [];
+    try {
+      cachedLists = await this.cacheService.mget<TravelMember[]>(travelIds, { prefix: this.MEMBER_LIST_REDIS_PREFIX });
+    } catch {
+      // ignore cache errors
+    }
 
-    for (const row of result.rows) {
-      const list = membersMap.get(row.travel_id) ?? [];
-      list.push({
-        userId: row.user_id,
-        name: row.name ?? null,
-        role: row.role ?? 'member',
-      });
-      membersMap.set(row.travel_id, list);
+    const missingTravelIds: string[] = [];
+    travelIds.forEach((id, idx) => {
+      const cached = cachedLists[idx];
+      if (cached && Array.isArray(cached)) {
+        membersMap.set(id, cached);
+      } else {
+        missingTravelIds.push(id);
+      }
+    });
+
+    if (missingTravelIds.length > 0) {
+      const pool = await getPool();
+      const result = await pool.query(
+        `SELECT
+           tm.travel_id::text AS travel_id,
+           tm.user_id::text AS user_id,
+           tm.role,
+           p.name,
+           tm.joined_at
+         FROM travel_members tm
+         LEFT JOIN profiles p ON p.id = tm.user_id
+         WHERE tm.travel_id = ANY($1::uuid[])
+         ORDER BY tm.travel_id,
+                  CASE WHEN tm.user_id = $2 THEN 0 ELSE 1 END,
+                  tm.joined_at`,
+        [missingTravelIds, requesterId],
+      );
+
+      for (const row of result.rows) {
+        const list = membersMap.get(row.travel_id) ?? [];
+        list.push({
+          userId: row.user_id,
+          name: row.name ?? null,
+          role: row.role ?? 'member',
+        });
+        membersMap.set(row.travel_id, list);
+      }
+
+      const toCache = missingTravelIds
+        .filter(id => membersMap.has(id))
+        .map(id => ({ key: id, value: membersMap.get(id)! }));
+      if (toCache.length > 0) {
+        this.cacheService.mset(toCache, {
+          prefix: this.MEMBER_LIST_REDIS_PREFIX,
+          ttl: this.MEMBER_LIST_REDIS_TTL,
+        }).catch(() => undefined);
+      }
     }
 
     return membersMap;
@@ -388,13 +427,25 @@ export class TravelService {
 
     const cached = await this.getCachedTravelDetail(travelId);
     if (cached) {
-      const hydrated = this.attachLinks(cached);
+      let travelWithMembers = cached;
+      // 멤버가 비어 있거나 누락된 경우 최신 멤버를 채워 캐시 갱신
+      if (!cached.members || cached.members.length === 0) {
+        const membersMap = await this.loadMembersForTravels([travelId], userId);
+        travelWithMembers = { ...cached, members: membersMap.get(travelId) ?? [] };
+        this.setCachedTravelDetail(travelId, travelWithMembers);
+        if (travelWithMembers.members) {
+          this.setMemberListCache(travelId, travelWithMembers.members);
+        }
+      }
+      const hydrated = this.attachLinks(travelWithMembers);
       return this.reorderMembersForUser(hydrated, userId);
     }
 
     const travel = this.attachLinks(await this.fetchSummaryForMember(travelId, userId));
-
     this.setCachedTravelDetail(travelId, travel);
+    if (travel.members) {
+      this.setMemberListCache(travelId, travel.members);
+    }
     return this.reorderMembersForUser(travel, userId);
   }
 
@@ -552,8 +603,10 @@ export class TravelService {
       });
 
       // 캐시 업데이트/무효화 (응답을 기다리지 않음)
+      this.setMemberCache(travel.id, currentUser.id, true);
       this.invalidateUserTravelCache(currentUser.id);
       this.setCachedTravelDetail(travel.id, travel);
+      this.setMemberListCache(travel.id, travel.members ?? []);
 
       return travel;
     } catch (error) {
@@ -901,10 +954,16 @@ export class TravelService {
     await this.invalidateTravelCachesForMembers(inviteRow.travel_id);
     await this.invalidateMembersCacheForTravel(inviteRow.travel_id);
 
+    // 멤버십 캐시 업데이트: 이후 상세 조회/권한 체크 시 DB 조회를 생략
+    this.setMemberCache(inviteRow.travel_id, userId, true);
+
     // 멤버 포함 최신 상세를 즉시 조회해 캐시에 반영 (join 직후 멤버 목록 비어있는 문제 방지)
     const travelSummary = this.attachLinks(await this.fetchSummaryForMember(inviteRow.travel_id, userId, true));
 
     this.setCachedTravelDetail(inviteRow.travel_id, travelSummary);
+    if (travelSummary.members) {
+      this.setMemberListCache(inviteRow.travel_id, travelSummary.members);
+    }
 
     return this.reorderMembersForUser(travelSummary, userId);
   }
@@ -1003,6 +1062,9 @@ export class TravelService {
 
     const summary = await this.fetchSummaryForMember(travelId, userId);
     this.setCachedTravelDetail(travelId, summary);
+    if (summary.members) {
+      this.setMemberListCache(travelId, summary.members);
+    }
     return summary;
   }
 
