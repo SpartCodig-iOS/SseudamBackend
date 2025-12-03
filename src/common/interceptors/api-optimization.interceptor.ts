@@ -44,6 +44,9 @@ export class ApiOptimizationInterceptor implements NestInterceptor {
       tap((data) => {
         const endTime = process.hrtime.bigint();
         const responseTime = Number(endTime - startTime) / 1000000; // ms
+        const handlerTime = response.get('X-Handler-Time');
+        const dbTime = response.get('X-DB-Time');
+        const cacheTime = response.get('X-Cache-Time');
 
         // 응답 시간 헤더 추가
         response.set('X-Response-Time', `${responseTime.toFixed(2)}ms`);
@@ -70,6 +73,9 @@ export class ApiOptimizationInterceptor implements NestInterceptor {
           this.logger.warn(`Slow API: ${method} ${endpoint} took ${responseTime.toFixed(2)}ms`, {
             userId,
             statusCode: response.statusCode,
+            handlerTime,
+            dbTime,
+            cacheTime,
           });
         }
 
