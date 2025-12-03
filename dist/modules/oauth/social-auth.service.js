@@ -214,6 +214,20 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         })();
         return this.dbWarmupPromise;
     }
+    decodeAccessToken(accessToken) {
+        try {
+            const parts = accessToken.split('.');
+            if (parts.length !== 3)
+                return null;
+            const payload = parts[1];
+            const decoded = Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+            const parsed = JSON.parse(decoded);
+            return parsed;
+        }
+        catch {
+            return null;
+        }
+    }
     buildAppleClientSecret() {
         // 캐시된 토큰이 있고 아직 유효하면 재사용
         if (this.appleClientSecretCache && this.appleClientSecretCache.expiresAt > Date.now()) {
@@ -392,23 +406,41 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         // 🔥 CACHE WARMING: 토큰 해시 기반 빠른 캐시 키 생성
         const tokenHash = this.getTokenCacheKey(accessToken);
         const cacheKey = `oauth_check:${tokenHash}`;
-        // 🚀 TURBO-FAST: Redis 캐시, 사용자 캐시, DB 커넥션 워밍을 병렬 실행
-        const [redisCached, cachedUser] = await Promise.allSettled([
-            this.cacheService.get(cacheKey),
-            this.getCachedOAuthUser(accessToken),
-            this.warmupDbConnection(), // DB 커넥션 미리 준비
-        ]);
+        // DB 워밍은 블로킹하지 않고 백그라운드로
+        void this.warmupDbConnection();
+        // 🚀 TURBO-FAST: Redis 캐시와 사용자 캐시 병렬 조회 (워밍은 대기하지 않음)
+        const redisPromise = this.cacheService.get(cacheKey);
+        const cachedUserPromise = this.getCachedOAuthUser(accessToken);
         // Redis 캐시 적중
-        if (redisCached.status === 'fulfilled' && redisCached.value) {
-            this.primeLookupCaches(accessToken, cacheKey, redisCached.value);
+        const redisCached = await redisPromise;
+        if (redisCached) {
+            this.primeLookupCaches(accessToken, cacheKey, redisCached);
             const duration = Date.now() - startTime;
             this.logger.debug(`FAST OAuth check Redis hit: ${duration}ms`);
-            return redisCached.value;
+            return redisCached;
         }
-        // 캐시된 사용자 적중 - 빠른 profile 테이블 조회
-        if (cachedUser.status === 'fulfilled' && cachedUser.value) {
+        // ⚡ 초고속 오프라인 토큰 디코딩 경로 (Supabase 네트워크 스킵)
+        const decoded = this.decodeAccessToken(accessToken);
+        if (decoded?.sub && (!decoded.exp || decoded.exp * 1000 > Date.now())) {
             try {
-                const registered = await this.profileExists(cachedUser.value.id);
+                const registered = await this.profileExists(decoded.sub);
+                const result = { registered };
+                this.primeLookupCaches(accessToken, cacheKey, result);
+                // 백그라운드에서 Supabase 정밀 검증 및 사용자 캐시 워밍
+                void this.verifySupabaseUser(accessToken, decoded.sub).catch((error) => this.logger.warn(`Background Supabase verify failed for offline path:`, error));
+                const duration = Date.now() - startTime;
+                this.logger.debug(`ULTRA-FAST OAuth check via offline decode: ${duration}ms`);
+                return result;
+            }
+            catch (error) {
+                this.logger.warn(`Offline decode path failed, falling back to Supabase`, error);
+            }
+        }
+        // 캐시된 사용자 적중 - 빠른 profile 테이블 조회 (오프라인 경로 실패 시)
+        const cachedUser = await cachedUserPromise;
+        if (cachedUser) {
+            try {
+                const registered = await this.profileExists(cachedUser.id);
                 const result = { registered };
                 // 캐시는 즉시 반영 (두 번째 호출에서 바로 사용 가능)
                 this.primeLookupCaches(accessToken, cacheKey, result);
@@ -454,6 +486,30 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             const duration = Date.now() - startTime;
             this.logger.error(`OAuth check failed after ${duration}ms:`, error);
             throw new common_1.UnauthorizedException('Invalid Supabase access token');
+        }
+    }
+    async verifySupabaseUser(accessToken, userId) {
+        try {
+            const supabaseUser = await this.supabaseService.getUserFromToken(accessToken);
+            if (!supabaseUser || supabaseUser.id !== userId) {
+                this.setCachedCheck(accessToken, false);
+                await this.cacheService.set(`oauth_check:${this.getTokenCacheKey(accessToken)}`, { registered: false }, { ttl: 120 });
+                return;
+            }
+            await this.setCachedOAuthUser(accessToken, {
+                id: supabaseUser.id,
+                email: supabaseUser.email || '',
+                name: supabaseUser.user_metadata?.full_name || supabaseUser.user_metadata?.name || null,
+                avatar_url: supabaseUser.user_metadata?.avatar_url || null,
+                username: supabaseUser.email || supabaseUser.id,
+                password_hash: '',
+                role: 'user',
+                created_at: new Date(),
+                updated_at: new Date(),
+            });
+        }
+        catch (error) {
+            this.logger.warn(`verifySupabaseUser failed for ${userId}:`, error);
         }
     }
     async revokeAppleConnection(userId, refreshToken) {
