@@ -29,6 +29,7 @@ export interface TravelSummary {
   createdAt: string;
   ownerName: string | null;
   members?: TravelMember[];
+  deepLink?: string;
 }
 
 export interface TravelDetail extends TravelSummary {}
@@ -370,10 +371,20 @@ export class TravelService {
 
     const cached = await this.getCachedTravelDetail(travelId);
     if (cached) {
+      // 딥링크 추가
+      if (cached.inviteCode) {
+        cached.deepLink = this.generateDeepLink(cached.inviteCode);
+      }
       return this.reorderMembersForUser(cached, userId);
     }
 
     const travel = await this.fetchSummaryForMember(travelId, userId);
+
+    // 딥링크 추가
+    if (travel.inviteCode) {
+      travel.deepLink = this.generateDeepLink(travel.inviteCode);
+    }
+
     this.setCachedTravelDetail(travelId, travel);
     return this.reorderMembersForUser(travel, userId);
   }
@@ -527,6 +538,11 @@ export class TravelService {
         return this.mapSummary(optimizedResult, optimizedResult.members);
       });
 
+      // 딥링크 추가
+      if (travel.inviteCode) {
+        travel.deepLink = this.generateDeepLink(travel.inviteCode);
+      }
+
       // 캐시 업데이트/무효화 (응답을 기다리지 않음)
       this.invalidateUserTravelCache(currentUser.id);
       this.setCachedTravelDetail(travel.id, travel);
@@ -553,7 +569,12 @@ export class TravelService {
 
     const cachedList = await this.getCachedTravelList(cacheKey);
     if (cachedList) {
-      return { total: cachedList.length, page, limit, items: cachedList };
+      // 캐시된 데이터에 딥링크 추가
+      const itemsWithDeepLink = cachedList.map(item => ({
+        ...item,
+        deepLink: item.inviteCode ? this.generateDeepLink(item.inviteCode) : undefined
+      }));
+      return { total: cachedList.length, page, limit, items: itemsWithDeepLink };
     }
 
     const totalPromise = pool.query(
@@ -602,19 +623,29 @@ export class TravelService {
     const membersMap = await this.loadMembersForTravels(travelIds, userId);
     const items = listResult.rows.map((row) => this.mapSummary(row, membersMap.get(row.id)));
 
-    // 캐시에 저장 (Redis + 메모리)
+    // 딥링크 추가
+    const itemsWithDeepLink = items.map(item => ({
+      ...item,
+      deepLink: item.inviteCode ? this.generateDeepLink(item.inviteCode) : undefined
+    }));
+
+    // 캐시에 저장 (Redis + 메모리) - 딥링크 없이 저장
     this.setCachedTravelList(cacheKey, items);
 
     return {
       total,
       page,
       limit,
-      items,
+      items: itemsWithDeepLink,
     };
   }
 
   private generateInviteCode(): string {
     return randomBytes(5).toString('hex');
+  }
+
+  private generateDeepLink(inviteCode: string): string {
+    return `sseudam://join?code=${inviteCode}`;
   }
 
   async createInvite(travelId: string, userId: string): Promise<TravelInvitePayload> {

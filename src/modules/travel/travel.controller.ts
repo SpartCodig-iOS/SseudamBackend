@@ -218,6 +218,34 @@ export class TravelController {
     return success(travel, 'Joined travel');
   }
 
+  @Get('join/:inviteCode')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '딥링크로 여행 참여 (GET 방식)' })
+  @UseGuards(AuthGuard)
+  async joinByDeepLink(
+    @Param('inviteCode') inviteCode: string,
+    @Req() req: RequestWithUser,
+  ) {
+    if (!req.currentUser) {
+      throw new UnauthorizedException('Unauthorized');
+    }
+
+    try {
+      const travel = await this.travelService.joinByInviteCode(req.currentUser.id, inviteCode);
+
+      return success({
+        ...travel,
+        joinMethod: 'deeplink'
+      }, 'Successfully joined travel via deep link');
+
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw new BadRequestException('이미 참여중인 여행이거나 유효하지 않은 초대 코드입니다.');
+      }
+      throw error;
+    }
+  }
+
   @Patch(':travelId/owner')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '여행 호스트 권한 위임 (기존 호스트 → 멤버)' })
