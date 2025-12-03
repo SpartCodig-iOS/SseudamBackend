@@ -51,14 +51,14 @@ export class TravelService {
   private countryCurrencyLoaded = false;
   private countryCurrencyLoadPromise: Promise<void> | null = null;
 
-  // 여행 목록 캐시: 5분 TTL, 사용자별 캐시
+  // 여행 목록 캐시: 30초 TTL, 사용자별 캐시
   private readonly travelListCache = new Map<string, { data: TravelSummary[]; expiresAt: number }>();
-  private readonly TRAVEL_LIST_CACHE_TTL = 5 * 60 * 1000; // 5분
+  private readonly TRAVEL_LIST_CACHE_TTL = 30 * 1000; // 30초로 단축하여 최신 반영
   private readonly MAX_CACHE_SIZE = 1000;
 
-  // 여행 상세 캐시: 10분 TTL
+  // 여행 상세 캐시: 30초 TTL
   private readonly travelDetailCache = new Map<string, { data: TravelDetail; expiresAt: number }>();
-  private readonly TRAVEL_DETAIL_CACHE_TTL = 10 * 60 * 1000; // 10분
+  private readonly TRAVEL_DETAIL_CACHE_TTL = 30 * 1000; // 30초로 단축하여 최신 반영
   private readonly TRAVEL_LIST_REDIS_PREFIX = 'travel:list';
   private readonly TRAVEL_DETAIL_REDIS_PREFIX = 'travel:detail';
   private readonly INVITE_REDIS_PREFIX = 'invite:code';
