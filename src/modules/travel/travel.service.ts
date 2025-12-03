@@ -166,12 +166,20 @@ export class TravelService {
   }
 
   private async invalidateTravelCachesForMembers(travelId: string): Promise<void> {
-    const pool = await getPool();
-    const members = await pool.query(
-      `SELECT user_id FROM travel_members WHERE travel_id = $1`,
-      [travelId]
-    );
-    members.rows.forEach(member => this.invalidateUserTravelCache(member.user_id));
+    // Redis 패턴 기반 삭제로 N+1 쿼리 제거
+    try {
+      await this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:*:*:${travelId}`);
+    } catch (error) {
+      console.warn('Pattern-based cache invalidation failed, falling back to individual deletion:', error);
+
+      // 패턴 삭제 실패 시만 기존 방식 사용
+      const pool = await getPool();
+      const members = await pool.query(
+        `SELECT user_id FROM travel_members WHERE travel_id = $1`,
+        [travelId]
+      );
+      members.rows.forEach(member => this.invalidateUserTravelCache(member.user_id));
+    }
   }
 
   private async getCachedInvite(inviteCode: string): Promise<{ travel_id: string; status: string; used_count: number; max_uses: number | null; expires_at: string | null; travel_status: string } | null> {
@@ -308,7 +316,7 @@ export class TravelService {
     return exists;
   }
 
-  private async fetchSummaryForMember(travelId: string, userId: string): Promise<TravelSummary> {
+  private async fetchSummaryForMember(travelId: string, userId: string, includeMembers: boolean = true): Promise<TravelSummary> {
     await this.ensureCountryCurrencyMap();
 
     const pool = await getPool();
@@ -340,8 +348,12 @@ export class TravelService {
       throw new NotFoundException('여행을 찾을 수 없거나 접근 권한이 없습니다.');
     }
 
-    const membersMap = await this.loadMembersForTravels([travelId], userId);
-    return this.mapSummary(row, membersMap.get(travelId));
+    // join 시에는 멤버 정보 로드 스킵으로 성능 개선
+    const members = includeMembers
+      ? (await this.loadMembersForTravels([travelId], userId)).get(travelId)
+      : [];
+
+    return this.mapSummary(row, members);
   }
 
   private mapSummary(row: any, members?: TravelMember[]): TravelSummary {
@@ -830,24 +842,8 @@ export class TravelService {
       fetchedFromCache = false;
     }
 
-    // 캐시가 오래된 경우를 방지하기 위해 여행 상태를 최신으로 확인
-    if (fetchedFromCache) {
-      const travelStatusResult = await pool.query(
-        `SELECT CASE WHEN end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS travel_status
-         FROM travels
-         WHERE id = $1
-         LIMIT 1`,
-        [inviteRow.travel_id],
-      );
-      const currentStatus = travelStatusResult.rows[0]?.travel_status;
-      if (!currentStatus) {
-        throw new NotFoundException('유효하지 않은 초대 코드입니다.');
-      }
-      if (currentStatus !== inviteRow.travel_status) {
-        inviteRow = { ...inviteRow, travel_status: currentStatus };
-        await this.setCachedInvite(inviteCode, inviteRow);
-      }
-    }
+    // 캐시된 데이터 신뢰 (TTL을 짧게 유지하여 신뢰성 확보)
+    // 기존 중복 쿼리 제거로 성능 개선
     if (inviteRow.status !== 'active' || inviteRow.travel_status !== 'active') {
       throw new BadRequestException('만료되었거나 비활성화된 초대 코드입니다.');
     }
@@ -895,7 +891,13 @@ export class TravelService {
     await this.invalidateTravelCachesForMembers(inviteRow.travel_id);
     await this.invalidateMembersCacheForTravel(inviteRow.travel_id);
 
-    return this.fetchSummaryForMember(inviteRow.travel_id, userId);
+    // join 응답에는 멤버 정보 불필요 - 성능 개선
+    const travelSummary = await this.fetchSummaryForMember(inviteRow.travel_id, userId, false);
+
+    // 결과를 캐시에 저장해서 후속 요청 성능 개선
+    this.setCachedTravelDetail(inviteRow.travel_id, travelSummary);
+
+    return travelSummary;
   }
 
   async leaveTravel(travelId: string, userId: string): Promise<{ deletedTravel: boolean }> {
