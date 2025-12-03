@@ -442,23 +442,26 @@ export class SocialAuthService {
     if (decoded?.sub) {
       try {
         let profile = await this.supabaseService.findProfileById(decoded.sub);
-        let detectedLoginType = this.resolveLoginType(loginType);
         let supabaseUser: any | null = null;
 
-        // 프로필이 없거나 로그인 타입이 소셜로 확정되지 않았다면 Supabase Admin으로 보강
-        if (!profile || detectedLoginType === 'email' || detectedLoginType === 'username') {
-          try {
-            supabaseUser = await this.supabaseService.getUserById(decoded.sub);
-            detectedLoginType = this.resolveLoginType(detectedLoginType, supabaseUser);
-          } catch (adminError) {
-            this.logger.warn(`Offline path admin fetch failed for ${decoded.sub}:`, adminError as Error);
-          }
+        // 항상 Supabase Admin으로 최신 사용자 조회 (provider/metadata 확보)
+        try {
+          supabaseUser = await this.supabaseService.getUserById(decoded.sub);
+        } catch (adminError) {
+          this.logger.warn(`Offline path admin fetch failed for ${decoded.sub}:`, adminError as Error);
         }
 
-        // 소셜 로그인의 경우 프로필을 강제 생성/업데이트
+        const detectedLoginType = this.resolveLoginType(loginType, supabaseUser);
+        const preferDisplayName = detectedLoginType !== 'email' && detectedLoginType !== 'username';
+
+        // 소셜/미등록 프로필은 강제로 생성/업데이트
         if (supabaseUser && (!profile || detectedLoginType !== 'email')) {
-          await this.supabaseService.ensureProfileFromSupabaseUser(supabaseUser, detectedLoginType);
-          profile = await this.supabaseService.findProfileById(decoded.sub);
+          try {
+            await this.supabaseService.ensureProfileFromSupabaseUser(supabaseUser, detectedLoginType);
+            profile = await this.supabaseService.findProfileById(decoded.sub);
+          } catch (ensureError) {
+            this.logger.warn(`Offline path ensureProfile failed for ${decoded.sub}:`, ensureError as Error);
+          }
         }
 
         const email =
@@ -468,7 +471,6 @@ export class SocialAuthService {
           '';
 
         if (email) {
-          const preferDisplayName = detectedLoginType !== 'email' && detectedLoginType !== 'username';
           const userRecord: UserRecord = supabaseUser
             ? fromSupabaseUser(supabaseUser, { preferDisplayName })
             : {
@@ -483,22 +485,38 @@ export class SocialAuthService {
                 updated_at: profile?.updated_at ? new Date(profile.updated_at) : null,
               };
 
-          // 토큰 저장 (supabase user metadata에 담긴 값도 활용)
+          // 토큰 저장 (Supabase metadata + code exchange 포함)
           const appleTokenFromUser =
             (supabaseUser?.user_metadata as any)?.apple_refresh_token ?? null;
           const googleTokenFromUser =
             (supabaseUser?.user_metadata as any)?.google_refresh_token ?? null;
 
-          if (detectedLoginType === 'apple') {
-            const finalAppleToken = options.appleRefreshToken ?? appleTokenFromUser;
-            if (finalAppleToken) {
-              await this.supabaseService.saveAppleRefreshToken(userRecord.id, finalAppleToken);
-            }
-          } else if (detectedLoginType === 'google') {
-            const finalGoogleToken = options.googleRefreshToken ?? googleTokenFromUser;
-            if (finalGoogleToken) {
-              await this.supabaseService.saveGoogleRefreshToken(userRecord.id, finalGoogleToken);
-            }
+          const appleToken =
+            detectedLoginType === 'apple'
+              ? options.appleRefreshToken ??
+                appleTokenFromUser ??
+                (options.authorizationCode
+                  ? await this.exchangeAppleAuthorizationCode(options.authorizationCode)
+                  : null)
+              : null;
+
+          const googleToken =
+            detectedLoginType === 'google'
+              ? options.googleRefreshToken ??
+                googleTokenFromUser ??
+                (options.authorizationCode
+                  ? await this.exchangeGoogleAuthorizationCode(options.authorizationCode, {
+                      codeVerifier: options.codeVerifier,
+                      redirectUri: options.redirectUri,
+                    })
+                  : null)
+              : null;
+
+          if (appleToken) {
+            await this.supabaseService.saveAppleRefreshToken(userRecord.id, appleToken);
+          }
+          if (googleToken) {
+            await this.supabaseService.saveGoogleRefreshToken(userRecord.id, googleToken);
           }
 
           const authSession = await this.authService.createAuthSession(userRecord, detectedLoginType);
