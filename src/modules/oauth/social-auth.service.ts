@@ -48,7 +48,7 @@ export class SocialAuthService {
   private readonly PROFILE_EXISTS_REDIS_PREFIX = 'profile_exists';
   private readonly localTokenCache = new Map<string, { user: UserRecord; expiresAt: number }>();
   private readonly LOCAL_TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5분
-  private dbWarmupPromise: Promise<void> | null = null;
+  private dbWarmupPromise: Promise<boolean> | null = null;
 
   // 네트워크 타임아웃 설정 (빠른 실패)
   private readonly NETWORK_TIMEOUT = 8000; // 8초
@@ -260,17 +260,23 @@ export class SocialAuthService {
     this.cacheService.set(cacheKey, result, { ttl: 300 }).catch(() => undefined);
   }
 
-  private async warmupDbConnection(): Promise<void> {
+  /**
+   * 🚀 REDIS-FIRST: DB 커넥션 워밍 (중복 요청은 재사용)
+   */
+  private async warmupDbConnection(): Promise<boolean> {
     if (this.dbWarmupPromise) {
-      return this.dbWarmupPromise;
+      await this.dbWarmupPromise;
+      return true;
     }
 
     this.dbWarmupPromise = (async () => {
       try {
         const pool = await getPool();
         await pool.query('SELECT 1');
+        return true;
       } catch (error) {
         this.logger.warn('DB warmup skipped due to error', error as Error);
+        return false;
       } finally {
         this.dbWarmupPromise = null;
       }
