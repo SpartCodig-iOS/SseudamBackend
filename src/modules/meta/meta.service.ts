@@ -210,49 +210,49 @@ export class MetaService {
       quoteAmount: rateData.rate * normalizedAmount,
     });
 
-    if (cached) {
-      if (cached.expiresAt > Date.now()) {
+    try {
+      if (cached) {
+        if (cached.expiresAt > Date.now()) {
+          return computeResult(cached.data);
+        }
+        // Use stale data immediately but refresh in the background.
+        this.getOrCreateRatePromise(cacheKey, normalizedBase, normalizedQuote).catch(() => {});
         return computeResult(cached.data);
       }
-      // Use stale data immediately but refresh in the background.
-      this.getOrCreateRatePromise(cacheKey, normalizedBase, normalizedQuote).catch(() => {});
-      return computeResult(cached.data);
-    }
 
-    if (normalizedBase === normalizedQuote) {
-      const same = {
-        baseCurrency: normalizedBase,
-        quoteCurrency: normalizedQuote,
-        rate: 1,
-        date: new Date().toISOString().slice(0, 10),
-      };
-      this.rateCache.set(cacheKey, { data: same, expiresAt: Date.now() + this.rateCacheTTL });
-      return computeResult(same);
-    }
+      if (normalizedBase === normalizedQuote) {
+        const same = {
+          baseCurrency: normalizedBase,
+          quoteCurrency: normalizedQuote,
+          rate: 1,
+          date: new Date().toISOString().slice(0, 10),
+        };
+        this.rateCache.set(cacheKey, { data: same, expiresAt: Date.now() + this.rateCacheTTL });
+        return computeResult(same);
+      }
 
-    const fallbackRate = this.fallbackRates[normalizedBase]?.[normalizedQuote];
-    if (!cached && fallbackRate) {
-      const fallback: CachedRate = {
-        baseCurrency: normalizedBase,
-        quoteCurrency: normalizedQuote,
-        rate: fallbackRate,
-        date: new Date().toISOString().slice(0, 10),
-      };
-      this.rateCache.set(cacheKey, { data: fallback, expiresAt: Date.now() + this.rateCacheTTL / 2 });
-      // Trigger background refresh without blocking the response
-      this.getOrCreateRatePromise(cacheKey, normalizedBase, normalizedQuote).catch(() => {});
-      return computeResult(fallback);
-    }
+      const fallbackRate = this.fallbackRates[normalizedBase]?.[normalizedQuote];
+      if (!cached && fallbackRate) {
+        const fallback: CachedRate = {
+          baseCurrency: normalizedBase,
+          quoteCurrency: normalizedQuote,
+          rate: fallbackRate,
+          date: new Date().toISOString().slice(0, 10),
+        };
+        this.rateCache.set(cacheKey, { data: fallback, expiresAt: Date.now() + this.rateCacheTTL / 2 });
+        // Trigger background refresh without blocking the response
+        this.getOrCreateRatePromise(cacheKey, normalizedBase, normalizedQuote).catch(() => {});
+        return computeResult(fallback);
+      }
 
-    try {
       const rate = await this.getOrCreateRatePromise(cacheKey, normalizedBase, normalizedQuote);
       return computeResult(rate);
     } catch (error) {
-      // 최후 폴백: 정의되지 않은 통화쌍도 1:1로 반환
+      // 최후 폴백: 정의되지 않은 통화쌍도 1:1로 반환하고 캐시에 저장
       const fallback: CachedRate = {
         baseCurrency: normalizedBase,
         quoteCurrency: normalizedQuote,
-        rate: 1,
+        rate: this.fallbackRates[normalizedBase]?.[normalizedQuote] ?? 1,
         date: new Date().toISOString().slice(0, 10),
       };
       this.rateCache.set(cacheKey, { data: fallback, expiresAt: Date.now() + this.rateCacheTTL / 2 });
