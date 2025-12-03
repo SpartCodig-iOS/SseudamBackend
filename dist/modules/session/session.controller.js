@@ -30,8 +30,9 @@ let SessionController = class SessionController {
         if (!session) {
             throw new common_1.BadRequestException('Session not found or expired');
         }
+        // 🚀 ULTRA-FAST: 활성 세션의 touch는 백그라운드로 처리해 응답 지연 제거
         if (session.isActive) {
-            await this.sessionService.touchSession(sessionId);
+            void this.sessionService.touchSession(sessionId);
         }
         const message = session.isActive ? 'Session info retrieved successfully' : 'Session info retrieved (inactive)';
         return (0, api_1.success)(session, message);
@@ -41,7 +42,7 @@ exports.SessionController = SessionController;
 __decorate([
     (0, common_1.Get)(),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    (0, swagger_1.ApiOperation)({ summary: '세션 ID로 최근 로그인 정보를 조회' }),
+    (0, swagger_1.ApiOperation)({ summary: '세션 ID로 최근 로그인 정보를 조회 (초고속 최적화)' }),
     (0, swagger_1.ApiQuery)({ name: 'sessionId', required: true }),
     (0, swagger_1.ApiOkResponse)({ type: session_response_dto_1.SessionResponseDto }),
     __param(0, (0, common_1.Query)('sessionId')),

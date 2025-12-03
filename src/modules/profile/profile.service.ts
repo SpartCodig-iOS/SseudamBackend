@@ -292,9 +292,16 @@ export class ProfileService {
       this.cacheService.del(userId, { prefix: this.AVATAR_CACHE_PREFIX }).catch(() => undefined);
     }
 
-    // Redis에서 사용자 관련 모든 캐시 무효화 (비동기로 실행하여 응답 속도 영향 최소화)
-    this.cacheService.invalidateUserCache(userId)
-      .catch((error) => this.logger.warn(`Profile cache invalidation failed for user ${userId}:`, error));
+    // 🔄 Redis에서 사용자 관련 모든 캐시 무효화 (OAuth 캐시 포함)
+    Promise.allSettled([
+      this.cacheService.invalidateUserCache(userId),
+      // OAuth 관련 캐시들도 무효화
+      this.cacheService.del(`profile_exists:${userId}`),
+      this.cacheService.del(`oauth_user:${userId}`),
+      this.cacheService.del(userId, { prefix: 'profile_exists' }),
+      this.cacheService.del(userId, { prefix: 'oauth' }),
+      this.cacheService.del(userId, { prefix: 'auth' }),
+    ]).catch((error) => this.logger.warn(`Profile cache invalidation failed for user ${userId}:`, error));
 
     return updated;
   }

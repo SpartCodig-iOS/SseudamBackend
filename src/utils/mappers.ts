@@ -32,15 +32,27 @@ interface SupabaseNameOptions {
   preferDisplayName?: boolean;
 }
 
+const getIdentityData = (user: User): Record<string, any>[] =>
+  (user.identities ?? [])
+    .map((identity) => identity.identity_data as Record<string, any> | undefined)
+    .filter((data): data is Record<string, any> => Boolean(data));
+
 const resolveUserName = (user: User, options?: SupabaseNameOptions): string | null => {
   const metadata = user.user_metadata ?? {};
+  const identityData = getIdentityData(user);
+
   const displayName =
     (metadata.display_name as string | undefined) ??
     (metadata.full_name as string | undefined) ??
+    identityData.map((data) => (data.full_name as string | undefined) ?? (data.name as string | undefined) ?? (data.given_name as string | undefined) ?? null)
+      .find((value) => Boolean(value)) ??
     null;
+
   const regularName =
     (metadata.name as string | undefined) ??
     (metadata.full_name as string | undefined) ??
+    identityData.map((data) => (data.name as string | undefined) ?? (data.full_name as string | undefined) ?? (data.given_name as string | undefined) ?? null)
+      .find((value) => Boolean(value)) ??
     null;
 
   if (options?.preferDisplayName) {
@@ -53,7 +65,12 @@ export const fromSupabaseUser = (supabaseUser: User, options?: SupabaseNameOptio
   id: supabaseUser.id,
   email: supabaseUser.email ?? '',
   name: resolveUserName(supabaseUser, options),
-  avatar_url: (supabaseUser.user_metadata?.avatar_url as string | null) ?? null,
+  avatar_url:
+    (supabaseUser.user_metadata?.avatar_url as string | null) ??
+    getIdentityData(supabaseUser)
+      .map((data) => (data.avatar_url as string | undefined) ?? (data.picture as string | undefined) ?? (data.photo as string | undefined) ?? null)
+      .find((value) => Boolean(value)) ??
+    null,
   username: supabaseUser.email?.split('@')[0] || supabaseUser.id,
   password_hash: '',
   role: 'user',

@@ -66,6 +66,14 @@ export class OptimizedOAuthService {
       });
 
       const result = await resultPromise;
+
+      // 🔄 새로운 세션 생성 후 관련 캐시 무효화 (백그라운드)
+      if (result.user?.id) {
+        void this.socialAuthService.invalidateUserCaches(result.user.id).catch(error =>
+          this.logger.warn(`Failed to invalidate OAuth caches for ${result.user.id}:`, error)
+        );
+      }
+
       const duration = Date.now() - startTime;
       this.logger.debug(`Fast OAuth login completed: ${duration}ms`);
 

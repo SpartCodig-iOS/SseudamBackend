@@ -28,6 +28,65 @@ export class SupabaseService {
     });
   }
 
+  private getIdentityData(user: User): Record<string, any>[] {
+    return (user.identities ?? [])
+      .map((identity) => identity.identity_data as Record<string, any> | undefined)
+      .filter((data): data is Record<string, any> => Boolean(data));
+  }
+
+  private resolveNameFromUser(user: User, loginType: LoginType): string | null {
+    const metadata = user.user_metadata ?? {};
+    const identityDataList = this.getIdentityData(user);
+
+    const displayNameFromMetadata =
+      (metadata.display_name as string | undefined) ??
+      (metadata.full_name as string | undefined) ??
+      null;
+
+    const nameFromMetadata =
+      (metadata.name as string | undefined) ??
+      (metadata.full_name as string | undefined) ??
+      null;
+
+    const identityName = identityDataList
+      .map((data) =>
+        (data.full_name as string | undefined) ??
+        (data.name as string | undefined) ??
+        (data.given_name as string | undefined) ??
+        null,
+      )
+      .find((value) => Boolean(value)) ?? null;
+
+    const shouldPreferDisplay = loginType !== 'email' && loginType !== 'username';
+
+    const displayCandidate = displayNameFromMetadata ?? identityName;
+    const nameCandidate = nameFromMetadata ?? identityName;
+
+    return shouldPreferDisplay ? displayCandidate ?? nameCandidate : nameCandidate ?? displayCandidate;
+  }
+
+  private resolveAvatarFromUser(user: User): string | null {
+    const metadata = user.user_metadata ?? {};
+    const identityDataList = this.getIdentityData(user);
+
+    const avatarFromMetadata =
+      (metadata.avatar_url as string | undefined) ??
+      (metadata.picture as string | undefined) ??
+      (metadata.photo as string | undefined) ??
+      null;
+
+    const avatarFromIdentity = identityDataList
+      .map((data) =>
+        (data.avatar_url as string | undefined) ??
+        (data.picture as string | undefined) ??
+        (data.photo as string | undefined) ??
+        null,
+      )
+      .find((value) => Boolean(value)) ?? null;
+
+    return avatarFromMetadata ?? avatarFromIdentity ?? null;
+  }
+
   isConfigured(): boolean {
     return Boolean(this.client);
   }
@@ -295,21 +354,10 @@ export class SupabaseService {
       existingProfileUsername ??
       (await this.ensureUniqueUsername(proposedUsername, user.id, client));
 
-    const metadata = user.user_metadata ?? {};
-    const displayName = (metadata.display_name as string | null) ?? null;
-    const standardName =
-      (metadata.name as string | null) ??
-      (metadata.full_name as string | null) ??
-      null;
-    const shouldUseDisplayName = loginType !== 'email' && loginType !== 'username';
-    const resolvedName = shouldUseDisplayName ? displayName ?? standardName : standardName ?? displayName;
+    const resolvedName = this.resolveNameFromUser(user, loginType) ?? existingProfile?.name ?? null;
 
-    // 소셜 로그인에서 아바타 URL 추출
-    const avatarUrl =
-      (metadata.avatar_url as string | null) ??
-      (metadata.picture as string | null) ??
-      (metadata.photo as string | null) ??
-      null;
+    // 소셜 로그인에서 아바타 URL 추출 (identity 데이터 포함)
+    const avatarUrl = this.resolveAvatarFromUser(user);
 
     await this.upsertProfile({
       id: user.id,

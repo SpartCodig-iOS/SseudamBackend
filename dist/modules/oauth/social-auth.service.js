@@ -1,10 +1,43 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
@@ -369,7 +402,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         const user = supabaseUser.value;
         const { appleRefreshToken, googleRefreshToken, authorizationCode, codeVerifier, redirectUri } = options;
         // 3단계: 프로필 존재 체크 (필수), 토큰 교환은 비동기 워밍으로 전환
-        const profileExists = await this.profileExists(user.id);
+        const profileExists = await this.fastProfileCheck(user.id);
         // 토큰 교환은 응답 지연을 막기 위해 시작만 해두고 백그라운드로
         const appleTokenPromise = loginType === 'apple' && !appleRefreshToken && authorizationCode
             ? this.exchangeAppleAuthorizationCode(authorizationCode)
@@ -391,6 +424,8 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             this.setCachedOAuthUser(accessToken, userRecord),
             this.authService.warmAuthCaches(userRecord)
         ]);
+        // 🔄 새로운 로그인이므로 기존 캐시 무효화 (최신 데이터 반영)
+        void this.invalidateUserCaches(userRecord.id).catch(error => this.logger.warn(`Failed to invalidate caches for ${userRecord.id}:`, error));
         // 7단계: 모든 백그라운드 작업을 비동기로 처리 (응답 지연 최소화)
         const backgroundTasks = [];
         // 프로필 이미지 미러링
@@ -459,39 +494,58 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         const cacheKey = `oauth_check:${tokenHash}`;
         // DB 워밍은 블로킹하지 않고 백그라운드로
         void this.warmupDbConnection();
-        // 🚀 TURBO-FAST: Redis 캐시와 사용자 캐시 병렬 조회 (워밍은 대기하지 않음)
-        const redisPromise = this.cacheService.get(cacheKey);
-        const cachedUserPromise = this.getCachedOAuthUser(accessToken);
+        // 🚀 ULTRA-FAST FIRST: 오프라인 JWT 디코딩 최우선 (Supabase 완전 스킵)
+        const decoded = this.decodeAccessToken(accessToken);
+        if (decoded?.sub && decoded?.iss) {
+            // Supabase 토큰 형식 확인 (iss가 supabase.co를 포함하면 신뢰할 수 있음)
+            const isSupabaseToken = decoded.iss && decoded.iss.includes('supabase.co');
+            const isNotExpired = !decoded.exp || decoded.exp * 1000 > Date.now();
+            if (isSupabaseToken && isNotExpired) {
+                try {
+                    this.logger.debug(`🔥 OFFLINE PATH: Using JWT decode for ${decoded.sub}`);
+                    // 🔥 즉시 DB 확인 (Redis 병렬 처리)
+                    const [registered, redisCached] = await Promise.allSettled([
+                        this.fastProfileCheck(decoded.sub),
+                        this.cacheService.get(cacheKey)
+                    ]);
+                    // Redis 캐시가 있으면 즉시 반환
+                    if (redisCached.status === 'fulfilled' && redisCached.value) {
+                        const duration = Date.now() - startTime;
+                        this.logger.debug(`INSTANT OAuth check Redis hit: ${duration}ms`);
+                        return redisCached.value;
+                    }
+                    // DB 결과 사용 (Supabase 스킵!)
+                    if (registered.status === 'fulfilled') {
+                        const result = { registered: registered.value };
+                        this.primeLookupCaches(accessToken, cacheKey, result);
+                        // 백그라운드에서 Supabase 정밀 검증 및 사용자 캐시 워밍 (응답에 영향 없음)
+                        void this.verifySupabaseUser(accessToken, decoded.sub).catch((error) => this.logger.warn(`Background Supabase verify failed for offline path:`, error));
+                        const duration = Date.now() - startTime;
+                        this.logger.debug(`🚀 OFFLINE FAST OAuth check via JWT decode: ${duration}ms`);
+                        return result;
+                    }
+                }
+                catch (error) {
+                    this.logger.warn(`Offline decode path failed, falling back to Supabase:`, error);
+                }
+            }
+        }
+        // 🚀 FAST PATH: Redis 캐시와 사용자 캐시 병렬 조회
+        const [redisResult, cachedUser] = await Promise.allSettled([
+            this.cacheService.get(cacheKey),
+            this.getCachedOAuthUser(accessToken)
+        ]);
         // Redis 캐시 적중
-        const redisCached = await redisPromise;
-        if (redisCached) {
-            this.primeLookupCaches(accessToken, cacheKey, redisCached);
+        if (redisResult.status === 'fulfilled' && redisResult.value) {
+            this.primeLookupCaches(accessToken, cacheKey, redisResult.value);
             const duration = Date.now() - startTime;
             this.logger.debug(`FAST OAuth check Redis hit: ${duration}ms`);
-            return redisCached;
+            return redisResult.value;
         }
-        // ⚡ 초고속 오프라인 토큰 디코딩 경로 (Supabase 네트워크 스킵)
-        const decoded = this.decodeAccessToken(accessToken);
-        if (decoded?.sub && (!decoded.exp || decoded.exp * 1000 > Date.now())) {
+        // 캐시된 사용자 적중 - 빠른 profile 테이블 조회
+        if (cachedUser.status === 'fulfilled' && cachedUser.value) {
             try {
-                const registered = await this.profileExists(decoded.sub);
-                const result = { registered };
-                this.primeLookupCaches(accessToken, cacheKey, result);
-                // 백그라운드에서 Supabase 정밀 검증 및 사용자 캐시 워밍
-                void this.verifySupabaseUser(accessToken, decoded.sub).catch((error) => this.logger.warn(`Background Supabase verify failed for offline path:`, error));
-                const duration = Date.now() - startTime;
-                this.logger.debug(`ULTRA-FAST OAuth check via offline decode: ${duration}ms`);
-                return result;
-            }
-            catch (error) {
-                this.logger.warn(`Offline decode path failed, falling back to Supabase`, error);
-            }
-        }
-        // 캐시된 사용자 적중 - 빠른 profile 테이블 조회 (오프라인 경로 실패 시)
-        const cachedUser = await cachedUserPromise;
-        if (cachedUser) {
-            try {
-                const registered = await this.profileExists(cachedUser.id);
+                const registered = await this.fastProfileCheck(cachedUser.value.id);
                 const result = { registered };
                 // 캐시는 즉시 반영 (두 번째 호출에서 바로 사용 가능)
                 this.primeLookupCaches(accessToken, cacheKey, result);
@@ -511,7 +565,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                 throw new common_1.UnauthorizedException('Invalid Supabase access token');
             }
             // 🚀 실제 profile 테이블 확인 (정확한 등록 여부)
-            const registered = await this.profileExists(supabaseUser.id);
+            const registered = await this.fastProfileCheck(supabaseUser.id);
             const result = { registered };
             // 캐시를 즉시 워밍 (메모리 + Redis)
             this.primeLookupCaches(accessToken, cacheKey, result);
@@ -749,6 +803,67 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             throw new common_1.ServiceUnavailableException('Google did not return a refresh_token');
         }
         return result.refresh_token;
+    }
+    /**
+     * 🚀 REDIS-FIRST: DB 커넥션 워밍 및 Redis 캐시 적극 활용
+     */
+    async warmupDbConnection() {
+        try {
+            const { getPool } = await Promise.resolve().then(() => __importStar(require('../../db/pool')));
+            const pool = await getPool();
+            await pool.query('SELECT 1'); // DB 커넥션 워밍
+            return true;
+        }
+        catch (error) {
+            this.logger.warn('DB connection warmup failed:', error);
+            return false;
+        }
+    }
+    /**
+     * 🚀 ULTRA-FAST: Profile 존재 여부만 Redis-first로 초고속 확인
+     */
+    async fastProfileCheck(userId) {
+        const cacheKey = `profile_exists:${userId}`;
+        try {
+            // 1. Redis에서 먼저 확인 (TTL 10분)
+            const cached = await this.cacheService.get(cacheKey);
+            if (cached !== null) {
+                return cached;
+            }
+            // 2. DB에서 빠른 확인 (EXISTS 쿼리)
+            const { getPool } = await Promise.resolve().then(() => __importStar(require('../../db/pool')));
+            const pool = await getPool();
+            const result = await pool.query('SELECT EXISTS(SELECT 1 FROM profiles WHERE id = $1) as exists', [userId]);
+            const exists = Boolean(result.rows[0]?.exists);
+            // 3. Redis에 즉시 캐싱 (10분 TTL)
+            await this.cacheService.set(cacheKey, exists, { ttl: 600 });
+            return exists;
+        }
+        catch (error) {
+            this.logger.warn(`Fast profile check failed for ${userId}:`, error);
+            return false; // 실패 시 안전한 기본값
+        }
+    }
+    /**
+     * 📊 SMART CACHE: 사용자 데이터 업데이트 시 관련 캐시 모두 무효화
+     */
+    async invalidateUserCaches(userId) {
+        try {
+            await Promise.allSettled([
+                // OAuth 관련 캐시 무효화
+                this.cacheService.del(`profile_exists:${userId}`),
+                this.cacheService.del(`oauth_user:${userId}`),
+                // 프로필 존재 여부 캐시 무효화
+                this.cacheService.del(userId, { prefix: this.PROFILE_EXISTS_REDIS_PREFIX }),
+                // OAuth 캐시 무효화
+                this.invalidateOAuthCacheByUser(userId),
+                // 메모리 캐시 정리
+                Promise.resolve(this.profileExistenceCache.delete(userId)),
+            ]);
+        }
+        catch (error) {
+            this.logger.warn(`Cache invalidation failed for user ${userId}:`, error);
+        }
     }
 };
 exports.SocialAuthService = SocialAuthService;
