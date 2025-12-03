@@ -336,7 +336,34 @@ export class ProfileService {
         [userId]
       );
 
-      return result.rows[0]?.avatar_url || null;
+      const dbAvatar = result.rows[0]?.avatar_url as string | null | undefined;
+      if (dbAvatar) {
+        return dbAvatar;
+      }
+
+      // 3. Storage에서 최신 아바타를 조회 (DB에 없는 경우)
+      const storageAvatar = await this.resolveAvatarFromStorage(userId);
+      if (storageAvatar) {
+        // DB/캐시에 반영해 다음 호출 가속화
+        this.setCachedProfile(userId, {
+          id: userId,
+          email: '',
+          name: null,
+          avatar_url: storageAvatar,
+          username: userId,
+          role: 'user',
+          created_at: new Date(),
+          updated_at: new Date(),
+          password_hash: '',
+        });
+        pool.query(
+          `UPDATE profiles SET avatar_url = $2, updated_at = NOW() WHERE id = $1`,
+          [userId, storageAvatar]
+        ).catch(err => this.logger.warn(`[getAvatarUrlOnly] Failed to persist storage avatar for ${userId}: ${err.message}`));
+        return storageAvatar;
+      }
+
+      return null;
     } catch (error) {
       this.logger.warn(`Avatar URL lookup failed for user ${userId}:`, error);
       return null;

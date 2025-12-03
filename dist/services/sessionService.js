@@ -26,6 +26,9 @@ let SessionService = SessionService_1 = class SessionService {
         this.sessionCache = new Map();
         this.SESSION_CACHE_TTL = 15 * 60 * 1000; // 15분으로 확대해 캐시 적중률 향상
         this.MAX_CACHE_SIZE = 2000;
+        // Supabase 세션 유효성 캐시: 5분 TTL
+        this.supabaseValidityCache = new Map();
+        this.SUPABASE_VALIDITY_TTL = 5 * 60 * 1000;
         this.indexesEnsured = false;
     }
     async getClient() {
@@ -89,17 +92,45 @@ let SessionService = SessionService_1 = class SessionService {
             }
         }
     }
+    getCachedSupabaseValidity(userId) {
+        const cached = this.supabaseValidityCache.get(userId);
+        if (!cached)
+            return null;
+        if (Date.now() > cached.expiresAt) {
+            this.supabaseValidityCache.delete(userId);
+            return null;
+        }
+        return cached.valid;
+    }
+    setCachedSupabaseValidity(userId, valid) {
+        this.supabaseValidityCache.set(userId, {
+            valid,
+            expiresAt: Date.now() + this.SUPABASE_VALIDITY_TTL,
+        });
+        // 캐시 크기 제한
+        if (this.supabaseValidityCache.size > 2000) {
+            const firstKey = this.supabaseValidityCache.keys().next().value;
+            if (firstKey)
+                this.supabaseValidityCache.delete(firstKey);
+        }
+    }
     /**
      * Supabase 세션 유효성 확인 (빠른 검증)
      */
     async checkSupabaseSession(userId) {
+        const cached = this.getCachedSupabaseValidity(userId);
+        if (cached !== null)
+            return cached;
         try {
             // Supabase에서 사용자 정보 조회로 세션 유효성 확인
             const user = await this.supabaseService.getUserById(userId);
-            return !!user;
+            const valid = !!user;
+            this.setCachedSupabaseValidity(userId, valid);
+            return valid;
         }
         catch (error) {
             this.logger.warn(`Supabase session check failed for user ${userId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            this.setCachedSupabaseValidity(userId, false);
             return false;
         }
     }
@@ -204,14 +235,20 @@ let SessionService = SessionService_1 = class SessionService {
         // 캐시에서 먼저 확인
         const cachedSession = this.getCachedSession(sessionId);
         if (cachedSession) {
-            // 캐시된 세션이 활성 상태이면 Supabase 세션도 확인
-            if (cachedSession.isActive && cachedSession.supabaseSessionValid === undefined) {
-                const supabaseValid = await this.checkSupabaseSession(cachedSession.userId);
-                cachedSession.supabaseSessionValid = supabaseValid;
-                // Supabase 세션이 무효하면 로컬 세션도 무효로 처리
-                if (!supabaseValid) {
-                    cachedSession.status = 'revoked';
-                    cachedSession.isActive = false;
+            if (cachedSession.isActive) {
+                // Supabase 유효성 캐시를 우선 확인하여 바로 반환
+                const cachedValidity = this.getCachedSupabaseValidity(cachedSession.userId);
+                if (cachedValidity !== null) {
+                    cachedSession.supabaseSessionValid = cachedValidity;
+                    if (!cachedValidity) {
+                        cachedSession.status = 'revoked';
+                        cachedSession.isActive = false;
+                    }
+                }
+                else {
+                    // Supabase 체크는 백그라운드로 처리하여 응답을 빠르게
+                    cachedSession.supabaseSessionValid = true;
+                    this.refreshSupabaseValidity(sessionId, cachedSession.userId).catch((err) => this.logger.warn(`Background Supabase validity check failed for cache hit ${sessionId}`, err));
                 }
             }
             return cachedSession;
@@ -231,16 +268,19 @@ let SessionService = SessionService_1 = class SessionService {
         if (!row)
             return null;
         const session = this.mapRowToSession(row);
-        // 세션이 활성 상태이면 Supabase 세션 상태도 확인
+        // 세션이 활성 상태이면 Supabase 세션 상태도 확인 (비동기 우선)
         if (session.isActive) {
-            const supabaseValid = await this.checkSupabaseSession(session.userId);
-            session.supabaseSessionValid = supabaseValid;
-            // Supabase 세션이 무효하면 로컬 세션도 무효로 처리하고 DB 업데이트
-            if (!supabaseValid) {
-                session.status = 'revoked';
-                session.isActive = false;
-                // 백그라운드에서 DB의 세션도 revoke 처리
-                pool.query(`UPDATE user_sessions SET revoked_at = NOW() WHERE session_id = $1`, [sessionId]).catch(err => this.logger.warn(`Failed to update revoked session in DB: ${err.message}`));
+            const cachedValidity = this.getCachedSupabaseValidity(session.userId);
+            if (cachedValidity !== null) {
+                session.supabaseSessionValid = cachedValidity;
+                if (!cachedValidity) {
+                    session.status = 'revoked';
+                    session.isActive = false;
+                }
+            }
+            else {
+                session.supabaseSessionValid = true; // 낙관적 반환으로 응답 시간 단축
+                this.refreshSupabaseValidity(sessionId, session.userId).catch((err) => this.logger.warn(`Background Supabase validity check failed for session ${sessionId}`, err));
             }
         }
         // 캐시에 저장
@@ -259,6 +299,22 @@ let SessionService = SessionService_1 = class SessionService {
         const cached = this.sessionCache.get(sessionId);
         if (cached && cached.data.isActive) {
             cached.data.lastSeenAt = new Date().toISOString();
+        }
+    }
+    async refreshSupabaseValidity(sessionId, userId) {
+        const supabaseValid = await this.checkSupabaseSession(userId);
+        this.setCachedSupabaseValidity(userId, supabaseValid);
+        if (!supabaseValid) {
+            const pool = await this.getClient();
+            // 로컬 캐시 업데이트
+            const cached = this.sessionCache.get(sessionId);
+            if (cached) {
+                cached.data.status = 'revoked';
+                cached.data.isActive = false;
+                cached.data.supabaseSessionValid = false;
+            }
+            // DB에서도 상태 업데이트 (백그라운드)
+            pool.query(`UPDATE user_sessions SET revoked_at = NOW() WHERE session_id = $1`, [sessionId]).catch(err => this.logger.warn(`Failed to update revoked session in DB: ${err.message}`));
         }
     }
     async deleteSession(sessionId) {
