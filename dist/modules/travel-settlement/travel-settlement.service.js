@@ -5,12 +5,21 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TravelSettlementService = void 0;
 const common_1 = require("@nestjs/common");
 const crypto_1 = require("crypto");
 const pool_1 = require("../../db/pool");
+const cacheService_1 = require("../../services/cacheService");
 let TravelSettlementService = class TravelSettlementService {
+    constructor(cacheService) {
+        this.cacheService = cacheService;
+        this.SETTLEMENT_PREFIX = 'settlement:summary';
+        this.SETTLEMENT_TTL = 5 * 60; // 5분
+    }
     async ensureTransaction(callback, poolInput) {
         const pool = poolInput ?? (await (0, pool_1.getPool)());
         const client = await pool.connect();
@@ -92,6 +101,16 @@ let TravelSettlementService = class TravelSettlementService {
     }
     async getSettlementSummary(travelId, userId) {
         const pool = await (0, pool_1.getPool)();
+        const cacheKey = travelId;
+        try {
+            const cached = await this.cacheService.get(cacheKey, { prefix: this.SETTLEMENT_PREFIX });
+            if (cached) {
+                return cached;
+            }
+        }
+        catch {
+            // ignore cache miss
+        }
         await this.ensureMember(travelId, userId, pool);
         const [balances, storedSettlements] = await Promise.all([
             this.fetchBalances(travelId, pool),
@@ -134,6 +153,17 @@ let TravelSettlementService = class TravelSettlementService {
             savedSettlements,
             recommendedSettlements,
         };
+        // 캐시 저장
+        this.cacheService.set(cacheKey, {
+            balances,
+            savedSettlements,
+            recommendedSettlements,
+        }, { prefix: this.SETTLEMENT_PREFIX, ttl: this.SETTLEMENT_TTL }).catch(() => undefined);
+        return {
+            balances,
+            savedSettlements,
+            recommendedSettlements,
+        };
     }
     async saveComputedSettlements(travelId, userId) {
         const pool = await (0, pool_1.getPool)();
@@ -157,6 +187,7 @@ let TravelSettlementService = class TravelSettlementService {
            AS t(id, travel_id, from_member, to_member, amount)`, [ids, travelIds, fromMembers, toMembers, amounts]);
             }
         }, pool);
+        await this.cacheService.del(travelId, { prefix: this.SETTLEMENT_PREFIX }).catch(() => undefined);
         return this.getSettlementSummary(travelId, userId);
     }
     async markSettlementCompleted(travelId, userId, settlementId) {
@@ -169,10 +200,12 @@ let TravelSettlementService = class TravelSettlementService {
         if (!result.rows[0]) {
             throw new common_1.BadRequestException('정산 내역을 찾을 수 없습니다. 계산된 결과를 저장한 뒤 완료 처리하세요.');
         }
+        await this.cacheService.del(travelId, { prefix: this.SETTLEMENT_PREFIX }).catch(() => undefined);
         return this.getSettlementSummary(travelId, userId);
     }
 };
 exports.TravelSettlementService = TravelSettlementService;
 exports.TravelSettlementService = TravelSettlementService = __decorate([
-    (0, common_1.Injectable)()
+    (0, common_1.Injectable)(),
+    __metadata("design:paramtypes", [cacheService_1.CacheService])
 ], TravelSettlementService);

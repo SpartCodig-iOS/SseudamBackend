@@ -347,7 +347,7 @@ let ProfileService = ProfileService_1 = class ProfileService {
                 return dbAvatar;
             }
             // 5. Storage에서 최신 아바타를 동기 조회 (1회 시도)
-            const storageAvatar = await this.fetchAvatarWithTimeout(userId, 800); // 첫 조회는 더 길게 시도
+            const storageAvatar = await this.fetchAvatarWithTimeout(userId, 600); // 첫 조회는 더 길게 시도
             if (storageAvatar) {
                 // 캐시에 반영해 다음 호출 가속화
                 this.setCachedStorageAvatar(userId, storageAvatar);
@@ -399,7 +399,7 @@ let ProfileService = ProfileService_1 = class ProfileService {
     /**
      * 아바타가 비어 있을 때만 스토리지를 짧은 타임아웃으로 동기 조회
      */
-    async fetchAvatarWithTimeout(userId, timeoutMs = 400) {
+    async fetchAvatarWithTimeout(userId, timeoutMs = 600) {
         // 1. Redis/메모리 캐시 확인
         try {
             const redisAvatar = await this.cacheService.get(userId, { prefix: this.AVATAR_CACHE_PREFIX });

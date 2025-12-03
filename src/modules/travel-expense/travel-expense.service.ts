@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { getPool } from '../../db/pool';
 import { CreateExpenseInput } from '../../validators/travelExpenseSchemas';
 import { MetaService } from '../meta/meta.service';
+import { CacheService } from '../../services/cacheService';
 
 interface TravelContext {
   id: string;
@@ -30,7 +31,15 @@ export interface TravelExpense {
 
 @Injectable()
 export class TravelExpenseService {
-  constructor(private readonly metaService: MetaService) {}
+  constructor(
+    private readonly metaService: MetaService,
+    private readonly cacheService: CacheService,
+  ) {}
+
+  private readonly EXPENSE_LIST_PREFIX = 'expense:list';
+  private readonly EXPENSE_DETAIL_PREFIX = 'expense:detail';
+  private readonly EXPENSE_LIST_TTL_SECONDS = 120; // 2분
+  private readonly EXPENSE_DETAIL_TTL_SECONDS = 120; // 2분
 
   private async getTravelContext(travelId: string, userId: string): Promise<TravelContext> {
     const pool = await getPool();
@@ -103,6 +112,48 @@ export class TravelExpenseService {
 
   private getMemberName(context: TravelContext, memberId: string): string | null {
     return context.memberNameMap.get(memberId) ?? null;
+  }
+
+  private async invalidateExpenseCaches(travelId: string, expenseId?: string): Promise<void> {
+    // 리스트 캐시 삭제
+    this.cacheService.delPattern(`${this.EXPENSE_LIST_PREFIX}:${travelId}:*`).catch(() => undefined);
+    if (expenseId) {
+      this.cacheService.del(expenseId, { prefix: this.EXPENSE_DETAIL_PREFIX }).catch(() => undefined);
+    }
+    // 정산 요약 캐시도 무효화
+    this.cacheService.del(travelId, { prefix: 'settlement:summary' }).catch(() => undefined);
+  }
+
+  private async getCachedExpenseList(cacheKey: string): Promise<{ total: number; items: TravelExpense[] } | null> {
+    try {
+      return await this.cacheService.get<{ total: number; items: TravelExpense[] }>(cacheKey, {
+        prefix: this.EXPENSE_LIST_PREFIX,
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  private async setCachedExpenseList(cacheKey: string, payload: { total: number; items: TravelExpense[] }): Promise<void> {
+    this.cacheService.set(cacheKey, payload, {
+      prefix: this.EXPENSE_LIST_PREFIX,
+      ttl: this.EXPENSE_LIST_TTL_SECONDS,
+    }).catch(() => undefined);
+  }
+
+  private async getCachedExpenseDetail(expenseId: string): Promise<TravelExpense | null> {
+    try {
+      return await this.cacheService.get<TravelExpense>(expenseId, { prefix: this.EXPENSE_DETAIL_PREFIX });
+    } catch {
+      return null;
+    }
+  }
+
+  private async setCachedExpenseDetail(expenseId: string, expense: TravelExpense): Promise<void> {
+    this.cacheService.set(expenseId, expense, {
+      prefix: this.EXPENSE_DETAIL_PREFIX,
+      ttl: this.EXPENSE_DETAIL_TTL_SECONDS,
+    }).catch(() => undefined);
   }
 
   async createExpense(
@@ -200,6 +251,8 @@ export class TravelExpenseService {
     } finally {
       client.release();
     }
+    // 생성 후 캐시 무효화
+    await this.invalidateExpenseCaches(travelId);
   }
 
   async listExpenses(
@@ -212,6 +265,12 @@ export class TravelExpenseService {
     const page = Math.max(1, pagination.page ?? 1);
     const limit = Math.min(100, Math.max(1, pagination.limit ?? 20));
     const offset = (page - 1) * limit;
+    const cacheKey = `${travelId}:${page}:${limit}`;
+
+    const cached = await this.getCachedExpenseList(cacheKey);
+    if (cached) {
+      return { total: cached.total, page, limit, items: cached.items };
+    }
 
     const totalPromise = pool.query(
       `SELECT COUNT(*)::int AS total
@@ -254,29 +313,29 @@ export class TravelExpenseService {
     const [totalResult, listResult] = await Promise.all([totalPromise, listPromise]);
     const total = totalResult.rows[0]?.total ?? 0;
 
-    return {
-      total,
-      page,
-      limit,
-      items: listResult.rows.map((row) => ({
-        id: row.id,
-        title: row.title,
-        note: row.note,
-        amount: Number(row.amount),
-        currency: row.currency,
-        convertedAmount: Number(row.converted_amount),
-        expenseDate: row.expense_date,
-        category: row.category,
-        payerId: row.payer_id,
-        payerName: row.payer_name ?? null,
-        authorId: row.author_id,
-        participants:
-          row.participants?.map((participant: any) => ({
-            memberId: participant.memberId,
-            name: participant.name ?? null,
-          })) ?? [],
-      })),
-    };
+    const items = listResult.rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      note: row.note,
+      amount: Number(row.amount),
+      currency: row.currency,
+      convertedAmount: Number(row.converted_amount),
+      expenseDate: row.expense_date,
+      category: row.category,
+      payerId: row.payer_id,
+      payerName: row.payer_name ?? null,
+      authorId: row.author_id,
+      participants:
+        row.participants?.map((participant: any) => ({
+          memberId: participant.memberId,
+          name: participant.name ?? null,
+        })) ?? [],
+    }));
+
+    // 캐시에 저장
+    await this.setCachedExpenseList(cacheKey, { total, items });
+
+    return { total, page, limit, items };
   }
 
   /**
@@ -418,6 +477,8 @@ export class TravelExpenseService {
     } finally {
       client.release();
     }
+    // 수정 후 캐시 무효화
+    await this.invalidateExpenseCaches(travelId, expenseId);
   }
 
   /**
@@ -480,5 +541,7 @@ export class TravelExpenseService {
     } finally {
       client.release();
     }
+    // 삭제 후 캐시 무효화
+    await this.invalidateExpenseCaches(travelId, expenseId);
   }
 }

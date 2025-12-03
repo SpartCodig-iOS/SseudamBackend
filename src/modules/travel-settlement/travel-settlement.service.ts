@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { randomUUID } from 'crypto';
 import { Pool } from 'pg';
 import { getPool } from '../../db/pool';
+import { CacheService } from '../../services/cacheService';
 
 interface Balance {
   memberId: string;
@@ -31,6 +32,11 @@ export interface SettlementSummary {
 
 @Injectable()
 export class TravelSettlementService {
+  private readonly SETTLEMENT_PREFIX = 'settlement:summary';
+  private readonly SETTLEMENT_TTL = 5 * 60; // 5분
+
+  constructor(private readonly cacheService: CacheService) {}
+
   private async ensureTransaction<T>(callback: (client: any) => Promise<T>, poolInput?: any): Promise<T> {
     const pool = poolInput ?? (await getPool());
     const client = await pool.connect();
@@ -125,6 +131,17 @@ export class TravelSettlementService {
 
   async getSettlementSummary(travelId: string, userId: string): Promise<SettlementSummary> {
     const pool = await getPool();
+    const cacheKey = travelId;
+
+    try {
+      const cached = await this.cacheService.get<SettlementSummary>(cacheKey, { prefix: this.SETTLEMENT_PREFIX });
+      if (cached) {
+        return cached;
+      }
+    } catch {
+      // ignore cache miss
+    }
+
     await this.ensureMember(travelId, userId, pool);
     const [balances, storedSettlements] = await Promise.all([
       this.fetchBalances(travelId, pool),
@@ -174,6 +191,19 @@ export class TravelSettlementService {
       savedSettlements,
       recommendedSettlements,
     };
+
+    // 캐시 저장
+    this.cacheService.set(cacheKey, {
+      balances,
+      savedSettlements,
+      recommendedSettlements,
+    }, { prefix: this.SETTLEMENT_PREFIX, ttl: this.SETTLEMENT_TTL }).catch(() => undefined);
+
+    return {
+      balances,
+      savedSettlements,
+      recommendedSettlements,
+    };
   }
 
   async saveComputedSettlements(travelId: string, userId: string): Promise<SettlementSummary> {
@@ -203,6 +233,7 @@ export class TravelSettlementService {
         );
       }
     }, pool);
+    await this.cacheService.del(travelId, { prefix: this.SETTLEMENT_PREFIX }).catch(() => undefined);
     return this.getSettlementSummary(travelId, userId);
   }
 
@@ -223,6 +254,7 @@ export class TravelSettlementService {
     if (!result.rows[0]) {
       throw new BadRequestException('정산 내역을 찾을 수 없습니다. 계산된 결과를 저장한 뒤 완료 처리하세요.');
     }
+    await this.cacheService.del(travelId, { prefix: this.SETTLEMENT_PREFIX }).catch(() => undefined);
     return this.getSettlementSummary(travelId, userId);
   }
 }

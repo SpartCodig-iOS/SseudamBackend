@@ -13,9 +13,15 @@ exports.TravelExpenseService = void 0;
 const common_1 = require("@nestjs/common");
 const pool_1 = require("../../db/pool");
 const meta_service_1 = require("../meta/meta.service");
+const cacheService_1 = require("../../services/cacheService");
 let TravelExpenseService = class TravelExpenseService {
-    constructor(metaService) {
+    constructor(metaService, cacheService) {
         this.metaService = metaService;
+        this.cacheService = cacheService;
+        this.EXPENSE_LIST_PREFIX = 'expense:list';
+        this.EXPENSE_DETAIL_PREFIX = 'expense:detail';
+        this.EXPENSE_LIST_TTL_SECONDS = 120; // 2분
+        this.EXPENSE_DETAIL_TTL_SECONDS = 120; // 2분
     }
     async getTravelContext(travelId, userId) {
         const pool = await (0, pool_1.getPool)();
@@ -77,6 +83,45 @@ let TravelExpenseService = class TravelExpenseService {
     }
     getMemberName(context, memberId) {
         return context.memberNameMap.get(memberId) ?? null;
+    }
+    async invalidateExpenseCaches(travelId, expenseId) {
+        // 리스트 캐시 삭제
+        this.cacheService.delPattern(`${this.EXPENSE_LIST_PREFIX}:${travelId}:*`).catch(() => undefined);
+        if (expenseId) {
+            this.cacheService.del(expenseId, { prefix: this.EXPENSE_DETAIL_PREFIX }).catch(() => undefined);
+        }
+        // 정산 요약 캐시도 무효화
+        this.cacheService.del(travelId, { prefix: 'settlement:summary' }).catch(() => undefined);
+    }
+    async getCachedExpenseList(cacheKey) {
+        try {
+            return await this.cacheService.get(cacheKey, {
+                prefix: this.EXPENSE_LIST_PREFIX,
+            });
+        }
+        catch {
+            return null;
+        }
+    }
+    async setCachedExpenseList(cacheKey, payload) {
+        this.cacheService.set(cacheKey, payload, {
+            prefix: this.EXPENSE_LIST_PREFIX,
+            ttl: this.EXPENSE_LIST_TTL_SECONDS,
+        }).catch(() => undefined);
+    }
+    async getCachedExpenseDetail(expenseId) {
+        try {
+            return await this.cacheService.get(expenseId, { prefix: this.EXPENSE_DETAIL_PREFIX });
+        }
+        catch {
+            return null;
+        }
+    }
+    async setCachedExpenseDetail(expenseId, expense) {
+        this.cacheService.set(expenseId, expense, {
+            prefix: this.EXPENSE_DETAIL_PREFIX,
+            ttl: this.EXPENSE_DETAIL_TTL_SECONDS,
+        }).catch(() => undefined);
     }
     async createExpense(travelId, userId, payload) {
         // 컨텍스트 조회와 환율 변환을 병렬로 처리하기 위해 먼저 컨텍스트만 조회
@@ -154,6 +199,8 @@ let TravelExpenseService = class TravelExpenseService {
         finally {
             client.release();
         }
+        // 생성 후 캐시 무효화
+        await this.invalidateExpenseCaches(travelId);
     }
     async listExpenses(travelId, userId, pagination = {}) {
         await this.getTravelContext(travelId, userId);
@@ -161,6 +208,11 @@ let TravelExpenseService = class TravelExpenseService {
         const page = Math.max(1, pagination.page ?? 1);
         const limit = Math.min(100, Math.max(1, pagination.limit ?? 20));
         const offset = (page - 1) * limit;
+        const cacheKey = `${travelId}:${page}:${limit}`;
+        const cached = await this.getCachedExpenseList(cacheKey);
+        if (cached) {
+            return { total: cached.total, page, limit, items: cached.items };
+        }
         const totalPromise = pool.query(`SELECT COUNT(*)::int AS total
        FROM travel_expenses
        WHERE travel_id = $1`, [travelId]);
@@ -193,28 +245,26 @@ let TravelExpenseService = class TravelExpenseService {
        LIMIT $2 OFFSET $3`, [travelId, limit, offset]);
         const [totalResult, listResult] = await Promise.all([totalPromise, listPromise]);
         const total = totalResult.rows[0]?.total ?? 0;
-        return {
-            total,
-            page,
-            limit,
-            items: listResult.rows.map((row) => ({
-                id: row.id,
-                title: row.title,
-                note: row.note,
-                amount: Number(row.amount),
-                currency: row.currency,
-                convertedAmount: Number(row.converted_amount),
-                expenseDate: row.expense_date,
-                category: row.category,
-                payerId: row.payer_id,
-                payerName: row.payer_name ?? null,
-                authorId: row.author_id,
-                participants: row.participants?.map((participant) => ({
-                    memberId: participant.memberId,
-                    name: participant.name ?? null,
-                })) ?? [],
-            })),
-        };
+        const items = listResult.rows.map((row) => ({
+            id: row.id,
+            title: row.title,
+            note: row.note,
+            amount: Number(row.amount),
+            currency: row.currency,
+            convertedAmount: Number(row.converted_amount),
+            expenseDate: row.expense_date,
+            category: row.category,
+            payerId: row.payer_id,
+            payerName: row.payer_name ?? null,
+            authorId: row.author_id,
+            participants: row.participants?.map((participant) => ({
+                memberId: participant.memberId,
+                name: participant.name ?? null,
+            })) ?? [],
+        }));
+        // 캐시에 저장
+        await this.setCachedExpenseList(cacheKey, { total, items });
+        return { total, page, limit, items };
     }
     /**
      * 지출을 수정합니다.
@@ -321,6 +371,8 @@ let TravelExpenseService = class TravelExpenseService {
         finally {
             client.release();
         }
+        // 수정 후 캐시 무효화
+        await this.invalidateExpenseCaches(travelId, expenseId);
     }
     /**
      * 지출을 삭제합니다.
@@ -366,10 +418,13 @@ let TravelExpenseService = class TravelExpenseService {
         finally {
             client.release();
         }
+        // 삭제 후 캐시 무효화
+        await this.invalidateExpenseCaches(travelId, expenseId);
     }
 };
 exports.TravelExpenseService = TravelExpenseService;
 exports.TravelExpenseService = TravelExpenseService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [meta_service_1.MetaService])
+    __metadata("design:paramtypes", [meta_service_1.MetaService,
+        cacheService_1.CacheService])
 ], TravelExpenseService);
