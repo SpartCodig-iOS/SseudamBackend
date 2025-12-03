@@ -42,7 +42,7 @@ export class TravelExpenseController {
         note: { type: 'string', example: '신주쿠역 인근', nullable: true },
         amount: { type: 'number', example: 3500, minimum: 0.01, description: '지출 금액 (필수, 양수)' },
         currency: { type: 'string', example: 'JPY', description: '지출 통화 (3자리 코드)' },
-        expenseDate: { type: 'string', example: '2025-11-26', description: 'YYYY-MM-DD (오늘까지만 가능, 미래 날짜 불가)' },
+        expenseDate: { type: 'string', example: '2025-11-26', description: 'YYYY-MM-DD' },
         category: { type: 'string', example: 'food', maxLength: 20, pattern: '^[a-zA-Z0-9가-힣_-]+$', nullable: true, description: '카테고리 (영문/숫자/한글/_/- 만 가능, 최대 20자)' },
         participantIds: {
           type: 'array',
@@ -81,7 +81,7 @@ export class TravelExpenseController {
         note: { type: 'string', example: '신주쿠역 인근', nullable: true },
         amount: { type: 'number', example: 3500, minimum: 0.01, description: '지출 금액 (필수, 양수)' },
         currency: { type: 'string', example: 'JPY', description: '지출 통화 (3자리 코드)' },
-        expenseDate: { type: 'string', example: '2025-11-26', description: 'YYYY-MM-DD (오늘까지만 가능, 미래 날짜 불가)' },
+        expenseDate: { type: 'string', example: '2025-11-26', description: 'YYYY-MM-DD' },
         category: { type: 'string', example: 'food', maxLength: 20, pattern: '^[a-zA-Z0-9가-힣_-]+$', nullable: true, description: '카테고리 (영문/숫자/한글/_/- 만 가능, 최대 20자)' },
         participantIds: {
           type: 'array',

@@ -90,6 +90,24 @@ let TravelController = class TravelController {
         const travel = await this.travelService.joinByInviteCode(req.currentUser.id, payload.inviteCode);
         return (0, api_1.success)(travel, 'Joined travel');
     }
+    async joinByDeepLink(inviteCode, req) {
+        if (!req.currentUser) {
+            throw new common_1.UnauthorizedException('Unauthorized');
+        }
+        try {
+            const travel = await this.travelService.joinByInviteCode(req.currentUser.id, inviteCode);
+            return (0, api_1.success)({
+                ...travel,
+                joinMethod: 'deeplink'
+            }, 'Successfully joined travel via deep link');
+        }
+        catch (error) {
+            if (error instanceof common_1.BadRequestException) {
+                throw new common_1.BadRequestException('이미 참여중인 여행이거나 유효하지 않은 초대 코드입니다.');
+            }
+            throw error;
+        }
+    }
     async transferOwnership(travelId, body, req) {
         if (!req.currentUser) {
             throw new common_1.UnauthorizedException('Unauthorized');
@@ -267,6 +285,17 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], TravelController.prototype, "join", null);
+__decorate([
+    (0, common_1.Get)('join/:inviteCode'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: '딥링크로 여행 참여 (GET 방식)' }),
+    (0, common_1.UseGuards)(auth_guard_1.AuthGuard),
+    __param(0, (0, common_1.Param)('inviteCode')),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], TravelController.prototype, "joinByDeepLink", null);
 __decorate([
     (0, common_1.Patch)(':travelId/owner'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),

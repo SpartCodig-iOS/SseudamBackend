@@ -40,12 +40,19 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
     }
     resolveNameFromUser(user, loginType) {
         const metadata = user.user_metadata ?? {};
+        const raw = user?.raw_user_meta_data ?? {};
         const identityDataList = this.getIdentityData(user);
         const displayNameFromMetadata = metadata.display_name ??
             metadata.full_name ??
+            raw.display_name ??
+            raw.full_name ??
+            raw.name ??
             null;
         const nameFromMetadata = metadata.name ??
             metadata.full_name ??
+            raw.name ??
+            raw.full_name ??
+            raw.display_name ??
             null;
         const identityName = identityDataList
             .map((data) => data.full_name ??
@@ -60,10 +67,14 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
     }
     resolveAvatarFromUser(user) {
         const metadata = user.user_metadata ?? {};
+        const raw = user?.raw_user_meta_data ?? {};
         const identityDataList = this.getIdentityData(user);
         const avatarFromMetadata = metadata.avatar_url ??
             metadata.picture ??
             metadata.photo ??
+            raw.avatar_url ??
+            raw.picture ??
+            raw.photo ??
             null;
         const avatarFromIdentity = identityDataList
             .map((data) => data.avatar_url ??
@@ -281,7 +292,7 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
         const client = this.getClient();
         const { data: existingProfile, error: existingProfileError } = await client
             .from(env_1.env.supabaseProfileTable)
-            .select('username')
+            .select('username, name')
             .eq('id', user.id)
             .limit(1)
             .maybeSingle();
@@ -289,12 +300,16 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
             throw existingProfileError;
         }
         const existingProfileUsername = existingProfile?.username ?? null;
+        const existingProfileName = existingProfile?.name ?? null;
         const proposedUsername = user.user_metadata?.username ??
             user.email.split('@')[0] ??
             user.id;
         const username = existingProfileUsername ??
             (await this.ensureUniqueUsername(proposedUsername, user.id, client));
-        const resolvedName = this.resolveNameFromUser(user, loginType) ?? existingProfile?.name ?? null;
+        const resolvedName = this.resolveNameFromUser(user, loginType) ??
+            existingProfileName ??
+            user.email?.split('@')[0] ??
+            user.id;
         // 소셜 로그인에서 아바타 URL 추출 (identity 데이터 포함)
         const avatarUrl = this.resolveAvatarFromUser(user);
         await this.upsertProfile({

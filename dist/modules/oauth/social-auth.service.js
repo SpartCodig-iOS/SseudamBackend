@@ -79,10 +79,10 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         this.oauthCheckCache = new Map();
         this.lookupPromiseCache = new Map();
         this.profileExistenceCache = new Map();
-        this.OAUTH_CHECK_CACHE_TTL = 5 * 60 * 1000; // 5분
+        this.OAUTH_CHECK_CACHE_TTL = 15 * 60 * 1000; // 15분으로 늘려서 재사용률 향상
         this.LOOKUP_INFLIGHT_TTL = 5 * 1000; // 동일 토큰 연속 호출 병합용 (5초)
-        this.PROFILE_EXISTS_TTL = 60 * 1000; // 프로필 존재 여부 캐시
-        this.PROFILE_EXISTS_REDIS_TTL = 5 * 60; // 5분
+        this.PROFILE_EXISTS_TTL = 10 * 60 * 1000; // 10분 (프로필 존재 여부는 거의 변하지 않음)
+        this.PROFILE_EXISTS_REDIS_TTL = 30 * 60; // 30분
         this.PROFILE_EXISTS_REDIS_PREFIX = 'profile_exists';
         this.localTokenCache = new Map();
         this.LOCAL_TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5분
@@ -235,7 +235,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         });
         // Redis에도 캐싱
         const tokenHash = this.getTokenCacheKey(accessToken);
-        this.cacheService.set(`oauth_check:${tokenHash}`, { registered }, { ttl: 300 }).catch(() => undefined);
+        this.cacheService.set(`oauth_check:${tokenHash}`, { registered }, { ttl: 900 }).catch(() => undefined); // 15분으로 연장
     }
     getInFlightLookup(accessToken) {
         const inFlight = this.lookupPromiseCache.get(accessToken);
@@ -256,19 +256,25 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
     primeLookupCaches(accessToken, cacheKey, result) {
         this.setCachedCheck(accessToken, result.registered);
         // Redis/메모리 캐시는 비동기로 워밍, 실패는 무시
-        this.cacheService.set(cacheKey, result, { ttl: 300 }).catch(() => undefined);
+        this.cacheService.set(cacheKey, result, { ttl: 900 }).catch(() => undefined); // 15분
     }
+    /**
+     * 🚀 REDIS-FIRST: DB 커넥션 워밍 (중복 요청은 재사용)
+     */
     async warmupDbConnection() {
         if (this.dbWarmupPromise) {
-            return this.dbWarmupPromise;
+            await this.dbWarmupPromise;
+            return true;
         }
         this.dbWarmupPromise = (async () => {
             try {
                 const pool = await (0, pool_1.getPool)();
                 await pool.query('SELECT 1');
+                return true;
             }
             catch (error) {
                 this.logger.warn('DB warmup skipped due to error', error);
+                return false;
             }
             finally {
                 this.dbWarmupPromise = null;
@@ -289,6 +295,18 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         catch {
             return null;
         }
+    }
+    resolveLoginType(requested = 'email', supabaseUser) {
+        const provider = supabaseUser?.app_metadata?.provider ??
+            supabaseUser?.identities?.[0]?.provider ??
+            supabaseUser?.user_metadata?.provider;
+        if (provider === 'google' || provider === 'apple' || provider === 'kakao') {
+            return provider;
+        }
+        if (requested && requested !== 'email' && requested !== 'username') {
+            return requested;
+        }
+        return requested ?? 'email';
     }
     buildAppleClientSecret() {
         // 캐시된 토큰이 있고 아직 유효하면 재사용
@@ -347,43 +365,126 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         // 🚀 ULTRA-FAST: 캐시된 사용자 정보 확인 (< 1ms)
         const cachedUser = await this.getCachedOAuthUser(accessToken);
         if (cachedUser) {
-            this.logger.debug(`OAuth user cache hit for token ${accessToken.substring(0, 10)}...`);
-            // 캐시된 사용자로 즉시 세션 생성
-            const authSession = await this.authService.createAuthSession(cachedUser, loginType);
+            // this.logger.debug(`OAuth user cache hit for token ${accessToken.substring(0, 10)}...`);
+            const resolvedLoginType = this.resolveLoginType(loginType);
+            let userForSession = cachedUser;
+            // 캐시에 이름/아바타가 없거나 소셜 로그인이라면 Supabase 데이터로 즉시 보강
+            if (!cachedUser.name || !cachedUser.avatar_url || (resolvedLoginType !== 'email' && resolvedLoginType !== 'username')) {
+                try {
+                    const supabaseUser = await this.supabaseService.getUserFromToken(accessToken);
+                    const detectedLoginType = this.resolveLoginType(resolvedLoginType, supabaseUser);
+                    await this.supabaseService.ensureProfileFromSupabaseUser(supabaseUser, detectedLoginType);
+                    userForSession = (0, mappers_1.fromSupabaseUser)(supabaseUser, {
+                        preferDisplayName: detectedLoginType !== 'email' && detectedLoginType !== 'username',
+                    });
+                    await this.setCachedOAuthUser(accessToken, userForSession);
+                    // 소셜 리프레시 토큰 저장/교환도 병렬 처리
+                    const [finalAppleRefreshToken, finalGoogleRefreshToken] = await Promise.all([
+                        detectedLoginType === 'apple' && !options.appleRefreshToken && options.authorizationCode
+                            ? this.exchangeAppleAuthorizationCode(options.authorizationCode)
+                            : Promise.resolve(options.appleRefreshToken ?? null),
+                        detectedLoginType === 'google' && !options.googleRefreshToken && options.authorizationCode
+                            ? this.exchangeGoogleAuthorizationCode(options.authorizationCode, {
+                                codeVerifier: options.codeVerifier,
+                                redirectUri: options.redirectUri,
+                            })
+                            : Promise.resolve(options.googleRefreshToken ?? null),
+                    ]);
+                    if (detectedLoginType === 'apple' && finalAppleRefreshToken) {
+                        await this.supabaseService.saveAppleRefreshToken(userForSession.id, finalAppleRefreshToken);
+                    }
+                    if (detectedLoginType === 'google' && finalGoogleRefreshToken) {
+                        await this.supabaseService.saveGoogleRefreshToken(userForSession.id, finalGoogleRefreshToken);
+                    }
+                }
+                catch (error) {
+                    this.logger.warn(`Cache-hit profile refresh skipped: ${error instanceof Error ? error.message : error}`);
+                }
+            }
+            const authSession = await this.authService.createAuthSession(userForSession, resolvedLoginType);
             // 백그라운드에서 캐시 워밍 (응답에 영향 없음)
             setImmediate(() => {
-                this.authService.warmAuthCaches(cachedUser);
+                this.authService.warmAuthCaches(userForSession);
             });
             const duration = Date.now() - startTime;
-            this.logger.debug(`ULTRA-FAST OAuth login completed in ${duration}ms (cache hit)`);
+            // this.logger.debug(`ULTRA-FAST OAuth login completed in ${duration}ms (cache hit)`);
             return authSession;
         }
         // ⚡ OFFLINE DECODE PATH: Supabase 네트워크 스킵, 프로필/페이로드 기반
         const decoded = this.decodeAccessToken(accessToken);
         if (decoded?.sub) {
             try {
-                const profile = await this.supabaseService.findProfileById(decoded.sub);
-                const emailFromProfile = profile?.email;
-                const emailFromToken = decoded.email;
-                const email = emailFromProfile ?? emailFromToken ?? '';
+                let profile = await this.supabaseService.findProfileById(decoded.sub);
+                let supabaseUser = null;
+                // 항상 Supabase Admin으로 최신 사용자 조회 (provider/metadata 확보)
+                try {
+                    supabaseUser = await this.supabaseService.getUserById(decoded.sub);
+                }
+                catch (adminError) {
+                    this.logger.warn(`Offline path admin fetch failed for ${decoded.sub}:`, adminError);
+                }
+                const detectedLoginType = this.resolveLoginType(loginType, supabaseUser);
+                const preferDisplayName = detectedLoginType !== 'email' && detectedLoginType !== 'username';
+                // 소셜/미등록 프로필은 강제로 생성/업데이트
+                if (supabaseUser && (!profile || detectedLoginType !== 'email')) {
+                    try {
+                        await this.supabaseService.ensureProfileFromSupabaseUser(supabaseUser, detectedLoginType);
+                        profile = await this.supabaseService.findProfileById(decoded.sub);
+                    }
+                    catch (ensureError) {
+                        this.logger.warn(`Offline path ensureProfile failed for ${decoded.sub}:`, ensureError);
+                    }
+                }
+                const email = profile?.email ??
+                    supabaseUser?.email ??
+                    decoded.email ??
+                    '';
                 if (email) {
-                    const userRecord = {
-                        id: profile?.id ?? decoded.sub,
-                        email,
-                        name: profile?.name ?? decoded.name ?? null,
-                        avatar_url: profile?.avatar_url ?? null,
-                        username: profile?.username ?? email.split('@')[0] ?? decoded.sub,
-                        password_hash: '',
-                        role: profile?.role ?? 'user',
-                        created_at: profile?.created_at ? new Date(profile.created_at) : null,
-                        updated_at: profile?.updated_at ? new Date(profile.updated_at) : null,
-                    };
-                    const authSession = await this.authService.createAuthSession(userRecord, loginType);
+                    const userRecord = supabaseUser
+                        ? (0, mappers_1.fromSupabaseUser)(supabaseUser, { preferDisplayName })
+                        : {
+                            id: profile?.id ?? decoded.sub,
+                            email,
+                            name: profile?.name ?? decoded.name ?? null,
+                            avatar_url: profile?.avatar_url ?? null,
+                            username: profile?.username ?? email.split('@')[0] ?? decoded.sub,
+                            password_hash: '',
+                            role: profile?.role ?? 'user',
+                            created_at: profile?.created_at ? new Date(profile.created_at) : null,
+                            updated_at: profile?.updated_at ? new Date(profile.updated_at) : null,
+                        };
+                    // 토큰 저장 (Supabase metadata + code exchange 포함)
+                    const appleTokenFromUser = supabaseUser?.user_metadata?.apple_refresh_token ?? null;
+                    const googleTokenFromUser = supabaseUser?.user_metadata?.google_refresh_token ?? null;
+                    const appleToken = detectedLoginType === 'apple'
+                        ? options.appleRefreshToken ??
+                            appleTokenFromUser ??
+                            (options.authorizationCode
+                                ? await this.exchangeAppleAuthorizationCode(options.authorizationCode)
+                                : null)
+                        : null;
+                    const googleToken = detectedLoginType === 'google'
+                        ? options.googleRefreshToken ??
+                            googleTokenFromUser ??
+                            (options.authorizationCode
+                                ? await this.exchangeGoogleAuthorizationCode(options.authorizationCode, {
+                                    codeVerifier: options.codeVerifier,
+                                    redirectUri: options.redirectUri,
+                                })
+                                : null)
+                        : null;
+                    if (appleToken) {
+                        await this.supabaseService.saveAppleRefreshToken(userRecord.id, appleToken);
+                    }
+                    if (googleToken) {
+                        await this.supabaseService.saveGoogleRefreshToken(userRecord.id, googleToken);
+                    }
+                    const authSession = await this.authService.createAuthSession(userRecord, detectedLoginType);
                     void this.setCachedOAuthUser(accessToken, userRecord);
                     void this.authService.warmAuthCaches(userRecord);
                     void this.verifySupabaseUser(accessToken, decoded.sub).catch(() => undefined);
                     const duration = Date.now() - startTime;
-                    this.logger.debug(`ULTRA-FAST OAuth login via offline profile/token path in ${duration}ms`);
+                    // this.logger.debug(`ULTRA-FAST OAuth login via offline profile/token path in ${duration}ms`);
                     return authSession;
                 }
             }
@@ -400,35 +501,43 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             throw new common_1.UnauthorizedException('Invalid Supabase access token');
         }
         const user = supabaseUser.value;
+        const resolvedLoginType = this.resolveLoginType(loginType, user);
         const { appleRefreshToken, googleRefreshToken, authorizationCode, codeVerifier, redirectUri } = options;
-        // 3단계: 프로필 존재 체크 (필수), 토큰 교환은 비동기 워밍으로 전환
-        const profileExists = await this.fastProfileCheck(user.id);
-        // 토큰 교환은 응답 지연을 막기 위해 시작만 해두고 백그라운드로
-        const appleTokenPromise = loginType === 'apple' && !appleRefreshToken && authorizationCode
-            ? this.exchangeAppleAuthorizationCode(authorizationCode)
-            : Promise.resolve(appleRefreshToken ?? null);
-        const googleTokenPromise = loginType === 'google' && !googleRefreshToken && authorizationCode
-            ? this.exchangeGoogleAuthorizationCode(authorizationCode, { codeVerifier, redirectUri })
-            : Promise.resolve(googleRefreshToken ?? null);
+        // 3단계: 프로필 존재 체크와 토큰 교환을 병렬로 실행
+        const [profileExists, appleTokenPromise, googleTokenPromise] = await Promise.all([
+            this.fastProfileCheck(user.id),
+            resolvedLoginType === 'apple' && !appleRefreshToken && authorizationCode
+                ? this.exchangeAppleAuthorizationCode(authorizationCode)
+                : Promise.resolve(appleRefreshToken ?? null),
+            resolvedLoginType === 'google' && !googleRefreshToken && authorizationCode
+                ? this.exchangeGoogleAuthorizationCode(authorizationCode, { codeVerifier, redirectUri })
+                : Promise.resolve(googleRefreshToken ?? null)
+        ]);
         // 4단계: 프로필 생성이 필요한 경우에만 처리
-        if (!profileExists || (loginType !== 'email' && loginType !== 'username')) {
+        if (!profileExists || (resolvedLoginType !== 'email' && resolvedLoginType !== 'username')) {
             // 프로필 생성을 백그라운드로 처리하지 않고 즉시 처리 (필수 작업)
-            await this.supabaseService.ensureProfileFromSupabaseUser(user, loginType);
+            await this.supabaseService.ensureProfileFromSupabaseUser(user, resolvedLoginType);
         }
         // 5단계: 사용자 객체 생성 및 캐싱
-        const preferDisplayName = loginType !== 'email' && loginType !== 'username';
+        const preferDisplayName = resolvedLoginType !== 'email' && resolvedLoginType !== 'username';
         const userRecord = (0, mappers_1.fromSupabaseUser)(user, { preferDisplayName });
         // 6단계: 세션 생성과 캐시 저장을 병렬로 처리
         const [authSession] = await Promise.all([
-            this.authService.createAuthSession(userRecord, loginType),
+            this.authService.createAuthSession(userRecord, resolvedLoginType),
             this.setCachedOAuthUser(accessToken, userRecord),
             this.authService.warmAuthCaches(userRecord)
         ]);
         // 🔄 새로운 로그인이므로 기존 캐시 무효화 (최신 데이터 반영)
         void this.invalidateUserCaches(userRecord.id).catch(error => this.logger.warn(`Failed to invalidate caches for ${userRecord.id}:`, error));
-        // 7단계: 모든 백그라운드 작업을 비동기로 처리 (응답 지연 최소화)
+        // 7단계: 리프레시 토큰 저장 (이미 병렬로 받아온 결과 사용)
+        if (resolvedLoginType === 'apple' && appleTokenPromise) {
+            await this.supabaseService.saveAppleRefreshToken(userRecord.id, appleTokenPromise);
+        }
+        if (resolvedLoginType === 'google' && googleTokenPromise) {
+            await this.supabaseService.saveGoogleRefreshToken(userRecord.id, googleTokenPromise);
+        }
+        // 나머지 부가 작업은 백그라운드로 실행
         const backgroundTasks = [];
-        // 프로필 이미지 미러링
         if (userRecord.avatar_url) {
             backgroundTasks.push(this.backgroundJobService.enqueue(`[social-avatar] ${userRecord.id}`, async () => {
                 const mirrored = await this.supabaseService.mirrorProfileAvatar(userRecord.id, userRecord.avatar_url);
@@ -437,27 +546,12 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                 }
             }));
         }
-        // 토큰 저장
-        backgroundTasks.push(this.backgroundJobService.enqueue(`[oauth-refresh-save] ${userRecord.id}`, async () => {
-            const [finalAppleRefreshToken, finalGoogleRefreshToken] = await Promise.all([
-                appleTokenPromise,
-                googleTokenPromise,
-            ]);
-            if (loginType === 'apple' && finalAppleRefreshToken) {
-                await this.supabaseService.saveAppleRefreshToken(userRecord.id, finalAppleRefreshToken);
-            }
-            if (loginType === 'google' && finalGoogleRefreshToken) {
-                await this.supabaseService.saveGoogleRefreshToken(userRecord.id, finalGoogleRefreshToken);
-            }
-        }));
-        // 로그인 기록
         backgroundTasks.push(this.backgroundJobService.enqueue(`[markLastLogin] ${userRecord.id}`, async () => {
             await this.authService.markLastLogin(userRecord.id);
         }));
-        // 모든 백그라운드 작업을 시작 (await하지 않음)
         Promise.allSettled(backgroundTasks);
         const duration = Date.now() - startTime;
-        this.logger.debug(`FAST OAuth login completed in ${duration}ms for ${userRecord.email} (optimized flow)`);
+        // this.logger.debug(`FAST OAuth login completed in ${duration}ms for ${userRecord.email} (optimized flow)`);
         return authSession;
     }
     async checkOAuthAccount(accessToken, loginType = 'email') {
@@ -469,14 +563,14 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         const cachedCheck = this.getCachedCheck(accessToken);
         if (cachedCheck) {
             const duration = Date.now() - startTime;
-            this.logger.debug(`⚡ ULTRA-FAST OAuth check cache hit: ${duration}ms`);
+            // this.logger.debug(`⚡ ULTRA-FAST OAuth check cache hit: ${duration}ms`);
             return cachedCheck;
         }
         // 🔁 동일 토큰 중복 호출은 진행 중인 Promise 재사용
         const inFlight = this.getInFlightLookup(accessToken);
         if (inFlight) {
             const duration = Date.now() - startTime;
-            this.logger.debug(`⚡ SHARED OAuth lookup (in-flight reuse): ${duration}ms`);
+            // this.logger.debug(`⚡ SHARED OAuth lookup (in-flight reuse): ${duration}ms`);
             return inFlight;
         }
         const lookupPromise = this.performOAuthLookup(accessToken, loginType, startTime);
@@ -502,7 +596,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             const isNotExpired = !decoded.exp || decoded.exp * 1000 > Date.now();
             if (isSupabaseToken && isNotExpired) {
                 try {
-                    this.logger.debug(`🔥 OFFLINE PATH: Using JWT decode for ${decoded.sub}`);
+                    // this.logger.debug(`🔥 OFFLINE PATH: Using JWT decode for ${decoded.sub}`);
                     // 🔥 즉시 DB 확인 (Redis 병렬 처리)
                     const [registered, redisCached] = await Promise.allSettled([
                         this.fastProfileCheck(decoded.sub),
@@ -511,7 +605,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                     // Redis 캐시가 있으면 즉시 반환
                     if (redisCached.status === 'fulfilled' && redisCached.value) {
                         const duration = Date.now() - startTime;
-                        this.logger.debug(`INSTANT OAuth check Redis hit: ${duration}ms`);
+                        // this.logger.debug(`INSTANT OAuth check Redis hit: ${duration}ms`);
                         return redisCached.value;
                     }
                     // DB 결과 사용 (Supabase 스킵!)
@@ -521,7 +615,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                         // 백그라운드에서 Supabase 정밀 검증 및 사용자 캐시 워밍 (응답에 영향 없음)
                         void this.verifySupabaseUser(accessToken, decoded.sub).catch((error) => this.logger.warn(`Background Supabase verify failed for offline path:`, error));
                         const duration = Date.now() - startTime;
-                        this.logger.debug(`🚀 OFFLINE FAST OAuth check via JWT decode: ${duration}ms`);
+                        // this.logger.debug(`🚀 OFFLINE FAST OAuth check via JWT decode: ${duration}ms`);
                         return result;
                     }
                 }
@@ -539,7 +633,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         if (redisResult.status === 'fulfilled' && redisResult.value) {
             this.primeLookupCaches(accessToken, cacheKey, redisResult.value);
             const duration = Date.now() - startTime;
-            this.logger.debug(`FAST OAuth check Redis hit: ${duration}ms`);
+            // this.logger.debug(`FAST OAuth check Redis hit: ${duration}ms`);
             return redisResult.value;
         }
         // 캐시된 사용자 적중 - 빠른 profile 테이블 조회
@@ -550,7 +644,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                 // 캐시는 즉시 반영 (두 번째 호출에서 바로 사용 가능)
                 this.primeLookupCaches(accessToken, cacheKey, result);
                 const duration = Date.now() - startTime;
-                this.logger.debug(`FAST OAuth check with cached user + profile: ${duration}ms`);
+                // this.logger.debug(`FAST OAuth check with cached user + profile: ${duration}ms`);
                 return result;
             }
             catch (error) {
@@ -584,7 +678,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                 this.logger.warn(`Background OAuth caching failed:`, error);
             });
             const duration = Date.now() - startTime;
-            this.logger.debug(`OAuth check completed: ${duration}ms (registered: ${result.registered})`);
+            // this.logger.debug(`OAuth check completed: ${duration}ms (registered: ${result.registered})`);
             return result;
         }
         catch (error) {
@@ -598,7 +692,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             const supabaseUser = await this.supabaseService.getUserFromToken(accessToken);
             if (!supabaseUser || supabaseUser.id !== userId) {
                 this.setCachedCheck(accessToken, false);
-                await this.cacheService.set(`oauth_check:${this.getTokenCacheKey(accessToken)}`, { registered: false }, { ttl: 120 });
+                await this.cacheService.set(`oauth_check:${this.getTokenCacheKey(accessToken)}`, { registered: false }, { ttl: 300 });
                 return;
             }
             await this.setCachedOAuthUser(accessToken, {
@@ -805,21 +899,6 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         return result.refresh_token;
     }
     /**
-     * 🚀 REDIS-FIRST: DB 커넥션 워밍 및 Redis 캐시 적극 활용
-     */
-    async warmupDbConnection() {
-        try {
-            const { getPool } = await Promise.resolve().then(() => __importStar(require('../../db/pool')));
-            const pool = await getPool();
-            await pool.query('SELECT 1'); // DB 커넥션 워밍
-            return true;
-        }
-        catch (error) {
-            this.logger.warn('DB connection warmup failed:', error);
-            return false;
-        }
-    }
-    /**
      * 🚀 ULTRA-FAST: Profile 존재 여부만 Redis-first로 초고속 확인
      */
     async fastProfileCheck(userId) {
@@ -835,8 +914,8 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             const pool = await getPool();
             const result = await pool.query('SELECT EXISTS(SELECT 1 FROM profiles WHERE id = $1) as exists', [userId]);
             const exists = Boolean(result.rows[0]?.exists);
-            // 3. Redis에 즉시 캐싱 (10분 TTL)
-            await this.cacheService.set(cacheKey, exists, { ttl: 600 });
+            // 3. Redis에 즉시 캐싱 (30분 TTL로 늘려서 재사용률 향상)
+            await this.cacheService.set(cacheKey, exists, { ttl: 1800 });
             return exists;
         }
         catch (error) {

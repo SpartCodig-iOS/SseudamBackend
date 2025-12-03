@@ -36,13 +36,11 @@ exports.oauthTokenSchema = zod_1.z
     .transform((data) => ({
     accessToken: data.accessToken.trim(),
     loginType: (data.loginType ??
-        (data.authorizationCode
+        (data.appleRefreshToken
             ? 'apple'
-            : data.appleRefreshToken
-                ? 'apple'
-                : data.googleRefreshToken
-                    ? 'google'
-                    : 'email')),
+            : data.googleRefreshToken
+                ? 'google'
+                : 'email')),
     appleRefreshToken: data.appleRefreshToken?.trim(),
     googleRefreshToken: data.googleRefreshToken?.trim(),
     authorizationCode: data.authorizationCode?.trim(),

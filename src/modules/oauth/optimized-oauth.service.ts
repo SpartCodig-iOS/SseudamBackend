@@ -49,7 +49,7 @@ export class OptimizedOAuthService {
       });
       if (cachedResult) {
         const duration = Date.now() - startTime;
-        this.logger.debug(`Ultra-fast OAuth (cached): ${duration}ms`);
+        // this.logger.debug(`Ultra-fast OAuth (cached): ${duration}ms`);
         return cachedResult;
       }
 
@@ -75,7 +75,7 @@ export class OptimizedOAuthService {
       }
 
       const duration = Date.now() - startTime;
-      this.logger.debug(`Fast OAuth login completed: ${duration}ms`);
+      // this.logger.debug(`Fast OAuth login completed: ${duration}ms`);
 
       return result;
     } catch (error) {
@@ -100,7 +100,7 @@ export class OptimizedOAuthService {
     const authResult = await this.socialAuthService.loginWithOAuthToken(accessToken, loginType, options);
 
     const duration = Date.now() - startTime;
-    this.logger.debug(`Optimized OAuth with token exchange: ${duration}ms`);
+    // this.logger.debug(`Optimized OAuth with token exchange: ${duration}ms`);
 
     return authResult;
   }
@@ -127,7 +127,7 @@ export class OptimizedOAuthService {
       });
       if (cached !== null) {
         const duration = Date.now() - startTime;
-        this.logger.debug(`ULTRA-FAST lookup (cache hit): ${duration}ms`);
+        // this.logger.debug(`ULTRA-FAST lookup (cache hit): ${duration}ms`);
         return cached;
       }
 
@@ -137,7 +137,7 @@ export class OptimizedOAuthService {
         // 결과를 Redis에 캐시하고 즉시 반환
         this.cacheService.set(cacheKey, existingCheck, { ttl: this.LOOKUP_TTL, prefix: this.LOOKUP_REDIS_PREFIX }); // 5분
         const duration = Date.now() - startTime;
-        this.logger.debug(`FAST lookup (memory cache hit): ${duration}ms`);
+        // this.logger.debug(`FAST lookup (memory cache hit): ${duration}ms`);
         return existingCheck;
       }
 
@@ -164,7 +164,7 @@ export class OptimizedOAuthService {
       ]);
 
       const duration = Date.now() - startTime;
-      this.logger.debug(`FAST lookup completed: ${duration}ms (registered: ${result.registered})`);
+      // this.logger.debug(`FAST lookup completed: ${duration}ms (registered: ${result.registered})`);
 
       return result;
     } catch (error) {

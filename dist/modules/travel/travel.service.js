@@ -191,6 +191,35 @@ let TravelService = TravelService_1 = class TravelService {
         keys.forEach(k => this.TRAVEL_MEMBER_CACHE.delete(k));
         await this.cacheService.delPattern(`${this.TRAVEL_MEMBER_REDIS_PREFIX}:${travelId}:*`).catch(() => undefined);
     }
+    async loadMembersForTravels(travelIds, requesterId) {
+        const membersMap = new Map();
+        if (travelIds.length === 0) {
+            return membersMap;
+        }
+        const pool = await (0, pool_1.getPool)();
+        const result = await pool.query(`SELECT
+         tm.travel_id::text AS travel_id,
+         tm.user_id::text AS user_id,
+         tm.role,
+         p.name,
+         tm.joined_at
+       FROM travel_members tm
+       LEFT JOIN profiles p ON p.id = tm.user_id
+       WHERE tm.travel_id = ANY($1::uuid[])
+       ORDER BY tm.travel_id,
+                CASE WHEN tm.user_id = $2 THEN 0 ELSE 1 END,
+                tm.joined_at`, [travelIds, requesterId]);
+        for (const row of result.rows) {
+            const list = membersMap.get(row.travel_id) ?? [];
+            list.push({
+                userId: row.user_id,
+                name: row.name ?? null,
+                role: row.role ?? 'member',
+            });
+            membersMap.set(row.travel_id, list);
+        }
+        return membersMap;
+    }
     async ensureOwner(travelId, userId, runner) {
         const executor = runner ?? (await (0, pool_1.getPool)());
         const result = await executor.query(`SELECT owner_id FROM travels WHERE id = $1`, [travelId]);
@@ -228,37 +257,21 @@ let TravelService = TravelService_1 = class TravelService {
          CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS status,
          t.created_at::text,
          tm.role AS role,
-         owner_profile.name AS owner_name,
-         COALESCE(members.members, '[]'::json) AS members
+         owner_profile.name AS owner_name
        FROM travels t
        INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $2
-       LEFT JOIN profiles member_profile ON member_profile.id = tm.user_id
        LEFT JOIN profiles owner_profile ON owner_profile.id = t.owner_id
        LEFT JOIN travel_invites ti ON ti.travel_id = t.id AND ti.status = 'active'
-       LEFT JOIN LATERAL (
-        SELECT json_agg(
-                 json_build_object(
-                   'userId', tm2.user_id,
-                   'name', p.name,
-                   'role', COALESCE(tm2.role, p.role)
-                 )
-                 ORDER BY
-                   CASE WHEN tm2.user_id = $2 THEN 0 ELSE 1 END,
-                   tm2.joined_at
-               ) AS members
-        FROM travel_members tm2
-        LEFT JOIN profiles p ON p.id = tm2.user_id
-        WHERE tm2.travel_id = t.id
-       ) AS members ON TRUE
        WHERE t.id = $1
        LIMIT 1`, [travelId, userId]);
         const row = result.rows[0];
         if (!row) {
             throw new common_1.NotFoundException('여행을 찾을 수 없거나 접근 권한이 없습니다.');
         }
-        return this.mapSummary(row);
+        const membersMap = await this.loadMembersForTravels([travelId], userId);
+        return this.mapSummary(row, membersMap.get(travelId));
     }
-    mapSummary(row) {
+    mapSummary(row, members) {
         const destinationCurrency = this.resolveDestinationCurrency(row.country_code, row.base_currency);
         return {
             id: row.id,
@@ -274,7 +287,7 @@ let TravelService = TravelService_1 = class TravelService {
             status: row.status,
             createdAt: row.created_at,
             ownerName: row.owner_name ?? null,
-            members: row.members ?? undefined,
+            members: members ?? row.members ?? undefined,
         };
     }
     async getTravelDetail(travelId, userId) {
@@ -285,9 +298,17 @@ let TravelService = TravelService_1 = class TravelService {
         }
         const cached = await this.getCachedTravelDetail(travelId);
         if (cached) {
+            // 딥링크 추가
+            if (cached.inviteCode) {
+                cached.deepLink = this.generateDeepLink(cached.inviteCode);
+            }
             return this.reorderMembersForUser(cached, userId);
         }
         const travel = await this.fetchSummaryForMember(travelId, userId);
+        // 딥링크 추가
+        if (travel.inviteCode) {
+            travel.deepLink = this.generateDeepLink(travel.inviteCode);
+        }
         this.setCachedTravelDetail(travelId, travel);
         return this.reorderMembersForUser(travel, userId);
     }
@@ -352,7 +373,7 @@ let TravelService = TravelService_1 = class TravelService {
     }
     async createTravel(currentUser, payload) {
         try {
-            return await this.ensureTransaction(async (client) => {
+            const travel = await this.ensureTransaction(async (client) => {
                 const startTime = Date.now();
                 const ownerName = currentUser.name ?? currentUser.email ?? '알 수 없는 사용자';
                 // inviteCode 자동 생성
@@ -423,8 +444,16 @@ let TravelService = TravelService_1 = class TravelService {
                 const duration = Date.now() - startTime;
                 this.logger.debug(`Travel created in ${duration}ms for user ${currentUser.id}`);
                 await this.ensureCountryCurrencyMap();
-                return this.mapSummary(optimizedResult);
+                return this.mapSummary(optimizedResult, optimizedResult.members);
             });
+            // 딥링크 추가
+            if (travel.inviteCode) {
+                travel.deepLink = this.generateDeepLink(travel.inviteCode);
+            }
+            // 캐시 업데이트/무효화 (응답을 기다리지 않음)
+            this.invalidateUserTravelCache(currentUser.id);
+            this.setCachedTravelDetail(travel.id, travel);
+            return travel;
         }
         catch (error) {
             this.logger.error('Failed to create travel', error);
@@ -441,7 +470,12 @@ let TravelService = TravelService_1 = class TravelService {
         const cacheKey = `${userId}:${page}:${limit}:${pagination.status ?? 'all'}`;
         const cachedList = await this.getCachedTravelList(cacheKey);
         if (cachedList) {
-            return { total: cachedList.length, page, limit, items: cachedList };
+            // 캐시된 데이터에 딥링크 추가
+            const itemsWithDeepLink = cachedList.map(item => ({
+                ...item,
+                deepLink: item.inviteCode ? this.generateDeepLink(item.inviteCode) : undefined
+            }));
+            return { total: cachedList.length, page, limit, items: itemsWithDeepLink };
         }
         const totalPromise = pool.query(`SELECT COUNT(*)::int AS total
        FROM travel_members tm
@@ -450,61 +484,55 @@ let TravelService = TravelService_1 = class TravelService {
        ${statusCondition}`, [userId]);
         const listPromise = pool.query(`SELECT
          ut.id::text AS id,
-       ut.title,
-       ut.start_date::text,
-       ut.end_date::text,
-       ut.country_code,
-       ut.country_name_kr,
-       ut.base_currency,
-       ut.base_exchange_rate,
-       ti.invite_code,
-       ut.computed_status AS status,
-       ut.role,
-       ut.created_at::text,
-       owner_profile.name AS owner_name,
-       COALESCE(members.members, '[]'::json) AS members
-     FROM (
-        SELECT t.*, COALESCE(tm.role, mp.role, 'member') AS role,
-               CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS computed_status
-        FROM travels t
-        INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
-        LEFT JOIN profiles mp ON mp.id = tm.user_id
-        WHERE 1 = 1
-        ${statusCondition}
-      ) AS ut
-      INNER JOIN profiles owner_profile ON owner_profile.id = ut.owner_id
-      LEFT JOIN travel_invites ti ON ti.travel_id = ut.id AND ti.status = 'active'
-      LEFT JOIN LATERAL (
-        SELECT json_agg(
-                 json_build_object(
-                   'userId', tm2.user_id,
-                   'name', p.name,
-                   'role', COALESCE(tm2.role, p.role)
-                 )
-                 ORDER BY
-                   CASE WHEN tm2.user_id = $1 THEN 0 ELSE 1 END,
-                   tm2.joined_at
-               ) AS members
-        FROM travel_members tm2
-        LEFT JOIN profiles p ON p.id = tm2.user_id
-        WHERE tm2.travel_id = ut.id
-       ) AS members ON TRUE
+         ut.title,
+         ut.start_date::text,
+         ut.end_date::text,
+         ut.country_code,
+         ut.country_name_kr,
+         ut.base_currency,
+         ut.base_exchange_rate,
+         ti.invite_code,
+         ut.computed_status AS status,
+         ut.role,
+         ut.created_at::text,
+         owner_profile.name AS owner_name
+       FROM (
+          SELECT t.*, COALESCE(tm.role, mp.role, 'member') AS role,
+                 CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS computed_status
+          FROM travels t
+          INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
+          LEFT JOIN profiles mp ON mp.id = tm.user_id
+          WHERE 1 = 1
+          ${statusCondition}
+        ) AS ut
+        INNER JOIN profiles owner_profile ON owner_profile.id = ut.owner_id
+        LEFT JOIN travel_invites ti ON ti.travel_id = ut.id AND ti.status = 'active'
        ORDER BY ut.created_at DESC
        LIMIT $2 OFFSET $3`, [userId, limit, offset]);
         const [totalResult, listResult] = await Promise.all([totalPromise, listPromise]);
         const total = totalResult.rows[0]?.total ?? 0;
-        const items = listResult.rows.map((row) => this.mapSummary(row));
-        // 캐시에 저장 (Redis + 메모리)
+        const travelIds = listResult.rows.map((row) => row.id);
+        const membersMap = await this.loadMembersForTravels(travelIds, userId);
+        const items = listResult.rows.map((row) => this.mapSummary(row, membersMap.get(row.id)));
+        // 딥링크 추가
+        const itemsWithDeepLink = items.map(item => ({
+            ...item,
+            deepLink: item.inviteCode ? this.generateDeepLink(item.inviteCode) : undefined
+        }));
+        // 캐시에 저장 (Redis + 메모리) - 딥링크 없이 저장
         this.setCachedTravelList(cacheKey, items);
         return {
             total,
             page,
             limit,
-            items,
+            items: itemsWithDeepLink,
         };
     }
     generateInviteCode() {
         return (0, crypto_1.randomBytes)(5).toString('hex');
+    }
+    generateDeepLink(inviteCode) {
+        return `sseudam://join?code=${inviteCode}`;
     }
     async createInvite(travelId, userId) {
         const pool = await (0, pool_1.getPool)();

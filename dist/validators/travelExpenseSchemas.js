@@ -10,13 +10,7 @@ exports.createExpenseSchema = zod_1.z.object({
     currency: zod_1.z.string().length(3, 'currency 는 3자리 통화 코드여야 합니다.').transform((val) => val.toUpperCase()),
     expenseDate: zod_1.z
         .string()
-        .regex(isoDatePattern, 'expenseDate 는 YYYY-MM-DD 형식이어야 합니다.')
-        .refine((date) => {
-        const expenseDate = new Date(date);
-        const today = new Date();
-        today.setHours(23, 59, 59, 999); // 오늘 끝까지 허용
-        return expenseDate <= today;
-    }, '지출 날짜는 미래 날짜일 수 없습니다.'),
+        .regex(isoDatePattern, 'expenseDate 는 YYYY-MM-DD 형식이어야 합니다.'),
     category: zod_1.z.string()
         .min(1, '카테고리는 최소 1글자 이상이어야 합니다.')
         .max(20, '카테고리는 20자 이하여야 합니다.')

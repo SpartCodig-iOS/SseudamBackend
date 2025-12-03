@@ -49,7 +49,7 @@ let OptimizedOAuthService = OptimizedOAuthService_1 = class OptimizedOAuthServic
             });
             if (cachedResult) {
                 const duration = Date.now() - startTime;
-                this.logger.debug(`Ultra-fast OAuth (cached): ${duration}ms`);
+                // this.logger.debug(`Ultra-fast OAuth (cached): ${duration}ms`);
                 return cachedResult;
             }
             // 2. 백그라운드 캐시 설정과 함께 OAuth 처리
@@ -68,7 +68,7 @@ let OptimizedOAuthService = OptimizedOAuthService_1 = class OptimizedOAuthServic
                 void this.socialAuthService.invalidateUserCaches(result.user.id).catch(error => this.logger.warn(`Failed to invalidate OAuth caches for ${result.user.id}:`, error));
             }
             const duration = Date.now() - startTime;
-            this.logger.debug(`Fast OAuth login completed: ${duration}ms`);
+            // this.logger.debug(`Fast OAuth login completed: ${duration}ms`);
             return result;
         }
         catch (error) {
@@ -86,7 +86,7 @@ let OptimizedOAuthService = OptimizedOAuthService_1 = class OptimizedOAuthServic
         // 메인 OAuth 서비스를 통해 토큰 교환 처리 (병렬 처리는 내부에서 수행됨)
         const authResult = await this.socialAuthService.loginWithOAuthToken(accessToken, loginType, options);
         const duration = Date.now() - startTime;
-        this.logger.debug(`Optimized OAuth with token exchange: ${duration}ms`);
+        // this.logger.debug(`Optimized OAuth with token exchange: ${duration}ms`);
         return authResult;
     }
     /**
@@ -105,7 +105,7 @@ let OptimizedOAuthService = OptimizedOAuthService_1 = class OptimizedOAuthServic
             });
             if (cached !== null) {
                 const duration = Date.now() - startTime;
-                this.logger.debug(`ULTRA-FAST lookup (cache hit): ${duration}ms`);
+                // this.logger.debug(`ULTRA-FAST lookup (cache hit): ${duration}ms`);
                 return cached;
             }
             // 2단계: 기존 캐시된 토큰 체크 (< 5ms)
@@ -114,7 +114,7 @@ let OptimizedOAuthService = OptimizedOAuthService_1 = class OptimizedOAuthServic
                 // 결과를 Redis에 캐시하고 즉시 반환
                 this.cacheService.set(cacheKey, existingCheck, { ttl: this.LOOKUP_TTL, prefix: this.LOOKUP_REDIS_PREFIX }); // 5분
                 const duration = Date.now() - startTime;
-                this.logger.debug(`FAST lookup (memory cache hit): ${duration}ms`);
+                // this.logger.debug(`FAST lookup (memory cache hit): ${duration}ms`);
                 return existingCheck;
             }
             // 3단계: 병렬 처리로 최적화 (< 200ms)
@@ -135,7 +135,7 @@ let OptimizedOAuthService = OptimizedOAuthService_1 = class OptimizedOAuthServic
                 Promise.resolve(this.socialAuthService.setCachedCheck?.(accessToken, result.registered))
             ]);
             const duration = Date.now() - startTime;
-            this.logger.debug(`FAST lookup completed: ${duration}ms (registered: ${result.registered})`);
+            // this.logger.debug(`FAST lookup completed: ${duration}ms (registered: ${result.registered})`);
             return result;
         }
         catch (error) {

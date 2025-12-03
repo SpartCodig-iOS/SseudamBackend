@@ -41,10 +41,10 @@ export class SocialAuthService {
   private readonly oauthCheckCache = new Map<string, { registered: boolean; expiresAt: number }>();
   private readonly lookupPromiseCache = new Map<string, { promise: Promise<SocialLookupResult>; expiresAt: number }>();
   private readonly profileExistenceCache = new Map<string, { exists: boolean; expiresAt: number }>();
-  private readonly OAUTH_CHECK_CACHE_TTL = 5 * 60 * 1000; // 5분
+  private readonly OAUTH_CHECK_CACHE_TTL = 15 * 60 * 1000; // 15분으로 늘려서 재사용률 향상
   private readonly LOOKUP_INFLIGHT_TTL = 5 * 1000; // 동일 토큰 연속 호출 병합용 (5초)
-  private readonly PROFILE_EXISTS_TTL = 60 * 1000; // 프로필 존재 여부 캐시
-  private readonly PROFILE_EXISTS_REDIS_TTL = 5 * 60; // 5분
+  private readonly PROFILE_EXISTS_TTL = 10 * 60 * 1000; // 10분 (프로필 존재 여부는 거의 변하지 않음)
+  private readonly PROFILE_EXISTS_REDIS_TTL = 30 * 60; // 30분
   private readonly PROFILE_EXISTS_REDIS_PREFIX = 'profile_exists';
   private readonly localTokenCache = new Map<string, { user: UserRecord; expiresAt: number }>();
   private readonly LOCAL_TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5분
@@ -232,7 +232,7 @@ export class SocialAuthService {
     });
     // Redis에도 캐싱
     const tokenHash = this.getTokenCacheKey(accessToken);
-    this.cacheService.set(`oauth_check:${tokenHash}`, { registered }, { ttl: 300 }).catch(() => undefined);
+    this.cacheService.set(`oauth_check:${tokenHash}`, { registered }, { ttl: 900 }).catch(() => undefined); // 15분으로 연장
   }
 
   private getInFlightLookup(accessToken: string): Promise<SocialLookupResult> | null {
@@ -257,7 +257,7 @@ export class SocialAuthService {
   private primeLookupCaches(accessToken: string, cacheKey: string, result: SocialLookupResult): void {
     this.setCachedCheck(accessToken, result.registered);
     // Redis/메모리 캐시는 비동기로 워밍, 실패는 무시
-    this.cacheService.set(cacheKey, result, { ttl: 300 }).catch(() => undefined);
+    this.cacheService.set(cacheKey, result, { ttl: 900 }).catch(() => undefined); // 15분
   }
 
   /**
@@ -388,7 +388,7 @@ export class SocialAuthService {
     // 🚀 ULTRA-FAST: 캐시된 사용자 정보 확인 (< 1ms)
     const cachedUser = await this.getCachedOAuthUser(accessToken);
     if (cachedUser) {
-      this.logger.debug(`OAuth user cache hit for token ${accessToken.substring(0, 10)}...`);
+      // this.logger.debug(`OAuth user cache hit for token ${accessToken.substring(0, 10)}...`);
       const resolvedLoginType = this.resolveLoginType(loginType);
       let userForSession = cachedUser;
 
@@ -433,7 +433,7 @@ export class SocialAuthService {
       });
 
       const duration = Date.now() - startTime;
-      this.logger.debug(`ULTRA-FAST OAuth login completed in ${duration}ms (cache hit)`);
+      // this.logger.debug(`ULTRA-FAST OAuth login completed in ${duration}ms (cache hit)`);
       return authSession;
     }
 
@@ -525,7 +525,7 @@ export class SocialAuthService {
           void this.verifySupabaseUser(accessToken, decoded.sub).catch(() => undefined);
 
           const duration = Date.now() - startTime;
-          this.logger.debug(`ULTRA-FAST OAuth login via offline profile/token path in ${duration}ms`);
+          // this.logger.debug(`ULTRA-FAST OAuth login via offline profile/token path in ${duration}ms`);
           return authSession;
         }
       } catch (error) {
@@ -547,19 +547,16 @@ export class SocialAuthService {
     const resolvedLoginType = this.resolveLoginType(loginType, user);
     const { appleRefreshToken, googleRefreshToken, authorizationCode, codeVerifier, redirectUri } = options;
 
-    // 3단계: 프로필 존재 체크 (필수), 토큰 교환은 비동기 워밍으로 전환
-    const profileExists = await this.fastProfileCheck(user.id);
-
-    // 토큰 교환은 응답 지연을 막기 위해 시작만 해두고 백그라운드로
-    const appleTokenPromise =
-        resolvedLoginType === 'apple' && !appleRefreshToken && authorizationCode
+    // 3단계: 프로필 존재 체크와 토큰 교환을 병렬로 실행
+    const [profileExists, appleTokenPromise, googleTokenPromise] = await Promise.all([
+      this.fastProfileCheck(user.id),
+      resolvedLoginType === 'apple' && !appleRefreshToken && authorizationCode
         ? this.exchangeAppleAuthorizationCode(authorizationCode)
-        : Promise.resolve(appleRefreshToken ?? null);
-
-    const googleTokenPromise =
+        : Promise.resolve(appleRefreshToken ?? null),
       resolvedLoginType === 'google' && !googleRefreshToken && authorizationCode
         ? this.exchangeGoogleAuthorizationCode(authorizationCode, { codeVerifier, redirectUri })
-        : Promise.resolve(googleRefreshToken ?? null);
+        : Promise.resolve(googleRefreshToken ?? null)
+    ]);
 
     // 4단계: 프로필 생성이 필요한 경우에만 처리
     if (!profileExists || (resolvedLoginType !== 'email' && resolvedLoginType !== 'username')) {
@@ -583,17 +580,12 @@ export class SocialAuthService {
       this.logger.warn(`Failed to invalidate caches for ${userRecord.id}:`, error)
     );
 
-    // 7단계: 모든 백그라운드 작업을 비동기로 처리 (응답 지연 최소화)
-    // 리프레시 토큰 저장은 동기적으로 처리해 누락 방지
-    const [finalAppleRefreshToken, finalGoogleRefreshToken] = await Promise.all([
-      appleTokenPromise,
-      googleTokenPromise,
-    ]);
-    if (resolvedLoginType === 'apple' && finalAppleRefreshToken) {
-      await this.supabaseService.saveAppleRefreshToken(userRecord.id, finalAppleRefreshToken);
+    // 7단계: 리프레시 토큰 저장 (이미 병렬로 받아온 결과 사용)
+    if (resolvedLoginType === 'apple' && appleTokenPromise) {
+      await this.supabaseService.saveAppleRefreshToken(userRecord.id, appleTokenPromise);
     }
-    if (resolvedLoginType === 'google' && finalGoogleRefreshToken) {
-      await this.supabaseService.saveGoogleRefreshToken(userRecord.id, finalGoogleRefreshToken);
+    if (resolvedLoginType === 'google' && googleTokenPromise) {
+      await this.supabaseService.saveGoogleRefreshToken(userRecord.id, googleTokenPromise);
     }
 
     // 나머지 부가 작업은 백그라운드로 실행
@@ -616,7 +608,7 @@ export class SocialAuthService {
     Promise.allSettled(backgroundTasks);
 
     const duration = Date.now() - startTime;
-    this.logger.debug(`FAST OAuth login completed in ${duration}ms for ${userRecord.email} (optimized flow)`);
+    // this.logger.debug(`FAST OAuth login completed in ${duration}ms for ${userRecord.email} (optimized flow)`);
 
     return authSession;
   }
@@ -635,7 +627,7 @@ export class SocialAuthService {
     const cachedCheck = this.getCachedCheck(accessToken);
     if (cachedCheck) {
       const duration = Date.now() - startTime;
-      this.logger.debug(`⚡ ULTRA-FAST OAuth check cache hit: ${duration}ms`);
+      // this.logger.debug(`⚡ ULTRA-FAST OAuth check cache hit: ${duration}ms`);
       return cachedCheck;
     }
 
@@ -643,7 +635,7 @@ export class SocialAuthService {
     const inFlight = this.getInFlightLookup(accessToken);
     if (inFlight) {
       const duration = Date.now() - startTime;
-      this.logger.debug(`⚡ SHARED OAuth lookup (in-flight reuse): ${duration}ms`);
+      // this.logger.debug(`⚡ SHARED OAuth lookup (in-flight reuse): ${duration}ms`);
       return inFlight;
     }
 
@@ -678,7 +670,7 @@ export class SocialAuthService {
 
       if (isSupabaseToken && isNotExpired) {
         try {
-          this.logger.debug(`🔥 OFFLINE PATH: Using JWT decode for ${decoded.sub}`);
+          // this.logger.debug(`🔥 OFFLINE PATH: Using JWT decode for ${decoded.sub}`);
 
           // 🔥 즉시 DB 확인 (Redis 병렬 처리)
           const [registered, redisCached] = await Promise.allSettled([
@@ -689,7 +681,7 @@ export class SocialAuthService {
           // Redis 캐시가 있으면 즉시 반환
           if (redisCached.status === 'fulfilled' && redisCached.value) {
             const duration = Date.now() - startTime;
-            this.logger.debug(`INSTANT OAuth check Redis hit: ${duration}ms`);
+            // this.logger.debug(`INSTANT OAuth check Redis hit: ${duration}ms`);
             return redisCached.value;
           }
 
@@ -704,7 +696,7 @@ export class SocialAuthService {
             );
 
             const duration = Date.now() - startTime;
-            this.logger.debug(`🚀 OFFLINE FAST OAuth check via JWT decode: ${duration}ms`);
+            // this.logger.debug(`🚀 OFFLINE FAST OAuth check via JWT decode: ${duration}ms`);
             return result;
           }
         } catch (error) {
@@ -723,7 +715,7 @@ export class SocialAuthService {
     if (redisResult.status === 'fulfilled' && redisResult.value) {
       this.primeLookupCaches(accessToken, cacheKey, redisResult.value);
       const duration = Date.now() - startTime;
-      this.logger.debug(`FAST OAuth check Redis hit: ${duration}ms`);
+      // this.logger.debug(`FAST OAuth check Redis hit: ${duration}ms`);
       return redisResult.value;
     }
 
@@ -737,7 +729,7 @@ export class SocialAuthService {
         this.primeLookupCaches(accessToken, cacheKey, result);
 
         const duration = Date.now() - startTime;
-        this.logger.debug(`FAST OAuth check with cached user + profile: ${duration}ms`);
+        // this.logger.debug(`FAST OAuth check with cached user + profile: ${duration}ms`);
         return result;
       } catch (error) {
         // Profile 조회 실패 시 fallback
@@ -775,7 +767,7 @@ export class SocialAuthService {
       });
 
       const duration = Date.now() - startTime;
-      this.logger.debug(`OAuth check completed: ${duration}ms (registered: ${result.registered})`);
+      // this.logger.debug(`OAuth check completed: ${duration}ms (registered: ${result.registered})`);
 
       return result;
     } catch (error) {
@@ -790,7 +782,7 @@ export class SocialAuthService {
       const supabaseUser = await this.supabaseService.getUserFromToken(accessToken);
       if (!supabaseUser || supabaseUser.id !== userId) {
         this.setCachedCheck(accessToken, false);
-        await this.cacheService.set(`oauth_check:${this.getTokenCacheKey(accessToken)}`, { registered: false }, { ttl: 120 });
+        await this.cacheService.set(`oauth_check:${this.getTokenCacheKey(accessToken)}`, { registered: false }, { ttl: 300 });
         return;
       }
 
@@ -1059,8 +1051,8 @@ export class SocialAuthService {
 
       const exists = Boolean(result.rows[0]?.exists);
 
-      // 3. Redis에 즉시 캐싱 (10분 TTL)
-      await this.cacheService.set(cacheKey, exists, { ttl: 600 });
+      // 3. Redis에 즉시 캐싱 (30분 TTL로 늘려서 재사용률 향상)
+      await this.cacheService.set(cacheKey, exists, { ttl: 1800 });
 
       return exists;
     } catch (error) {

@@ -486,10 +486,14 @@ export class TravelService {
              RETURNING travel_id
            ),
            travel_invite AS (
-             INSERT INTO travel_invites (travel_id, invite_code, created_by, status)
-             SELECT new_travel.id, $9, $1, 'active'
+             INSERT INTO travel_invites (travel_id, invite_code, created_by, status, expires_at, max_uses)
+             SELECT new_travel.id, $9, $1, 'active', NULL, NULL
              FROM new_travel
-             ON CONFLICT (invite_code) DO UPDATE SET invite_code = excluded.invite_code
+             ON CONFLICT (invite_code) DO UPDATE SET invite_code = excluded.invite_code,
+                                                      status = 'active',
+                                                      used_count = 0,
+                                                      expires_at = NULL,
+                                                      max_uses = NULL
              RETURNING invite_code
            )
            SELECT new_travel.id::text AS id,
@@ -652,6 +656,18 @@ export class TravelService {
     const pool = await getPool();
     await this.ensureOwner(travelId, userId, pool);
 
+    const travelStatusResult = await pool.query(
+      `SELECT CASE WHEN end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS travel_status
+       FROM travels
+       WHERE id = $1
+       LIMIT 1`,
+      [travelId],
+    );
+    const travelStatus = travelStatusResult.rows[0]?.travel_status;
+    if (!travelStatus) {
+      throw new NotFoundException('여행을 찾을 수 없습니다.');
+    }
+
     // 기존 초대 코드가 있는지 확인
     const existingInvite = await pool.query(
       `SELECT invite_code FROM travel_invites WHERE travel_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1`,
@@ -664,9 +680,12 @@ export class TravelService {
     if (!inviteCode) {
       inviteCode = this.generateInviteCode();
       await pool.query(
-        `INSERT INTO travel_invites (travel_id, invite_code, created_by, status)
-         VALUES ($1, $2, $3, 'active')
-         ON CONFLICT (invite_code) DO UPDATE SET status = 'active', used_count = 0`,
+        `INSERT INTO travel_invites (travel_id, invite_code, created_by, status, expires_at, max_uses)
+         VALUES ($1, $2, $3, 'active', NULL, NULL)
+         ON CONFLICT (invite_code) DO UPDATE SET status = 'active',
+                                                used_count = 0,
+                                                expires_at = NULL,
+                                                max_uses = NULL`,
         [travelId, inviteCode, userId]
       );
     }
@@ -677,7 +696,7 @@ export class TravelService {
       used_count: 0,
       max_uses: null,
       expires_at: null,
-      travel_status: 'active',
+      travel_status: travelStatus,
     });
 
     return { inviteCode };
@@ -789,6 +808,7 @@ export class TravelService {
   async joinByInviteCode(userId: string, inviteCode: string): Promise<TravelSummary> {
     const pool = await getPool();
     let inviteRow = await this.getCachedInvite(inviteCode);
+    let fetchedFromCache = !!inviteRow;
 
     if (!inviteRow) {
       const inviteResult = await pool.query(
@@ -810,12 +830,29 @@ export class TravelService {
         throw new NotFoundException('유효하지 않은 초대 코드입니다.');
       }
       await this.setCachedInvite(inviteCode, inviteRow);
+      fetchedFromCache = false;
+    }
+
+    // 캐시가 오래된 경우를 방지하기 위해 여행 상태를 최신으로 확인
+    if (fetchedFromCache) {
+      const travelStatusResult = await pool.query(
+        `SELECT CASE WHEN end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS travel_status
+         FROM travels
+         WHERE id = $1
+         LIMIT 1`,
+        [inviteRow.travel_id],
+      );
+      const currentStatus = travelStatusResult.rows[0]?.travel_status;
+      if (!currentStatus) {
+        throw new NotFoundException('유효하지 않은 초대 코드입니다.');
+      }
+      if (currentStatus !== inviteRow.travel_status) {
+        inviteRow = { ...inviteRow, travel_status: currentStatus };
+        await this.setCachedInvite(inviteCode, inviteRow);
+      }
     }
     if (inviteRow.status !== 'active' || inviteRow.travel_status !== 'active') {
       throw new BadRequestException('만료되었거나 비활성화된 초대 코드입니다.');
-    }
-    if (inviteRow.expires_at && new Date(inviteRow.expires_at) < new Date()) {
-      throw new BadRequestException('만료된 초대 코드입니다.');
     }
     if (inviteRow.max_uses && inviteRow.used_count >= inviteRow.max_uses) {
       throw new BadRequestException('모집 인원을 초과한 초대 코드입니다.');

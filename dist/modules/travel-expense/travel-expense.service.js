@@ -209,7 +209,7 @@ let TravelExpenseService = class TravelExpenseService {
                 memberId,
                 name: this.getMemberName(context, memberId),
             }));
-            return {
+            const result = {
                 id: expense.id,
                 title: expense.title,
                 note: expense.note,
@@ -223,6 +223,9 @@ let TravelExpenseService = class TravelExpenseService {
                 payerName,
                 participants,
             };
+            // 생성 후 캐시 무효화는 비동기로 처리해 응답 지연 최소화
+            void this.invalidateExpenseCaches(travelId);
+            return result;
         }
         catch (error) {
             await client.query('ROLLBACK');
@@ -231,8 +234,6 @@ let TravelExpenseService = class TravelExpenseService {
         finally {
             client.release();
         }
-        // 생성 후 캐시 무효화
-        await this.invalidateExpenseCaches(travelId);
     }
     async listExpenses(travelId, userId, pagination = {}) {
         await this.getTravelContext(travelId, userId);
@@ -381,7 +382,7 @@ let TravelExpenseService = class TravelExpenseService {
                 memberId,
                 name: this.getMemberName(context, memberId),
             }));
-            return {
+            const result = {
                 id: expense.id,
                 title: expense.title,
                 note: expense.note,
@@ -395,6 +396,9 @@ let TravelExpenseService = class TravelExpenseService {
                 payerName,
                 participants,
             };
+            // 수정 후 캐시 무효화 (비동기)
+            void this.invalidateExpenseCaches(travelId, expenseId);
+            return result;
         }
         catch (error) {
             await client.query('ROLLBACK');
@@ -403,8 +407,6 @@ let TravelExpenseService = class TravelExpenseService {
         finally {
             client.release();
         }
-        // 수정 후 캐시 무효화
-        await this.invalidateExpenseCaches(travelId, expenseId);
     }
     /**
      * 지출을 삭제합니다.
@@ -442,6 +444,8 @@ let TravelExpenseService = class TravelExpenseService {
                 throw new common_1.NotFoundException('삭제할 지출을 찾을 수 없습니다.');
             }
             await client.query('COMMIT');
+            // 삭제 후 캐시 무효화 (비동기)
+            void this.invalidateExpenseCaches(travelId, expenseId);
         }
         catch (error) {
             await client.query('ROLLBACK');
@@ -450,8 +454,6 @@ let TravelExpenseService = class TravelExpenseService {
         finally {
             client.release();
         }
-        // 삭제 후 캐시 무효화
-        await this.invalidateExpenseCaches(travelId, expenseId);
     }
 };
 exports.TravelExpenseService = TravelExpenseService;
