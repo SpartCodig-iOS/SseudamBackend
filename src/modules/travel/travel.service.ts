@@ -670,9 +670,13 @@ export class TravelService {
     );
 
     const total = listResult.rows[0]?.total_count ?? 0;
-    const travelIds = listResult.rows.map((row) => row.id);
+    // 동일 travel_id가 중복으로 내려오지 않도록 dedupe 후 멤버 로드
+    const uniqueRows = Array.from(
+      new Map(listResult.rows.map((row) => [row.id, row])).values()
+    );
+    const travelIds = uniqueRows.map((row) => row.id);
     const membersMap = await this.loadMembersForTravels(travelIds, userId);
-    const items = listResult.rows.map((row) => this.mapSummary(row, membersMap.get(row.id)));
+    const items = uniqueRows.map((row) => this.mapSummary(row, membersMap.get(row.id)));
 
     // 캐시에 저장 (Redis + 메모리) - 딥링크 없이 저장
     this.setCachedTravelList(cacheKey, items);
