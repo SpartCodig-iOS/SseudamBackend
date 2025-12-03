@@ -120,6 +120,11 @@ let TravelService = TravelService_1 = class TravelService {
         this.travelDetailCache.delete(travelId);
         this.cacheService.del(travelId, { prefix: this.TRAVEL_DETAIL_REDIS_PREFIX }).catch(() => undefined);
     }
+    async invalidateTravelCachesForMembers(travelId) {
+        const pool = await (0, pool_1.getPool)();
+        const members = await pool.query(`SELECT user_id FROM travel_members WHERE travel_id = $1`, [travelId]);
+        members.rows.forEach(member => this.invalidateUserTravelCache(member.user_id));
+    }
     async getCachedInvite(inviteCode) {
         try {
             return await this.cacheService.get(inviteCode, { prefix: this.INVITE_REDIS_PREFIX });
@@ -582,10 +587,7 @@ let TravelService = TravelService_1 = class TravelService {
         this.invalidateUserTravelCache(userId);
         this.invalidateTravelDetailCache(inviteRow.travel_id);
         // 기존 멤버들의 여행 목록 캐시도 무효화 (멤버 정보가 변경되므로)
-        const existingMembers = await pool.query(`SELECT user_id FROM travel_members WHERE travel_id = $1`, [inviteRow.travel_id]);
-        existingMembers.rows.forEach(member => {
-            this.invalidateUserTravelCache(member.user_id);
-        });
+        await this.invalidateTravelCachesForMembers(inviteRow.travel_id);
         return this.fetchSummaryForMember(inviteRow.travel_id, userId);
     }
     async leaveTravel(travelId, userId) {
@@ -657,10 +659,7 @@ let TravelService = TravelService_1 = class TravelService {
         // 수정 후 관련 캐시 무효화
         this.invalidateTravelDetailCache(travelId);
         // 여행에 참여한 모든 멤버의 목록 캐시도 무효화
-        const members = await pool.query(`SELECT user_id FROM travel_members WHERE travel_id = $1`, [travelId]);
-        members.rows.forEach(member => {
-            this.invalidateUserTravelCache(member.user_id);
-        });
+        await this.invalidateTravelCachesForMembers(travelId);
         const summary = await this.fetchSummaryForMember(travelId, userId);
         this.setCachedTravelDetail(travelId, summary);
         return summary;
@@ -676,10 +675,7 @@ let TravelService = TravelService_1 = class TravelService {
         this.invalidateUserTravelCache(memberId);
         this.invalidateTravelDetailCache(travelId);
         // 다른 멤버들의 여행 목록 캐시도 무효화 (멤버 정보가 변경되므로)
-        const remainingMembers = await pool.query(`SELECT user_id FROM travel_members WHERE travel_id = $1`, [travelId]);
-        remainingMembers.rows.forEach(member => {
-            this.invalidateUserTravelCache(member.user_id);
-        });
+        await this.invalidateTravelCachesForMembers(travelId);
     }
 };
 exports.TravelService = TravelService;
