@@ -139,7 +139,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)('lookup'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    (0, swagger_1.ApiOperation)({ summary: '소셜/OAuth access token으로 가입 여부 확인' }),
+    (0, swagger_1.ApiOperation)({ summary: '소셜/OAuth access token으로 가입 여부 확인 (최적화)' }),
     (0, swagger_1.ApiBody)({
         schema: {
             type: 'object',

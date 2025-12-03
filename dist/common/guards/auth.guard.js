@@ -23,6 +23,9 @@ let AuthGuard = class AuthGuard {
         this.sessionService = sessionService;
         this.tokenCache = new Map();
         this.CACHE_TTL = 5 * 60 * 1000; // 5분 캐시
+        // 역할 캐시 추가 (10분 TTL)
+        this.roleCache = new Map();
+        this.ROLE_CACHE_TTL = 10 * 60 * 1000; // 10분
     }
     async canActivate(context) {
         const request = context.switchToHttp().getRequest();
@@ -143,6 +146,11 @@ let AuthGuard = class AuthGuard {
     }
     // 최신 role을 DB에서 확인해 요청 사용자에 반영 (재로그인 없이 즉시 반영)
     async hydrateUserRole(user) {
+        // 🚀 ULTRA-FAST: 역할 캐시 확인
+        const cached = this.roleCache.get(user.id);
+        if (cached && (Date.now() - cached.timestamp < this.ROLE_CACHE_TTL)) {
+            return { ...user, role: cached.role };
+        }
         try {
             const pool = await (0, pool_1.getPool)();
             const result = await pool.query(`SELECT role FROM profiles WHERE id = $1 LIMIT 1`, [user.id]);
@@ -152,9 +160,20 @@ let AuthGuard = class AuthGuard {
                 await pool.query(`INSERT INTO profiles (id, email, name, role, created_at, updated_at)
            VALUES ($1, $2, $3, $4, NOW(), NOW())
            ON CONFLICT (id) DO NOTHING`, [user.id, user.email, user.name, user.role ?? 'user']);
-                return { ...user, role: (user.role ?? 'user') };
+                const finalRole = user.role ?? 'user';
+                this.roleCache.set(user.id, { role: finalRole, timestamp: Date.now() });
+                return { ...user, role: finalRole };
             }
-            return { ...user, role: (dbRole ?? user.role ?? 'user') };
+            const finalRole = dbRole ?? user.role ?? 'user';
+            // 역할을 캐시에 저장
+            this.roleCache.set(user.id, { role: finalRole, timestamp: Date.now() });
+            // 캐시 크기 제한
+            if (this.roleCache.size > 500) {
+                const firstKey = this.roleCache.keys().next().value;
+                if (firstKey)
+                    this.roleCache.delete(firstKey);
+            }
+            return { ...user, role: finalRole };
         }
         catch (error) {
             // DB 실패 시 기존 역할 유지

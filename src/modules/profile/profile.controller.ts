@@ -56,7 +56,9 @@ export class ProfileController {
     // 백그라운드에서 DB 프로필 동기화 (응답에는 영향 없음)
     setImmediate(async () => {
       try {
-        await this.profileService.getProfileQuick(req.currentUser.id, req.currentUser);
+        if (req.currentUser) {
+          await this.profileService.getProfileQuick(req.currentUser.id, req.currentUser);
+        }
       } catch (error) {
         // 백그라운드 동기화 실패는 무시
       }

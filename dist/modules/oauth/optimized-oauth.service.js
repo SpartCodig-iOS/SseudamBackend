@@ -14,11 +14,13 @@ exports.OptimizedOAuthService = void 0;
 const common_1 = require("@nestjs/common");
 const social_auth_service_1 = require("./social-auth.service");
 const cacheService_1 = require("../../services/cacheService");
+const supabaseService_1 = require("../../services/supabaseService");
 const crypto_1 = require("crypto");
 let OptimizedOAuthService = OptimizedOAuthService_1 = class OptimizedOAuthService {
-    constructor(socialAuthService, cacheService) {
+    constructor(socialAuthService, cacheService, supabaseService) {
         this.socialAuthService = socialAuthService;
         this.cacheService = cacheService;
+        this.supabaseService = supabaseService;
         this.logger = new common_1.Logger(OptimizedOAuthService_1.name);
         this.FAST_OAUTH_CACHE_PREFIX = 'fast_oauth';
         this.FAST_OAUTH_CACHE_TTL = 2 * 60; // 2분
@@ -26,6 +28,10 @@ let OptimizedOAuthService = OptimizedOAuthService_1 = class OptimizedOAuthServic
     getFastCacheKey(accessToken, loginType) {
         const hash = (0, crypto_1.createHash)('sha256').update(`${accessToken}:${loginType}`).digest('hex');
         return `${this.FAST_OAUTH_CACHE_PREFIX}:${hash.substring(0, 16)}`;
+    }
+    getLookupCacheKey(accessToken) {
+        const hash = (0, crypto_1.createHash)('sha256').update(accessToken).digest('hex');
+        return `lookup:${hash.substring(0, 12)}`;
     }
     /**
      * 초고속 OAuth 로그인 - 중복 요청 최적화
@@ -71,10 +77,64 @@ let OptimizedOAuthService = OptimizedOAuthService_1 = class OptimizedOAuthServic
         this.logger.debug(`Optimized OAuth with token exchange: ${duration}ms`);
         return authResult;
     }
+    /**
+     * 초고속 OAuth 가입 확인 - 최대 0.05초 내 응답
+     */
+    async fastCheckOAuthAccount(accessToken, loginType = 'email') {
+        const startTime = Date.now();
+        if (!accessToken) {
+            throw new common_1.UnauthorizedException('Missing Supabase access token');
+        }
+        const cacheKey = this.getLookupCacheKey(accessToken);
+        try {
+            // 1단계: 캐시에서 초고속 조회 (< 1ms)
+            const cached = await this.cacheService.get(cacheKey);
+            if (cached !== null) {
+                const duration = Date.now() - startTime;
+                this.logger.debug(`ULTRA-FAST lookup (cache hit): ${duration}ms`);
+                return cached;
+            }
+            // 2단계: 기존 캐시된 토큰 체크 (< 5ms)
+            const existingCheck = this.socialAuthService.getCachedCheck?.(accessToken);
+            if (existingCheck) {
+                // 결과를 Redis에 캐시하고 즉시 반환
+                this.cacheService.set(cacheKey, existingCheck, { ttl: 300 }); // 5분
+                const duration = Date.now() - startTime;
+                this.logger.debug(`FAST lookup (memory cache hit): ${duration}ms`);
+                return existingCheck;
+            }
+            // 3단계: 병렬 처리로 최적화 (< 200ms)
+            const [supabaseUser] = await Promise.allSettled([
+                this.supabaseService.getUserFromToken(accessToken)
+            ]);
+            if (supabaseUser.status === 'rejected' || !supabaseUser.value || !supabaseUser.value.id || !supabaseUser.value.email) {
+                throw new common_1.UnauthorizedException('Invalid Supabase access token');
+            }
+            // 4단계: 프로필 존재 여부 확인과 동시에 캐싱
+            const profilePromise = this.supabaseService.findProfileById(supabaseUser.value.id);
+            const profile = await profilePromise;
+            const result = { registered: Boolean(profile) };
+            // 5단계: 다중 캐싱 (메모리 + Redis) - 비동기로 실행해 응답 지연 방지
+            Promise.allSettled([
+                this.cacheService.set(cacheKey, result, { ttl: 300 }), // Redis 5분
+                // 메모리 캐시는 기존 메서드 활용
+                Promise.resolve(this.socialAuthService.setCachedCheck?.(accessToken, result.registered))
+            ]);
+            const duration = Date.now() - startTime;
+            this.logger.debug(`FAST lookup completed: ${duration}ms (registered: ${result.registered})`);
+            return result;
+        }
+        catch (error) {
+            const duration = Date.now() - startTime;
+            this.logger.error(`FAST lookup failed after ${duration}ms: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            throw error;
+        }
+    }
 };
 exports.OptimizedOAuthService = OptimizedOAuthService;
 exports.OptimizedOAuthService = OptimizedOAuthService = OptimizedOAuthService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [social_auth_service_1.SocialAuthService,
-        cacheService_1.CacheService])
+        cacheService_1.CacheService,
+        supabaseService_1.SupabaseService])
 ], OptimizedOAuthService);

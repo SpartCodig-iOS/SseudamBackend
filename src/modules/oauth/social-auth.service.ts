@@ -300,7 +300,9 @@ export class SocialAuthService {
     parallelTasks.push(appleTokenPromise, googleTokenPromise);
 
     // 모든 병렬 작업 실행
-    const [profileExists, finalAppleRefreshToken, finalGoogleRefreshToken] = await Promise.all(parallelTasks);
+    const [profileExists, appleTokenResult, googleTokenResult] = await Promise.all(parallelTasks);
+    const finalAppleRefreshToken = typeof appleTokenResult === 'string' ? appleTokenResult : null;
+    const finalGoogleRefreshToken = typeof googleTokenResult === 'string' ? googleTokenResult : null;
 
     // 4단계: 프로필 생성이 필요한 경우에만 처리
     if (!profileExists || (loginType !== 'email' && loginType !== 'username')) {

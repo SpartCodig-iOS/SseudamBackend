@@ -27,40 +27,34 @@ let ProfileController = class ProfileController {
     constructor(profileService) {
         this.profileService = profileService;
     }
-    async getProfileQuick(req) {
-        if (!req.currentUser) {
-            throw new common_1.UnauthorizedException('Unauthorized');
-        }
-        // 캐시 우선 조회로 DB 접근 최소화
-        const profile = await this.profileService.getProfileQuick(req.currentUser.id, req.currentUser);
-        // 최소한의 데이터만 반환하여 응답 크기 최적화
-        return {
-            id: profile.id,
-            name: profile.name,
-            email: profile.email,
-            avatarURL: profile.avatar_url,
-            role: profile.role,
-            loginType: req.loginType ?? 'email'
-        };
-    }
     async getProfile(req) {
         if (!req.currentUser) {
             throw new common_1.UnauthorizedException('Unauthorized');
         }
-        const dbProfile = await this.profileService.getProfile(req.currentUser.id);
-        const baseProfile = dbProfile ?? req.currentUser;
-        let profileData = {
-            ...(0, mappers_1.toProfileResponse)(baseProfile),
-            loginType: req.loginType ?? 'email',
+        // 🚀 ULTRA-FAST: JWT에서 즉시 응답 (DB 조회 없음)
+        const response = {
+            id: req.currentUser.id,
+            userId: req.currentUser.username || req.currentUser.email?.split('@')[0] || 'user',
+            email: req.currentUser.email || '',
+            name: req.currentUser.name,
+            avatarURL: req.currentUser.avatar_url,
+            role: req.currentUser.role || 'user',
+            createdAt: req.currentUser.created_at,
+            updatedAt: req.currentUser.updated_at,
+            loginType: req.loginType ?? 'email'
         };
-        // avatar가 없으면 스토리지에서 최신 이미지를 찾아본다
-        if (!profileData.avatarURL) {
-            const fallbackAvatar = await this.profileService.resolveAvatarFromStorage(baseProfile.id);
-            if (fallbackAvatar) {
-                profileData = { ...profileData, avatarURL: fallbackAvatar };
+        // 백그라운드에서 DB 프로필 동기화 (응답에는 영향 없음)
+        setImmediate(async () => {
+            try {
+                if (req.currentUser) {
+                    await this.profileService.getProfileQuick(req.currentUser.id, req.currentUser);
+                }
             }
-        }
-        return (0, api_1.success)(profileData);
+            catch (error) {
+                // 백그라운드 동기화 실패는 무시
+            }
+        });
+        return (0, api_1.success)(response);
     }
     async updateProfile(body, file, req) {
         if (!req.currentUser) {
@@ -74,21 +68,10 @@ let ProfileController = class ProfileController {
 exports.ProfileController = ProfileController;
 __decorate([
     (0, common_1.UseGuards)(auth_guard_1.AuthGuard),
-    (0, common_1.Get)('me/quick'),
-    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    (0, swagger_1.ApiBearerAuth)(),
-    (0, swagger_1.ApiOperation)({ summary: '현재 사용자 프로필 빠른 조회 (최적화된 응답)' }),
-    __param(0, (0, common_1.Req)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
-    __metadata("design:returntype", Promise)
-], ProfileController.prototype, "getProfileQuick", null);
-__decorate([
-    (0, common_1.UseGuards)(auth_guard_1.AuthGuard),
     (0, common_1.Get)('me'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     (0, swagger_1.ApiBearerAuth)(),
-    (0, swagger_1.ApiOperation)({ summary: '현재 사용자 프로필 조회' }),
+    (0, swagger_1.ApiOperation)({ summary: '현재 사용자 프로필 조회 (초고속 최적화)' }),
     (0, swagger_1.ApiOkResponse)({ type: profile_response_dto_1.ProfileResponseDto }),
     __param(0, (0, common_1.Req)()),
     __metadata("design:type", Function),
