@@ -16,6 +16,7 @@ const crypto_1 = require("crypto");
 const pool_1 = require("../../db/pool");
 const meta_service_1 = require("../meta/meta.service");
 const cacheService_1 = require("../../services/cacheService");
+const env_1 = require("../../config/env");
 let TravelService = TravelService_1 = class TravelService {
     constructor(metaService, cacheService = new cacheService_1.CacheService()) {
         this.metaService = metaService;
@@ -24,13 +25,13 @@ let TravelService = TravelService_1 = class TravelService {
         this.countryCurrencyCache = new Map();
         this.countryCurrencyLoaded = false;
         this.countryCurrencyLoadPromise = null;
-        // 여행 목록 캐시: 5분 TTL, 사용자별 캐시
+        // 여행 목록 캐시: 30초 TTL, 사용자별 캐시
         this.travelListCache = new Map();
-        this.TRAVEL_LIST_CACHE_TTL = 5 * 60 * 1000; // 5분
+        this.TRAVEL_LIST_CACHE_TTL = 30 * 1000; // 30초로 단축하여 최신 반영
         this.MAX_CACHE_SIZE = 1000;
-        // 여행 상세 캐시: 10분 TTL
+        // 여행 상세 캐시: 30초 TTL
         this.travelDetailCache = new Map();
-        this.TRAVEL_DETAIL_CACHE_TTL = 10 * 60 * 1000; // 10분
+        this.TRAVEL_DETAIL_CACHE_TTL = 30 * 1000; // 30초로 단축하여 최신 반영
         this.TRAVEL_LIST_REDIS_PREFIX = 'travel:list';
         this.TRAVEL_DETAIL_REDIS_PREFIX = 'travel:detail';
         this.INVITE_REDIS_PREFIX = 'invite:code';
@@ -273,6 +274,9 @@ let TravelService = TravelService_1 = class TravelService {
     }
     mapSummary(row, members) {
         const destinationCurrency = this.resolveDestinationCurrency(row.country_code, row.base_currency);
+        const inviteCode = row.invite_code ?? undefined;
+        const deepLink = inviteCode ? this.generateDeepLink(inviteCode) : undefined;
+        const shareUrl = inviteCode ? this.generateShareLink(inviteCode) : undefined;
         return {
             id: row.id,
             title: row.title,
@@ -283,7 +287,9 @@ let TravelService = TravelService_1 = class TravelService {
             baseCurrency: row.base_currency,
             baseExchangeRate: Number(row.base_exchange_rate),
             destinationCurrency,
-            inviteCode: row.invite_code ?? undefined,
+            inviteCode,
+            deepLink,
+            shareUrl,
             status: row.status,
             createdAt: row.created_at,
             ownerName: row.owner_name ?? null,
@@ -298,17 +304,10 @@ let TravelService = TravelService_1 = class TravelService {
         }
         const cached = await this.getCachedTravelDetail(travelId);
         if (cached) {
-            // 딥링크 추가
-            if (cached.inviteCode) {
-                cached.deepLink = this.generateDeepLink(cached.inviteCode);
-            }
-            return this.reorderMembersForUser(cached, userId);
+            const hydrated = this.attachLinks(cached);
+            return this.reorderMembersForUser(hydrated, userId);
         }
-        const travel = await this.fetchSummaryForMember(travelId, userId);
-        // 딥링크 추가
-        if (travel.inviteCode) {
-            travel.deepLink = this.generateDeepLink(travel.inviteCode);
-        }
+        const travel = this.attachLinks(await this.fetchSummaryForMember(travelId, userId));
         this.setCachedTravelDetail(travelId, travel);
         return this.reorderMembersForUser(travel, userId);
     }
@@ -401,10 +400,14 @@ let TravelService = TravelService_1 = class TravelService {
              RETURNING travel_id
            ),
            travel_invite AS (
-             INSERT INTO travel_invites (travel_id, invite_code, created_by, status)
-             SELECT new_travel.id, $9, $1, 'active'
+             INSERT INTO travel_invites (travel_id, invite_code, created_by, status, expires_at, max_uses)
+             SELECT new_travel.id, $9, $1, 'active', NULL, NULL
              FROM new_travel
-             ON CONFLICT (invite_code) DO UPDATE SET invite_code = excluded.invite_code
+             ON CONFLICT (invite_code) DO UPDATE SET invite_code = excluded.invite_code,
+                                                      status = 'active',
+                                                      used_count = 0,
+                                                      expires_at = NULL,
+                                                      max_uses = NULL
              RETURNING invite_code
            )
            SELECT new_travel.id::text AS id,
@@ -446,10 +449,6 @@ let TravelService = TravelService_1 = class TravelService {
                 await this.ensureCountryCurrencyMap();
                 return this.mapSummary(optimizedResult, optimizedResult.members);
             });
-            // 딥링크 추가
-            if (travel.inviteCode) {
-                travel.deepLink = this.generateDeepLink(travel.inviteCode);
-            }
             // 캐시 업데이트/무효화 (응답을 기다리지 않음)
             this.invalidateUserTravelCache(currentUser.id);
             this.setCachedTravelDetail(travel.id, travel);
@@ -470,12 +469,9 @@ let TravelService = TravelService_1 = class TravelService {
         const cacheKey = `${userId}:${page}:${limit}:${pagination.status ?? 'all'}`;
         const cachedList = await this.getCachedTravelList(cacheKey);
         if (cachedList) {
-            // 캐시된 데이터에 딥링크 추가
-            const itemsWithDeepLink = cachedList.map(item => ({
-                ...item,
-                deepLink: item.inviteCode ? this.generateDeepLink(item.inviteCode) : undefined
-            }));
-            return { total: cachedList.length, page, limit, items: itemsWithDeepLink };
+            // 캐시된 데이터에 딥링크/공유 링크 보강
+            const itemsWithLinks = cachedList.map(item => this.attachLinks(item));
+            return { total: cachedList.length, page, limit, items: itemsWithLinks };
         }
         const totalPromise = pool.query(`SELECT COUNT(*)::int AS total
        FROM travel_members tm
@@ -514,38 +510,50 @@ let TravelService = TravelService_1 = class TravelService {
         const travelIds = listResult.rows.map((row) => row.id);
         const membersMap = await this.loadMembersForTravels(travelIds, userId);
         const items = listResult.rows.map((row) => this.mapSummary(row, membersMap.get(row.id)));
-        // 딥링크 추가
-        const itemsWithDeepLink = items.map(item => ({
-            ...item,
-            deepLink: item.inviteCode ? this.generateDeepLink(item.inviteCode) : undefined
-        }));
         // 캐시에 저장 (Redis + 메모리) - 딥링크 없이 저장
         this.setCachedTravelList(cacheKey, items);
         return {
             total,
             page,
             limit,
-            items: itemsWithDeepLink,
+            items: items.map(item => this.attachLinks(item)),
         };
     }
     generateInviteCode() {
         return (0, crypto_1.randomBytes)(5).toString('hex');
     }
     generateDeepLink(inviteCode) {
-        return `sseudam://join?code=${inviteCode}`;
+        // 카카오톡 공유용으로 웹 URL 형식 사용
+        const base = (env_1.env.appBaseUrl || '').replace(/\/$/, '') || 'https://sseudam.up.railway.app';
+        return `${base}/deeplink?inviteCode=${encodeURIComponent(inviteCode)}`;
+    }
+    generateShareLink(inviteCode) {
+        const base = (env_1.env.appBaseUrl || '').replace(/\/$/, '') || 'https://sseudam.up.railway.app';
+        return `${base}/deeplink?inviteCode=${encodeURIComponent(inviteCode)}`;
     }
     async createInvite(travelId, userId) {
         const pool = await (0, pool_1.getPool)();
         await this.ensureOwner(travelId, userId, pool);
+        const travelStatusResult = await pool.query(`SELECT CASE WHEN end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS travel_status
+       FROM travels
+       WHERE id = $1
+       LIMIT 1`, [travelId]);
+        const travelStatus = travelStatusResult.rows[0]?.travel_status;
+        if (!travelStatus) {
+            throw new common_1.NotFoundException('여행을 찾을 수 없습니다.');
+        }
         // 기존 초대 코드가 있는지 확인
         const existingInvite = await pool.query(`SELECT invite_code FROM travel_invites WHERE travel_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1`, [travelId]);
         let inviteCode = existingInvite.rows[0]?.invite_code;
         // 없다면 새로 생성
         if (!inviteCode) {
             inviteCode = this.generateInviteCode();
-            await pool.query(`INSERT INTO travel_invites (travel_id, invite_code, created_by, status)
-         VALUES ($1, $2, $3, 'active')
-         ON CONFLICT (invite_code) DO UPDATE SET status = 'active', used_count = 0`, [travelId, inviteCode, userId]);
+            await pool.query(`INSERT INTO travel_invites (travel_id, invite_code, created_by, status, expires_at, max_uses)
+         VALUES ($1, $2, $3, 'active', NULL, NULL)
+         ON CONFLICT (invite_code) DO UPDATE SET status = 'active',
+                                                used_count = 0,
+                                                expires_at = NULL,
+                                                max_uses = NULL`, [travelId, inviteCode, userId]);
         }
         await this.setCachedInvite(inviteCode, {
             travel_id: travelId,
@@ -553,9 +561,22 @@ let TravelService = TravelService_1 = class TravelService {
             used_count: 0,
             max_uses: null,
             expires_at: null,
-            travel_status: 'active',
+            travel_status: travelStatus,
         });
-        return { inviteCode };
+        return {
+            inviteCode,
+            deepLink: this.generateDeepLink(inviteCode),
+            shareUrl: this.generateShareLink(inviteCode),
+        };
+    }
+    attachLinks(travel) {
+        if (!travel.inviteCode)
+            return travel;
+        return {
+            ...travel,
+            deepLink: travel.deepLink ?? this.generateDeepLink(travel.inviteCode),
+            shareUrl: travel.shareUrl ?? this.generateShareLink(travel.inviteCode),
+        };
     }
     async deleteTravel(travelId, userId) {
         const pool = await (0, pool_1.getPool)();
@@ -624,6 +645,7 @@ let TravelService = TravelService_1 = class TravelService {
     async joinByInviteCode(userId, inviteCode) {
         const pool = await (0, pool_1.getPool)();
         let inviteRow = await this.getCachedInvite(inviteCode);
+        let fetchedFromCache = !!inviteRow;
         if (!inviteRow) {
             const inviteResult = await pool.query(`SELECT ti.travel_id,
                 ti.status,
@@ -641,12 +663,25 @@ let TravelService = TravelService_1 = class TravelService {
                 throw new common_1.NotFoundException('유효하지 않은 초대 코드입니다.');
             }
             await this.setCachedInvite(inviteCode, inviteRow);
+            fetchedFromCache = false;
+        }
+        // 캐시가 오래된 경우를 방지하기 위해 여행 상태를 최신으로 확인
+        if (fetchedFromCache) {
+            const travelStatusResult = await pool.query(`SELECT CASE WHEN end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS travel_status
+         FROM travels
+         WHERE id = $1
+         LIMIT 1`, [inviteRow.travel_id]);
+            const currentStatus = travelStatusResult.rows[0]?.travel_status;
+            if (!currentStatus) {
+                throw new common_1.NotFoundException('유효하지 않은 초대 코드입니다.');
+            }
+            if (currentStatus !== inviteRow.travel_status) {
+                inviteRow = { ...inviteRow, travel_status: currentStatus };
+                await this.setCachedInvite(inviteCode, inviteRow);
+            }
         }
         if (inviteRow.status !== 'active' || inviteRow.travel_status !== 'active') {
             throw new common_1.BadRequestException('만료되었거나 비활성화된 초대 코드입니다.');
-        }
-        if (inviteRow.expires_at && new Date(inviteRow.expires_at) < new Date()) {
-            throw new common_1.BadRequestException('만료된 초대 코드입니다.');
         }
         if (inviteRow.max_uses && inviteRow.used_count >= inviteRow.max_uses) {
             throw new common_1.BadRequestException('모집 인원을 초과한 초대 코드입니다.');

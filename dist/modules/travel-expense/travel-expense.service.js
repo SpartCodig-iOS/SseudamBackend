@@ -260,24 +260,34 @@ let TravelExpenseService = class TravelExpenseService {
          e.category,
          e.author_id::text,
          e.payer_id::text,
-         payer.name AS payer_name,
-        COALESCE(participants.participants, '[]'::json) AS participants
+         payer.name AS payer_name
        FROM travel_expenses e
        LEFT JOIN profiles payer ON payer.id = e.payer_id
-       LEFT JOIN LATERAL (
-         SELECT json_agg(json_build_object(
-           'memberId', tep.member_id,
-           'name', p.name
-         )) AS participants
-         FROM travel_expense_participants tep
-         LEFT JOIN profiles p ON p.id = tep.member_id
-         WHERE tep.expense_id = e.id
-       ) participants ON TRUE
        WHERE e.travel_id = $1
        ORDER BY e.expense_date DESC, e.created_at DESC
        LIMIT $2 OFFSET $3`, [travelId, limit, offset]);
         const [totalResult, listResult] = await Promise.all([totalPromise, listPromise]);
         const total = totalResult.rows[0]?.total ?? 0;
+        const expenseIds = listResult.rows.map((row) => row.id);
+        let participantsMap = new Map();
+        if (expenseIds.length > 0) {
+            const participantsResult = await pool.query(`SELECT
+           tep.expense_id::text AS expense_id,
+           tep.member_id::text AS member_id,
+           p.name AS name
+         FROM travel_expense_participants tep
+         LEFT JOIN profiles p ON p.id = tep.member_id
+         WHERE tep.expense_id = ANY($1::uuid[])`, [expenseIds]);
+            participantsMap = participantsResult.rows.reduce((acc, row) => {
+                const list = acc.get(row.expense_id) ?? [];
+                list.push({
+                    memberId: row.member_id,
+                    name: row.name ?? null,
+                });
+                acc.set(row.expense_id, list);
+                return acc;
+            }, new Map());
+        }
         const items = listResult.rows.map((row) => ({
             id: row.id,
             title: row.title,
@@ -290,10 +300,7 @@ let TravelExpenseService = class TravelExpenseService {
             payerId: row.payer_id,
             payerName: row.payer_name ?? null,
             authorId: row.author_id,
-            participants: row.participants?.map((participant) => ({
-                memberId: participant.memberId,
-                name: participant.name ?? null,
-            })) ?? [],
+            participants: participantsMap.get(row.id) ?? [],
         }));
         // 캐시에 저장
         await this.setCachedExpenseList(cacheKey, { total, items });

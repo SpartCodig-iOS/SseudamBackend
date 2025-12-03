@@ -20,7 +20,7 @@ import { AuthGuard } from '../../common/guards/auth.guard';
 import { RequestWithUser } from '../../types/request';
 import { TravelService } from './travel.service';
 import { createTravelSchema, travelInviteCodeSchema, transferOwnershipSchema } from '../../validators/travelSchemas';
-import { TravelInviteResponseDto, TravelSummaryDto } from './dto/travel-response.dto';
+import { TravelInviteResponseDto, TravelListResponseDto, TravelSummaryDto } from './dto/travel-response.dto';
 
 @ApiTags('Travels')
 @ApiBearerAuth()
@@ -41,6 +41,7 @@ export class TravelController {
     enum: ['active', 'archived'],
     description: '여행 상태에 따라 목록을 필터링합니다.',
   })
+  @ApiOkResponse({ type: TravelListResponseDto })
   async list(@Req() req: RequestWithUser, @Req() request: RequestWithUser) {
     if (!req.currentUser) {
       throw new UnauthorizedException('Unauthorized');

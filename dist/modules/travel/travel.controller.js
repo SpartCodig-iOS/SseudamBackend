@@ -145,6 +145,7 @@ __decorate([
         enum: ['active', 'archived'],
         description: '여행 상태에 따라 목록을 필터링합니다.',
     }),
+    (0, swagger_1.ApiOkResponse)({ type: travel_response_dto_1.TravelListResponseDto }),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),

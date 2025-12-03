@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TravelInviteResponseDto = exports.TravelExpenseDto = exports.TravelExpenseParticipantDto = exports.TravelMemberDto = exports.TravelSummaryDto = void 0;
+exports.TravelInviteResponseDto = exports.TravelExpenseDto = exports.TravelExpenseParticipantDto = exports.TravelMemberDto = exports.TravelListResponseDto = exports.TravelSummaryDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 class TravelSummaryDto {
 }
@@ -55,6 +55,14 @@ __decorate([
     __metadata("design:type", String)
 ], TravelSummaryDto.prototype, "inviteCode", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({ example: 'https://sseudam.up.railway.app/deeplink?inviteCode=ab12cd34', nullable: true, required: false }),
+    __metadata("design:type", String)
+], TravelSummaryDto.prototype, "deepLink", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'https://sseudam.up.railway.app/deeplink?inviteCode=ab12cd34', nullable: true, required: false }),
+    __metadata("design:type", String)
+], TravelSummaryDto.prototype, "shareUrl", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ example: 'active' }),
     __metadata("design:type", String)
 ], TravelSummaryDto.prototype, "status", void 0);
@@ -70,6 +78,25 @@ __decorate([
     (0, swagger_1.ApiProperty)({ type: () => TravelMemberDto, isArray: true, required: false }),
     __metadata("design:type", Array)
 ], TravelSummaryDto.prototype, "members", void 0);
+class TravelListResponseDto {
+}
+exports.TravelListResponseDto = TravelListResponseDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 42 }),
+    __metadata("design:type", Number)
+], TravelListResponseDto.prototype, "total", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 1 }),
+    __metadata("design:type", Number)
+], TravelListResponseDto.prototype, "page", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 20 }),
+    __metadata("design:type", Number)
+], TravelListResponseDto.prototype, "limit", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ type: () => TravelSummaryDto, isArray: true }),
+    __metadata("design:type", Array)
+], TravelListResponseDto.prototype, "items", void 0);
 class TravelMemberDto {
 }
 exports.TravelMemberDto = TravelMemberDto;
@@ -154,3 +181,11 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: 'a1b2c3d4' }),
     __metadata("design:type", String)
 ], TravelInviteResponseDto.prototype, "inviteCode", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'https://sseudam.up.railway.app/deeplink?inviteCode=a1b2c3d4' }),
+    __metadata("design:type", String)
+], TravelInviteResponseDto.prototype, "deepLink", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'https://sseudam.up.railway.app/deeplink?inviteCode=a1b2c3d4' }),
+    __metadata("design:type", String)
+], TravelInviteResponseDto.prototype, "shareUrl", void 0);

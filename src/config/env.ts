@@ -46,6 +46,7 @@ export const env = {
   appleTeamId: process.env.APPLE_TEAM_ID ?? null,
   appleKeyId: process.env.APPLE_KEY_ID ?? null,
   applePrivateKey: process.env.APPLE_PRIVATE_KEY ?? null,
+  appBaseUrl: process.env.APP_BASE_URL ?? 'https://sseudam.up.railway.app',
   appMinSupportedVersion: process.env.APP_MIN_SUPPORTED_VERSION ?? null,
   appForceUpdate: truthy(process.env.APP_FORCE_UPDATE) ?? true,
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? null,

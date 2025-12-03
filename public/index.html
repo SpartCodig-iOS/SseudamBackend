@@ -4,6 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>쓰담 (SseuDam) - 여행 정산 서비스</title>
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="쓰담 (SseuDam) - 여행 정산 서비스">
+    <meta property="og:description" content="여행 후 복잡한 정산 과정을 쉽고 투명하고 간편하게 해결하는 서비스">
+    <meta property="og:image" content="https://sseudam.up.railway.app/logo.svg?v=20251203">
+    <meta property="og:url" content="https://sseudam.up.railway.app/">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="쓰담 (SseuDam) - 여행 정산 서비스">
+    <meta name="twitter:description" content="여행 후 복잡한 정산 과정을 쉽고 투명하고 간편하게 해결하는 서비스">
+    <meta name="twitter:image" content="https://sseudam.up.railway.app/logo.svg?v=20251203">
     <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         * {
@@ -42,10 +51,26 @@
         }
 
         .logo {
-            font-size: 1.75rem;
-            font-weight: 800;
-            color: #3500FA;
-            letter-spacing: -0.02em;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo img {
+            height: 40px;
+            width: auto;
+            display: block;
+        }
+
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            border: 0;
         }
 
         .nav-links {
@@ -99,13 +124,11 @@
             padding: 60px 0 80px;
         }
 
-        .hero-title {
-            font-size: clamp(3rem, 8vw, 8rem);
-            font-weight: 900;
-            color: #3500FA;
-            margin-bottom: 24px;
-            letter-spacing: -0.04em;
-            line-height: 0.9;
+        .hero-logo {
+            width: clamp(200px, 25vw, 320px);
+            height: auto;
+            margin: 0 auto 24px;
+            display: block;
         }
 
         .hero-subtitle {
@@ -245,10 +268,11 @@
         }
 
         .footer-brand {
-            font-size: 1.5rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
             font-weight: 700;
             margin-bottom: 16px;
-            letter-spacing: -0.01em;
         }
 
         .footer-description {
@@ -287,11 +311,6 @@
 
             .hero {
                 padding: 40px 0 60px;
-            }
-
-            .hero-title {
-                font-size: clamp(2.5rem, 10vw, 4rem);
-                margin-bottom: 20px;
             }
 
             .hero-subtitle {
@@ -377,7 +396,10 @@
     <!-- Header -->
     <header class="header">
         <nav class="nav-container">
-            <div class="logo">쓰담</div>
+            <div class="logo">
+                <img src="/logo.svg" alt="쓰담 로고">
+                <span class="sr-only">쓰담</span>
+            </div>
             <div class="nav-links">
                 <a href="#features" class="nav-link">주요 기능</a>
                 <a href="#info" class="nav-link">서비스 정보</a>
@@ -390,7 +412,7 @@
         <!-- Hero Section -->
         <section class="hero">
             <div class="container">
-                <h1 class="hero-title">쓰담</h1>
+                <img src="/logo.svg" alt="쓰담 로고" class="hero-logo">
                 <p class="hero-subtitle">SseuDam</p>
                 <p class="hero-description">
                     여행 후 복잡한 정산 과정을<br>
@@ -473,7 +495,10 @@
     <!-- Footer -->
     <footer class="footer">
         <div class="container">
-            <h3 class="footer-brand">쓰담 (SseuDam)</h3>
+            <h3 class="footer-brand">
+                <img src="/logo.svg" alt="쓰담 로고" style="height:28px;width:auto;display:block;">
+                <span class="sr-only">쓰담 SseuDam</span>
+            </h3>
             <p class="footer-description">
                 여행 후 복잡한 정산 과정을 쉽고 투명하고 간편하게 해결하는 서비스
             </p>
