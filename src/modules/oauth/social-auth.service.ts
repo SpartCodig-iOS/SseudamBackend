@@ -299,10 +299,6 @@ export class SocialAuthService {
   }
 
   private resolveLoginType(requested: LoginType = 'email', supabaseUser?: any): LoginType {
-    if (requested && requested !== 'email' && requested !== 'username') {
-      return requested;
-    }
-
     const provider =
       supabaseUser?.app_metadata?.provider ??
       supabaseUser?.identities?.[0]?.provider ??
@@ -310,6 +306,10 @@ export class SocialAuthService {
 
     if (provider === 'google' || provider === 'apple' || provider === 'kakao') {
       return provider;
+    }
+
+    if (requested && requested !== 'email' && requested !== 'username') {
+      return requested;
     }
 
     return requested ?? 'email';

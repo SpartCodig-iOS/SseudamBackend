@@ -36,16 +36,23 @@ export class SupabaseService {
 
   private resolveNameFromUser(user: User, loginType: LoginType): string | null {
     const metadata = user.user_metadata ?? {};
+    const raw = (user as any)?.raw_user_meta_data ?? {};
     const identityDataList = this.getIdentityData(user);
 
     const displayNameFromMetadata =
       (metadata.display_name as string | undefined) ??
       (metadata.full_name as string | undefined) ??
+      (raw.display_name as string | undefined) ??
+      (raw.full_name as string | undefined) ??
+      (raw.name as string | undefined) ??
       null;
 
     const nameFromMetadata =
       (metadata.name as string | undefined) ??
       (metadata.full_name as string | undefined) ??
+      (raw.name as string | undefined) ??
+      (raw.full_name as string | undefined) ??
+      (raw.display_name as string | undefined) ??
       null;
 
     const identityName = identityDataList
@@ -67,12 +74,16 @@ export class SupabaseService {
 
   private resolveAvatarFromUser(user: User): string | null {
     const metadata = user.user_metadata ?? {};
+    const raw = (user as any)?.raw_user_meta_data ?? {};
     const identityDataList = this.getIdentityData(user);
 
     const avatarFromMetadata =
       (metadata.avatar_url as string | undefined) ??
       (metadata.picture as string | undefined) ??
       (metadata.photo as string | undefined) ??
+      (raw.avatar_url as string | undefined) ??
+      (raw.picture as string | undefined) ??
+      (raw.photo as string | undefined) ??
       null;
 
     const avatarFromIdentity = identityDataList
