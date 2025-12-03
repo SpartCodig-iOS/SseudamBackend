@@ -11,7 +11,7 @@ export class SessionController {
 
   @Get()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '세션 ID로 최근 로그인 정보를 조회' })
+  @ApiOperation({ summary: '세션 ID로 최근 로그인 정보를 조회 (초고속 최적화)' })
   @ApiQuery({ name: 'sessionId', required: true })
   @ApiOkResponse({ type: SessionResponseDto })
   async getSession(@Query('sessionId') sessionId?: string) {
@@ -22,9 +22,12 @@ export class SessionController {
     if (!session) {
       throw new BadRequestException('Session not found or expired');
     }
+
+    // 🚀 ULTRA-FAST: 활성 세션의 touch는 백그라운드로 처리해 응답 지연 제거
     if (session.isActive) {
-      await this.sessionService.touchSession(sessionId);
+      void this.sessionService.touchSession(sessionId);
     }
+
     const message = session.isActive ? 'Session info retrieved successfully' : 'Session info retrieved (inactive)';
     return success(session, message);
   }
