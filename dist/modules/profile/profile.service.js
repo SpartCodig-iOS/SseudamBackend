@@ -25,6 +25,9 @@ let ProfileService = ProfileService_1 = class ProfileService {
         this.storageClient = (0, supabase_js_1.createClient)(env_1.env.supabaseUrl, env_1.env.supabaseServiceRoleKey);
         this.avatarBucket = 'profileimages';
         this.avatarBucketEnsured = false;
+        this.storageAvatarCache = new Map();
+        this.STORAGE_AVATAR_TTL = 5 * 60 * 1000; // 5분 캐시
+        this.AVATAR_CACHE_PREFIX = 'avatar';
         // 프로필 캐시: 10분 TTL, 최대 1000개
         this.profileCache = new Map();
         this.PROFILE_CACHE_TTL = 15 * 60 * 1000; // 15분으로 확대해 캐시 적중률 향상
@@ -56,6 +59,24 @@ let ProfileService = ProfileService_1 = class ProfileService {
     }
     clearCachedProfile(userId) {
         this.profileCache.delete(userId);
+    }
+    getCachedStorageAvatar(userId) {
+        const cached = this.storageAvatarCache.get(userId);
+        if (!cached)
+            return null;
+        if (Date.now() > cached.expiresAt) {
+            this.storageAvatarCache.delete(userId);
+            return null;
+        }
+        return cached.url;
+    }
+    setCachedStorageAvatar(userId, url) {
+        this.storageAvatarCache.set(userId, { url, expiresAt: Date.now() + this.STORAGE_AVATAR_TTL });
+        if (this.storageAvatarCache.size > 2000) {
+            const firstKey = this.storageAvatarCache.keys().next().value;
+            if (firstKey)
+                this.storageAvatarCache.delete(firstKey);
+        }
     }
     async ensureAvatarBucket() {
         if (this.avatarBucketEnsured)
@@ -287,19 +308,38 @@ let ProfileService = ProfileService_1 = class ProfileService {
      */
     async getAvatarUrlOnly(userId) {
         try {
-            // 1. 캐시에서 먼저 확인
+            // 1. Redis 캐시 확인 (전역 캐시)
+            try {
+                const redisAvatar = await this.cacheService.get(userId, { prefix: this.AVATAR_CACHE_PREFIX });
+                if (redisAvatar) {
+                    this.setCachedStorageAvatar(userId, redisAvatar); // 메모리에도 반영
+                    return redisAvatar;
+                }
+            }
+            catch (error) {
+                this.logger.warn(`Redis avatar cache miss for ${userId}:`, error);
+            }
+            // 2. 메모리 캐시 확인
             const cached = this.getCachedProfile(userId);
             if (cached?.avatar_url) {
                 return cached.avatar_url;
             }
-            // 2. DB에서 avatar_url만 조회 (최소한의 쿼리)
+            // 3. 스토리지 아바타 캐시 확인 (직전 워밍 결과)
+            const cachedStorage = this.getCachedStorageAvatar(userId);
+            if (cachedStorage) {
+                return cachedStorage;
+            }
+            // 4. DB에서 avatar_url만 조회 (최소한의 쿼리)
             const pool = await (0, pool_1.getPool)();
             const result = await pool.query(`SELECT avatar_url FROM profiles WHERE id = $1 LIMIT 1`, [userId]);
             const dbAvatar = result.rows[0]?.avatar_url;
             if (dbAvatar) {
+                // Redis/메모리에 캐시해 다음 호출 가속화
+                this.setCachedStorageAvatar(userId, dbAvatar);
+                this.cacheService.set(userId, dbAvatar, { prefix: this.AVATAR_CACHE_PREFIX, ttl: 300 }).catch(() => undefined);
                 return dbAvatar;
             }
-            // 3. Storage에서 최신 아바타를 조회 (DB에 없는 경우)
+            // 5. Storage에서 최신 아바타를 조회 (DB에 없는 경우)
             return null;
         }
         catch (error) {
@@ -331,12 +371,60 @@ let ProfileService = ProfileService_1 = class ProfileService {
             hydrated.avatar_url = storageAvatar;
             hydrated.updated_at = new Date();
             this.setCachedProfile(userId, hydrated);
+            this.setCachedStorageAvatar(userId, storageAvatar);
+            this.cacheService.set(userId, storageAvatar, { prefix: this.AVATAR_CACHE_PREFIX, ttl: 300 }).catch(() => undefined);
+            this.setCachedStorageAvatar(userId, storageAvatar);
             // DB에도 저장 (실패 시 무시)
             const pool = await (0, pool_1.getPool)();
             pool.query(`UPDATE profiles SET avatar_url = $2, updated_at = NOW() WHERE id = $1`, [userId, storageAvatar]).catch(err => this.logger.warn(`[warmAvatarFromStorage] Persist failed for ${userId}: ${err.message}`));
         }
         catch (error) {
             this.logger.warn(`[warmAvatarFromStorage] Failed for ${userId}`, error);
+        }
+    }
+    /**
+     * 아바타가 비어 있을 때만 스토리지를 짧은 타임아웃으로 동기 조회
+     */
+    async fetchAvatarWithTimeout(userId, timeoutMs = 400) {
+        // 1. Redis/메모리 캐시 확인
+        try {
+            const redisAvatar = await this.cacheService.get(userId, { prefix: this.AVATAR_CACHE_PREFIX });
+            if (redisAvatar) {
+                this.setCachedStorageAvatar(userId, redisAvatar);
+                return redisAvatar;
+            }
+        }
+        catch (error) {
+            this.logger.warn(`Redis avatar cache miss for ${userId}:`, error);
+        }
+        const cachedStorage = this.getCachedStorageAvatar(userId);
+        if (cachedStorage)
+            return cachedStorage;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const avatar = await Promise.race([
+                this.resolveAvatarFromStorage(userId),
+                new Promise((_, reject) => {
+                    setTimeout(() => reject(new Error('storage-timeout')), timeoutMs);
+                })
+            ]);
+            clearTimeout(timeout);
+            if (avatar) {
+                this.setCachedStorageAvatar(userId, avatar);
+                this.cacheService.set(userId, avatar, { prefix: this.AVATAR_CACHE_PREFIX, ttl: 300 }).catch(() => undefined);
+                return avatar;
+            }
+            return null;
+        }
+        catch (error) {
+            clearTimeout(timeout);
+            if (error.message !== 'storage-timeout') {
+                this.logger.warn(`[fetchAvatarWithTimeout] storage lookup failed for ${userId}`, error);
+            }
+            // 실패 시 비동기 워밍만 수행
+            void this.warmAvatarFromStorage(userId);
+            return null;
         }
     }
 };

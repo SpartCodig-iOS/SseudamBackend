@@ -15,6 +15,9 @@ export class ProfileService {
   private readonly storageClient = createClient(env.supabaseUrl, env.supabaseServiceRoleKey);
   private readonly avatarBucket = 'profileimages';
   private avatarBucketEnsured = false;
+  private readonly storageAvatarCache = new Map<string, { url: string; expiresAt: number }>();
+  private readonly STORAGE_AVATAR_TTL = 5 * 60 * 1000; // 5분 캐시
+  private readonly AVATAR_CACHE_PREFIX = 'avatar';
 
   constructor(private readonly cacheService: CacheService) {}
 
@@ -52,6 +55,24 @@ export class ProfileService {
 
   private clearCachedProfile(userId: string): void {
     this.profileCache.delete(userId);
+  }
+
+  private getCachedStorageAvatar(userId: string): string | null {
+    const cached = this.storageAvatarCache.get(userId);
+    if (!cached) return null;
+    if (Date.now() > cached.expiresAt) {
+      this.storageAvatarCache.delete(userId);
+      return null;
+    }
+    return cached.url;
+  }
+
+  private setCachedStorageAvatar(userId: string, url: string): void {
+    this.storageAvatarCache.set(userId, { url, expiresAt: Date.now() + this.STORAGE_AVATAR_TTL });
+    if (this.storageAvatarCache.size > 2000) {
+      const firstKey = this.storageAvatarCache.keys().next().value;
+      if (firstKey) this.storageAvatarCache.delete(firstKey);
+    }
   }
 
   private async ensureAvatarBucket(): Promise<void> {
@@ -323,13 +344,30 @@ export class ProfileService {
    */
   async getAvatarUrlOnly(userId: string): Promise<string | null> {
     try {
-      // 1. 캐시에서 먼저 확인
+      // 1. Redis 캐시 확인 (전역 캐시)
+      try {
+        const redisAvatar = await this.cacheService.get<string>(userId, { prefix: this.AVATAR_CACHE_PREFIX });
+        if (redisAvatar) {
+          this.setCachedStorageAvatar(userId, redisAvatar); // 메모리에도 반영
+          return redisAvatar;
+        }
+      } catch (error) {
+        this.logger.warn(`Redis avatar cache miss for ${userId}:`, error);
+      }
+
+      // 2. 메모리 캐시 확인
       const cached = this.getCachedProfile(userId);
       if (cached?.avatar_url) {
         return cached.avatar_url;
       }
 
-      // 2. DB에서 avatar_url만 조회 (최소한의 쿼리)
+      // 3. 스토리지 아바타 캐시 확인 (직전 워밍 결과)
+      const cachedStorage = this.getCachedStorageAvatar(userId);
+      if (cachedStorage) {
+        return cachedStorage;
+      }
+
+      // 4. DB에서 avatar_url만 조회 (최소한의 쿼리)
       const pool = await getPool();
       const result = await pool.query(
         `SELECT avatar_url FROM profiles WHERE id = $1 LIMIT 1`,
@@ -338,10 +376,13 @@ export class ProfileService {
 
       const dbAvatar = result.rows[0]?.avatar_url as string | null | undefined;
       if (dbAvatar) {
+        // Redis/메모리에 캐시해 다음 호출 가속화
+        this.setCachedStorageAvatar(userId, dbAvatar);
+        this.cacheService.set(userId, dbAvatar, { prefix: this.AVATAR_CACHE_PREFIX, ttl: 300 }).catch(() => undefined);
         return dbAvatar;
       }
 
-      // 3. Storage에서 최신 아바타를 조회 (DB에 없는 경우)
+      // 5. Storage에서 최신 아바타를 조회 (DB에 없는 경우)
       return null;
     } catch (error) {
       this.logger.warn(`Avatar URL lookup failed for user ${userId}:`, error);
@@ -373,6 +414,9 @@ export class ProfileService {
       hydrated.avatar_url = storageAvatar;
       hydrated.updated_at = new Date();
       this.setCachedProfile(userId, hydrated);
+      this.setCachedStorageAvatar(userId, storageAvatar);
+      this.cacheService.set(userId, storageAvatar, { prefix: this.AVATAR_CACHE_PREFIX, ttl: 300 }).catch(() => undefined);
+      this.setCachedStorageAvatar(userId, storageAvatar);
 
       // DB에도 저장 (실패 시 무시)
       const pool = await getPool();
@@ -382,6 +426,54 @@ export class ProfileService {
       ).catch(err => this.logger.warn(`[warmAvatarFromStorage] Persist failed for ${userId}: ${err.message}`));
     } catch (error) {
       this.logger.warn(`[warmAvatarFromStorage] Failed for ${userId}`, error as Error);
+    }
+  }
+
+  /**
+   * 아바타가 비어 있을 때만 스토리지를 짧은 타임아웃으로 동기 조회
+   */
+  async fetchAvatarWithTimeout(userId: string, timeoutMs = 400): Promise<string | null> {
+    // 1. Redis/메모리 캐시 확인
+    try {
+      const redisAvatar = await this.cacheService.get<string>(userId, { prefix: this.AVATAR_CACHE_PREFIX });
+      if (redisAvatar) {
+        this.setCachedStorageAvatar(userId, redisAvatar);
+        return redisAvatar;
+      }
+    } catch (error) {
+      this.logger.warn(`Redis avatar cache miss for ${userId}:`, error);
+    }
+
+    const cachedStorage = this.getCachedStorageAvatar(userId);
+    if (cachedStorage) return cachedStorage;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const avatar = await Promise.race([
+        this.resolveAvatarFromStorage(userId),
+        new Promise<string | null>((_, reject) => {
+          setTimeout(() => reject(new Error('storage-timeout')), timeoutMs);
+        })
+      ]);
+
+      clearTimeout(timeout);
+
+      if (avatar) {
+        this.setCachedStorageAvatar(userId, avatar);
+        this.cacheService.set(userId, avatar, { prefix: this.AVATAR_CACHE_PREFIX, ttl: 300 }).catch(() => undefined);
+        return avatar;
+      }
+      return null;
+    } catch (error) {
+      clearTimeout(timeout);
+      if ((error as Error).message !== 'storage-timeout') {
+        this.logger.warn(`[fetchAvatarWithTimeout] storage lookup failed for ${userId}`, error as Error);
+      }
+      // 실패 시 비동기 워밍만 수행
+      void this.warmAvatarFromStorage(userId);
+      return null;
     }
   }
 }

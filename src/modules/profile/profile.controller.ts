@@ -48,10 +48,14 @@ export class ProfileController {
 
     // 🚀 HYBRID-FAST: 캐시/DB 프로필만 동기 조회, 느린 스토리지는 비동기 워밍
     const profile = await this.profileService.getProfileQuick(req.currentUser.id, req.currentUser);
-    const resolvedAvatar = profile.avatar_url ?? req.currentUser.avatar_url ?? null;
+    let resolvedAvatar = profile.avatar_url ?? req.currentUser.avatar_url ?? null;
     if (!resolvedAvatar) {
-      // 스토리지 조회는 응답에 영향 없이 백그라운드로 처리
-      void this.profileService.warmAvatarFromStorage(profile.id);
+      // 아바타가 없을 때만 짧은 타임아웃으로 스토리지 동기 조회 (400ms) 시도
+      resolvedAvatar = await this.profileService.fetchAvatarWithTimeout(profile.id, 400);
+      if (!resolvedAvatar) {
+        // 실패 시 응답은 그대로, 백그라운드 워밍
+        void this.profileService.warmAvatarFromStorage(profile.id);
+      }
     }
 
     return success({

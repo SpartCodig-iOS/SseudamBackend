@@ -364,33 +364,19 @@ export class SocialAuthService {
     const user = supabaseUser.value;
     const { appleRefreshToken, googleRefreshToken, authorizationCode, codeVerifier, redirectUri } = options;
 
-    // 3단계: 프로필 존재 체크와 토큰 교환을 병렬로 처리
-    const parallelTasks = [];
+    // 3단계: 프로필 존재 체크 (필수), 토큰 교환은 비동기 워밍으로 전환
+    const profileExists = await this.profileExists(user.id);
 
-    // 프로필 존재 체크
-    const profileExistsPromise = this.profileExists(user.id);
-    parallelTasks.push(profileExistsPromise);
+    // 토큰 교환은 응답 지연을 막기 위해 시작만 해두고 백그라운드로
+    const appleTokenPromise =
+      loginType === 'apple' && !appleRefreshToken && authorizationCode
+        ? this.exchangeAppleAuthorizationCode(authorizationCode)
+        : Promise.resolve(appleRefreshToken ?? null);
 
-    // 토큰 교환 작업들
-    let appleTokenPromise: Promise<string | null> = Promise.resolve(appleRefreshToken || null);
-    let googleTokenPromise: Promise<string | null> = Promise.resolve(googleRefreshToken || null);
-
-    if (loginType === 'apple' && !appleRefreshToken && authorizationCode) {
-      appleTokenPromise = this.exchangeAppleAuthorizationCode(authorizationCode);
-    }
-    if (loginType === 'google' && !googleRefreshToken && authorizationCode) {
-      googleTokenPromise = this.exchangeGoogleAuthorizationCode(authorizationCode, {
-        codeVerifier,
-        redirectUri,
-      });
-    }
-
-    parallelTasks.push(appleTokenPromise, googleTokenPromise);
-
-    // 모든 병렬 작업 실행
-    const [profileExists, appleTokenResult, googleTokenResult] = await Promise.all(parallelTasks);
-    const finalAppleRefreshToken = typeof appleTokenResult === 'string' ? appleTokenResult : null;
-    const finalGoogleRefreshToken = typeof googleTokenResult === 'string' ? googleTokenResult : null;
+    const googleTokenPromise =
+      loginType === 'google' && !googleRefreshToken && authorizationCode
+        ? this.exchangeGoogleAuthorizationCode(authorizationCode, { codeVerifier, redirectUri })
+        : Promise.resolve(googleRefreshToken ?? null);
 
     // 4단계: 프로필 생성이 필요한 경우에만 처리
     if (!profileExists || (loginType !== 'email' && loginType !== 'username')) {
@@ -425,21 +411,20 @@ export class SocialAuthService {
     }
 
     // 토큰 저장
-    if (loginType === 'apple' && finalAppleRefreshToken) {
-      backgroundTasks.push(
-        this.backgroundJobService.enqueue(`[apple-refresh] ${userRecord.id}`, async () => {
+    backgroundTasks.push(
+      this.backgroundJobService.enqueue(`[oauth-refresh-save] ${userRecord.id}`, async () => {
+        const [finalAppleRefreshToken, finalGoogleRefreshToken] = await Promise.all([
+          appleTokenPromise,
+          googleTokenPromise,
+        ]);
+        if (loginType === 'apple' && finalAppleRefreshToken) {
           await this.supabaseService.saveAppleRefreshToken(userRecord.id, finalAppleRefreshToken);
-        })
-      );
-    }
-
-    if (loginType === 'google' && finalGoogleRefreshToken) {
-      backgroundTasks.push(
-        this.backgroundJobService.enqueue(`[google-refresh] ${userRecord.id}`, async () => {
+        }
+        if (loginType === 'google' && finalGoogleRefreshToken) {
           await this.supabaseService.saveGoogleRefreshToken(userRecord.id, finalGoogleRefreshToken);
-        })
-      );
-    }
+        }
+      })
+    );
 
     // 로그인 기록
     backgroundTasks.push(
