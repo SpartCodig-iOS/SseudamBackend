@@ -265,7 +265,7 @@ export class TravelExpenseService {
         name: this.getMemberName(context, memberId),
       }));
 
-      return {
+      const result: TravelExpense = {
         id: expense.id,
         title: expense.title,
         note: expense.note,
@@ -279,14 +279,17 @@ export class TravelExpenseService {
         payerName,
         participants,
       };
+
+      // 생성 후 캐시 무효화는 비동기로 처리해 응답 지연 최소화
+      void this.invalidateExpenseCaches(travelId);
+
+      return result;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
     } finally {
       client.release();
     }
-    // 생성 후 캐시 무효화
-    await this.invalidateExpenseCaches(travelId);
   }
 
   async listExpenses(
@@ -491,7 +494,7 @@ export class TravelExpenseService {
         name: this.getMemberName(context, memberId),
       }));
 
-      return {
+      const result: TravelExpense = {
         id: expense.id,
         title: expense.title,
         note: expense.note,
@@ -505,14 +508,17 @@ export class TravelExpenseService {
         payerName,
         participants,
       };
+
+      // 수정 후 캐시 무효화 (비동기)
+      void this.invalidateExpenseCaches(travelId, expenseId);
+
+      return result;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
     } finally {
       client.release();
     }
-    // 수정 후 캐시 무효화
-    await this.invalidateExpenseCaches(travelId, expenseId);
   }
 
   /**
@@ -569,13 +575,14 @@ export class TravelExpenseService {
       }
 
       await client.query('COMMIT');
+
+      // 삭제 후 캐시 무효화 (비동기)
+      void this.invalidateExpenseCaches(travelId, expenseId);
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
     } finally {
       client.release();
     }
-    // 삭제 후 캐시 무효화
-    await this.invalidateExpenseCaches(travelId, expenseId);
   }
 }

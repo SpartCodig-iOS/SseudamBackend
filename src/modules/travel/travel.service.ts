@@ -240,6 +240,42 @@ export class TravelService {
     await this.cacheService.delPattern(`${this.TRAVEL_MEMBER_REDIS_PREFIX}:${travelId}:*`).catch(() => undefined);
   }
 
+  private async loadMembersForTravels(travelIds: string[], requesterId: string): Promise<Map<string, TravelMember[]>> {
+    const membersMap = new Map<string, TravelMember[]>();
+    if (travelIds.length === 0) {
+      return membersMap;
+    }
+
+    const pool = await getPool();
+    const result = await pool.query(
+      `SELECT
+         tm.travel_id::text AS travel_id,
+         tm.user_id::text AS user_id,
+         tm.role,
+         p.name,
+         tm.joined_at
+       FROM travel_members tm
+       LEFT JOIN profiles p ON p.id = tm.user_id
+       WHERE tm.travel_id = ANY($1::uuid[])
+       ORDER BY tm.travel_id,
+                CASE WHEN tm.user_id = $2 THEN 0 ELSE 1 END,
+                tm.joined_at`,
+      [travelIds, requesterId],
+    );
+
+    for (const row of result.rows) {
+      const list = membersMap.get(row.travel_id) ?? [];
+      list.push({
+        userId: row.user_id,
+        name: row.name ?? null,
+        role: row.role ?? 'member',
+      });
+      membersMap.set(row.travel_id, list);
+    }
+
+    return membersMap;
+  }
+
   private async ensureOwner(travelId: string, userId: string, runner?: Pool | PoolClient): Promise<void> {
     const executor = runner ?? (await getPool());
     const result = await executor.query(
@@ -287,28 +323,11 @@ export class TravelService {
          CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS status,
          t.created_at::text,
          tm.role AS role,
-         owner_profile.name AS owner_name,
-         COALESCE(members.members, '[]'::json) AS members
+         owner_profile.name AS owner_name
        FROM travels t
        INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $2
-       LEFT JOIN profiles member_profile ON member_profile.id = tm.user_id
        LEFT JOIN profiles owner_profile ON owner_profile.id = t.owner_id
        LEFT JOIN travel_invites ti ON ti.travel_id = t.id AND ti.status = 'active'
-       LEFT JOIN LATERAL (
-        SELECT json_agg(
-                 json_build_object(
-                   'userId', tm2.user_id,
-                   'name', p.name,
-                   'role', COALESCE(tm2.role, p.role)
-                 )
-                 ORDER BY
-                   CASE WHEN tm2.user_id = $2 THEN 0 ELSE 1 END,
-                   tm2.joined_at
-               ) AS members
-        FROM travel_members tm2
-        LEFT JOIN profiles p ON p.id = tm2.user_id
-        WHERE tm2.travel_id = t.id
-       ) AS members ON TRUE
        WHERE t.id = $1
        LIMIT 1`,
       [travelId, userId],
@@ -317,10 +336,12 @@ export class TravelService {
     if (!row) {
       throw new NotFoundException('여행을 찾을 수 없거나 접근 권한이 없습니다.');
     }
-    return this.mapSummary(row);
+
+    const membersMap = await this.loadMembersForTravels([travelId], userId);
+    return this.mapSummary(row, membersMap.get(travelId));
   }
 
-  private mapSummary(row: any): TravelSummary {
+  private mapSummary(row: any, members?: TravelMember[]): TravelSummary {
     const destinationCurrency = this.resolveDestinationCurrency(row.country_code, row.base_currency);
     return {
       id: row.id,
@@ -336,7 +357,7 @@ export class TravelService {
       status: row.status,
       createdAt: row.created_at,
       ownerName: row.owner_name ?? null,
-      members: row.members ?? undefined,
+      members: members ?? row.members ?? undefined,
     };
   }
 
@@ -423,7 +444,7 @@ export class TravelService {
 
   async createTravel(currentUser: UserRecord, payload: CreateTravelInput): Promise<TravelDetail> {
     try {
-      return await this.ensureTransaction(async (client) => {
+      const travel = await this.ensureTransaction(async (client) => {
         const startTime = Date.now();
         const ownerName = currentUser.name ?? currentUser.email ?? '알 수 없는 사용자';
 
@@ -503,8 +524,14 @@ export class TravelService {
         this.logger.debug(`Travel created in ${duration}ms for user ${currentUser.id}`);
 
         await this.ensureCountryCurrencyMap();
-        return this.mapSummary(optimizedResult);
+        return this.mapSummary(optimizedResult, optimizedResult.members);
       });
+
+      // 캐시 업데이트/무효화 (응답을 기다리지 않음)
+      this.invalidateUserTravelCache(currentUser.id);
+      this.setCachedTravelDetail(travel.id, travel);
+
+      return travel;
     } catch (error) {
       this.logger.error('Failed to create travel', error as Error);
       throw new InternalServerErrorException('여행 생성에 실패했습니다.');
@@ -539,47 +566,31 @@ export class TravelService {
     );
 
     const listPromise = pool.query(
-       `SELECT
+      `SELECT
          ut.id::text AS id,
-       ut.title,
-       ut.start_date::text,
-       ut.end_date::text,
-       ut.country_code,
-       ut.country_name_kr,
-       ut.base_currency,
-       ut.base_exchange_rate,
-       ti.invite_code,
-       ut.computed_status AS status,
-       ut.role,
-       ut.created_at::text,
-       owner_profile.name AS owner_name,
-       COALESCE(members.members, '[]'::json) AS members
-     FROM (
-        SELECT t.*, COALESCE(tm.role, mp.role, 'member') AS role,
-               CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS computed_status
-        FROM travels t
-        INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
-        LEFT JOIN profiles mp ON mp.id = tm.user_id
-        WHERE 1 = 1
-        ${statusCondition}
-      ) AS ut
-      INNER JOIN profiles owner_profile ON owner_profile.id = ut.owner_id
-      LEFT JOIN travel_invites ti ON ti.travel_id = ut.id AND ti.status = 'active'
-      LEFT JOIN LATERAL (
-        SELECT json_agg(
-                 json_build_object(
-                   'userId', tm2.user_id,
-                   'name', p.name,
-                   'role', COALESCE(tm2.role, p.role)
-                 )
-                 ORDER BY
-                   CASE WHEN tm2.user_id = $1 THEN 0 ELSE 1 END,
-                   tm2.joined_at
-               ) AS members
-        FROM travel_members tm2
-        LEFT JOIN profiles p ON p.id = tm2.user_id
-        WHERE tm2.travel_id = ut.id
-       ) AS members ON TRUE
+         ut.title,
+         ut.start_date::text,
+         ut.end_date::text,
+         ut.country_code,
+         ut.country_name_kr,
+         ut.base_currency,
+         ut.base_exchange_rate,
+         ti.invite_code,
+         ut.computed_status AS status,
+         ut.role,
+         ut.created_at::text,
+         owner_profile.name AS owner_name
+       FROM (
+          SELECT t.*, COALESCE(tm.role, mp.role, 'member') AS role,
+                 CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS computed_status
+          FROM travels t
+          INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
+          LEFT JOIN profiles mp ON mp.id = tm.user_id
+          WHERE 1 = 1
+          ${statusCondition}
+        ) AS ut
+        INNER JOIN profiles owner_profile ON owner_profile.id = ut.owner_id
+        LEFT JOIN travel_invites ti ON ti.travel_id = ut.id AND ti.status = 'active'
        ORDER BY ut.created_at DESC
        LIMIT $2 OFFSET $3`,
       [userId, limit, offset],
@@ -587,7 +598,9 @@ export class TravelService {
 
     const [totalResult, listResult] = await Promise.all([totalPromise, listPromise]);
     const total = totalResult.rows[0]?.total ?? 0;
-    const items = listResult.rows.map((row) => this.mapSummary(row));
+    const travelIds = listResult.rows.map((row) => row.id);
+    const membersMap = await this.loadMembersForTravels(travelIds, userId);
+    const items = listResult.rows.map((row) => this.mapSummary(row, membersMap.get(row.id)));
 
     // 캐시에 저장 (Redis + 메모리)
     this.setCachedTravelList(cacheKey, items);
