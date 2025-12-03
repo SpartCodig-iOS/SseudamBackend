@@ -46,20 +46,20 @@ export class ProfileController {
       throw new UnauthorizedException('Unauthorized');
     }
 
-    // 🚀 HYBRID-FAST: JWT 기본 정보 + 실시간 avatar URL 조회
-    const [profile, avatarURL] = await Promise.all([
-      this.profileService.getProfileQuick(req.currentUser.id, req.currentUser),
-      this.profileService.getAvatarUrlOnly(req.currentUser.id)
-    ]);
-
-    const resolvedAvatar = avatarURL ?? profile.avatar_url ?? req.currentUser.avatar_url;
+    // 🚀 HYBRID-FAST: 캐시/DB 프로필만 동기 조회, 느린 스토리지는 비동기 워밍
+    const profile = await this.profileService.getProfileQuick(req.currentUser.id, req.currentUser);
+    const resolvedAvatar = profile.avatar_url ?? req.currentUser.avatar_url ?? null;
+    if (!resolvedAvatar) {
+      // 스토리지 조회는 응답에 영향 없이 백그라운드로 처리
+      void this.profileService.warmAvatarFromStorage(profile.id);
+    }
 
     return success({
       id: profile.id,
       userId: profile.username || profile.email?.split('@')[0] || req.currentUser.username || 'user',
       email: profile.email || '',
       name: profile.name,
-      avatarURL: resolvedAvatar || null, // 실시간 또는 JWT fallback
+      avatarURL: resolvedAvatar, // 즉시 반환, 스토리지는 백그라운드로
       role: profile.role || req.currentUser.role || 'user',
       createdAt: formatDate(profile.created_at),
       updatedAt: formatDate(profile.updated_at),

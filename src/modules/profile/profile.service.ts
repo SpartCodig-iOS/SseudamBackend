@@ -342,31 +342,46 @@ export class ProfileService {
       }
 
       // 3. Storage에서 최신 아바타를 조회 (DB에 없는 경우)
-      const storageAvatar = await this.resolveAvatarFromStorage(userId);
-      if (storageAvatar) {
-        // DB/캐시에 반영해 다음 호출 가속화
-        this.setCachedProfile(userId, {
-          id: userId,
-          email: '',
-          name: null,
-          avatar_url: storageAvatar,
-          username: userId,
-          role: 'user',
-          created_at: new Date(),
-          updated_at: new Date(),
-          password_hash: '',
-        });
-        pool.query(
-          `UPDATE profiles SET avatar_url = $2, updated_at = NOW() WHERE id = $1`,
-          [userId, storageAvatar]
-        ).catch(err => this.logger.warn(`[getAvatarUrlOnly] Failed to persist storage avatar for ${userId}: ${err.message}`));
-        return storageAvatar;
-      }
-
       return null;
     } catch (error) {
       this.logger.warn(`Avatar URL lookup failed for user ${userId}:`, error);
       return null;
+    }
+  }
+
+  /**
+   * 스토리지에서 아바타를 찾아 캐시/DB에 워밍 (응답 지연 방지용 비동기)
+   */
+  async warmAvatarFromStorage(userId: string): Promise<void> {
+    try {
+      const storageAvatar = await this.resolveAvatarFromStorage(userId);
+      if (!storageAvatar) return;
+
+      // 캐시 업데이트
+      const cached = this.getCachedProfile(userId);
+      const hydrated: UserRecord = cached ?? {
+        id: userId,
+        email: '',
+        name: null,
+        avatar_url: storageAvatar,
+        username: userId,
+        role: 'user',
+        created_at: new Date(),
+        updated_at: new Date(),
+        password_hash: '',
+      };
+      hydrated.avatar_url = storageAvatar;
+      hydrated.updated_at = new Date();
+      this.setCachedProfile(userId, hydrated);
+
+      // DB에도 저장 (실패 시 무시)
+      const pool = await getPool();
+      pool.query(
+        `UPDATE profiles SET avatar_url = $2, updated_at = NOW() WHERE id = $1`,
+        [userId, storageAvatar]
+      ).catch(err => this.logger.warn(`[warmAvatarFromStorage] Persist failed for ${userId}: ${err.message}`));
+    } catch (error) {
+      this.logger.warn(`[warmAvatarFromStorage] Failed for ${userId}`, error as Error);
     }
   }
 }
