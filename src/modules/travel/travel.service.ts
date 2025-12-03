@@ -635,16 +635,7 @@ export class TravelService {
       return { total: cachedList.length, page, limit, items: itemsWithLinks };
     }
 
-    const totalPromise = pool.query(
-      `SELECT COUNT(*)::int AS total
-       FROM travel_members tm
-       INNER JOIN travels t ON t.id = tm.travel_id
-       WHERE tm.user_id = $1
-       ${statusCondition}`,
-      [userId],
-    );
-
-    const listPromise = pool.query(
+    const listResult = await pool.query(
       `SELECT
          ut.id::text AS id,
          ut.title,
@@ -658,25 +649,27 @@ export class TravelService {
          ut.computed_status AS status,
          ut.role,
          ut.created_at::text,
-         owner_profile.name AS owner_name
+         owner_profile.name AS owner_name,
+         ut.total_count
        FROM (
-          SELECT t.*, COALESCE(tm.role, mp.role, 'member') AS role,
-                 CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS computed_status
+          SELECT t.*,
+                 COALESCE(tm.role, mp.role, 'member') AS role,
+                 CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS computed_status,
+                 COUNT(*) OVER() AS total_count
           FROM travels t
           INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
           LEFT JOIN profiles mp ON mp.id = tm.user_id
           WHERE 1 = 1
           ${statusCondition}
+          ORDER BY t.created_at DESC
+          LIMIT $2 OFFSET $3
         ) AS ut
         INNER JOIN profiles owner_profile ON owner_profile.id = ut.owner_id
-        LEFT JOIN travel_invites ti ON ti.travel_id = ut.id AND ti.status = 'active'
-       ORDER BY ut.created_at DESC
-       LIMIT $2 OFFSET $3`,
+        LEFT JOIN travel_invites ti ON ti.travel_id = ut.id AND ti.status = 'active'`,
       [userId, limit, offset],
     );
 
-    const [totalResult, listResult] = await Promise.all([totalPromise, listPromise]);
-    const total = totalResult.rows[0]?.total ?? 0;
+    const total = listResult.rows[0]?.total_count ?? 0;
     const travelIds = listResult.rows.map((row) => row.id);
     const membersMap = await this.loadMembersForTravels(travelIds, userId);
     const items = listResult.rows.map((row) => this.mapSummary(row, membersMap.get(row.id)));
@@ -999,6 +992,7 @@ export class TravelService {
     // 멤버 탈퇴 후 관련 캐시 무효화
     this.invalidateUserTravelCache(userId);
     this.invalidateTravelDetailCache(travelId);
+    await this.invalidateMemberCache(travelId, userId);
 
     return { deletedTravel: false };
   }
@@ -1083,6 +1077,7 @@ export class TravelService {
     // 멤버 삭제 후 캐시 무효화
     this.invalidateUserTravelCache(memberId);
     this.invalidateTravelDetailCache(travelId);
+    await this.invalidateMemberCache(travelId, memberId);
 
     // 다른 멤버들의 여행 목록 캐시도 무효화 (멤버 정보가 변경되므로)
     await this.invalidateTravelCachesForMembers(travelId);
