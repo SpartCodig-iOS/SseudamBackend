@@ -158,6 +158,15 @@ export class TravelService {
     this.cacheService.del(travelId, { prefix: this.TRAVEL_DETAIL_REDIS_PREFIX }).catch(() => undefined);
   }
 
+  private async invalidateTravelCachesForMembers(travelId: string): Promise<void> {
+    const pool = await getPool();
+    const members = await pool.query(
+      `SELECT user_id FROM travel_members WHERE travel_id = $1`,
+      [travelId]
+    );
+    members.rows.forEach(member => this.invalidateUserTravelCache(member.user_id));
+  }
+
   private async getCachedInvite(inviteCode: string): Promise<{ travel_id: string; status: string; used_count: number; max_uses: number | null; expires_at: string | null; travel_status: string } | null> {
     try {
       return await this.cacheService.get(inviteCode, { prefix: this.INVITE_REDIS_PREFIX });
@@ -742,13 +751,7 @@ export class TravelService {
     this.invalidateTravelDetailCache(inviteRow.travel_id);
 
     // 기존 멤버들의 여행 목록 캐시도 무효화 (멤버 정보가 변경되므로)
-    const existingMembers = await pool.query(
-      `SELECT user_id FROM travel_members WHERE travel_id = $1`,
-      [inviteRow.travel_id]
-    );
-    existingMembers.rows.forEach(member => {
-      this.invalidateUserTravelCache(member.user_id);
-    });
+    await this.invalidateTravelCachesForMembers(inviteRow.travel_id);
 
     return this.fetchSummaryForMember(inviteRow.travel_id, userId);
   }
@@ -843,13 +846,7 @@ export class TravelService {
     this.invalidateTravelDetailCache(travelId);
 
     // 여행에 참여한 모든 멤버의 목록 캐시도 무효화
-    const members = await pool.query(
-      `SELECT user_id FROM travel_members WHERE travel_id = $1`,
-      [travelId]
-    );
-    members.rows.forEach(member => {
-      this.invalidateUserTravelCache(member.user_id);
-    });
+    await this.invalidateTravelCachesForMembers(travelId);
 
     const summary = await this.fetchSummaryForMember(travelId, userId);
     this.setCachedTravelDetail(travelId, summary);
@@ -873,12 +870,6 @@ export class TravelService {
     this.invalidateTravelDetailCache(travelId);
 
     // 다른 멤버들의 여행 목록 캐시도 무효화 (멤버 정보가 변경되므로)
-    const remainingMembers = await pool.query(
-      `SELECT user_id FROM travel_members WHERE travel_id = $1`,
-      [travelId]
-    );
-    remainingMembers.rows.forEach(member => {
-      this.invalidateUserTravelCache(member.user_id);
-    });
+    await this.invalidateTravelCachesForMembers(travelId);
   }
 }
