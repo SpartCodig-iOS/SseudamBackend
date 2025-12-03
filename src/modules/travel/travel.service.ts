@@ -722,17 +722,27 @@ export class TravelService {
 
     await this.ensureTransaction(async (client) => {
       await client.query(
-        `DELETE FROM travel_expense_participants
-         WHERE expense_id IN (
+        `WITH expense_ids AS (
            SELECT id FROM travel_expenses WHERE travel_id = $1
-         )`,
+         ),
+         deleted_participants AS (
+           DELETE FROM travel_expense_participants WHERE expense_id IN (SELECT id FROM expense_ids)
+         ),
+         deleted_expenses AS (
+           DELETE FROM travel_expenses WHERE id IN (SELECT id FROM expense_ids)
+         ),
+         deleted_settlements AS (
+           DELETE FROM travel_settlements WHERE travel_id = $1
+         ),
+         deleted_invites AS (
+           DELETE FROM travel_invites WHERE travel_id = $1
+         ),
+         deleted_members AS (
+           DELETE FROM travel_members WHERE travel_id = $1
+         )
+         DELETE FROM travels WHERE id = $1`,
         [travelId],
       );
-      await client.query(`DELETE FROM travel_expenses WHERE travel_id = $1`, [travelId]);
-      await client.query(`DELETE FROM travel_settlements WHERE travel_id = $1`, [travelId]);
-      await client.query(`DELETE FROM travel_invites WHERE travel_id = $1`, [travelId]);
-      await client.query(`DELETE FROM travel_members WHERE travel_id = $1`, [travelId]);
-      await client.query(`DELETE FROM travels WHERE id = $1`, [travelId]);
     });
 
     // 초대 코드 캐시 전부 무효화 (travelId별 키가 없으므로 패턴 삭제)
