@@ -298,6 +298,23 @@ export class SocialAuthService {
     }
   }
 
+  private resolveLoginType(requested: LoginType = 'email', supabaseUser?: any): LoginType {
+    if (requested && requested !== 'email' && requested !== 'username') {
+      return requested;
+    }
+
+    const provider =
+      supabaseUser?.app_metadata?.provider ??
+      supabaseUser?.identities?.[0]?.provider ??
+      supabaseUser?.user_metadata?.provider;
+
+    if (provider === 'google' || provider === 'apple' || provider === 'kakao') {
+      return provider;
+    }
+
+    return requested ?? 'email';
+  }
+
   private buildAppleClientSecret() {
     // 캐시된 토큰이 있고 아직 유효하면 재사용
     if (this.appleClientSecretCache && this.appleClientSecretCache.expiresAt > Date.now()) {
@@ -432,6 +449,7 @@ export class SocialAuthService {
     }
 
     const user = supabaseUser.value;
+    const resolvedLoginType = this.resolveLoginType(loginType, user);
     const { appleRefreshToken, googleRefreshToken, authorizationCode, codeVerifier, redirectUri } = options;
 
     // 3단계: 프로필 존재 체크 (필수), 토큰 교환은 비동기 워밍으로 전환
@@ -439,28 +457,28 @@ export class SocialAuthService {
 
     // 토큰 교환은 응답 지연을 막기 위해 시작만 해두고 백그라운드로
     const appleTokenPromise =
-      loginType === 'apple' && !appleRefreshToken && authorizationCode
+        resolvedLoginType === 'apple' && !appleRefreshToken && authorizationCode
         ? this.exchangeAppleAuthorizationCode(authorizationCode)
         : Promise.resolve(appleRefreshToken ?? null);
 
     const googleTokenPromise =
-      loginType === 'google' && !googleRefreshToken && authorizationCode
+      resolvedLoginType === 'google' && !googleRefreshToken && authorizationCode
         ? this.exchangeGoogleAuthorizationCode(authorizationCode, { codeVerifier, redirectUri })
         : Promise.resolve(googleRefreshToken ?? null);
 
     // 4단계: 프로필 생성이 필요한 경우에만 처리
-    if (!profileExists || (loginType !== 'email' && loginType !== 'username')) {
+    if (!profileExists || (resolvedLoginType !== 'email' && resolvedLoginType !== 'username')) {
       // 프로필 생성을 백그라운드로 처리하지 않고 즉시 처리 (필수 작업)
-      await this.supabaseService.ensureProfileFromSupabaseUser(user, loginType);
+      await this.supabaseService.ensureProfileFromSupabaseUser(user, resolvedLoginType);
     }
 
     // 5단계: 사용자 객체 생성 및 캐싱
-    const preferDisplayName = loginType !== 'email' && loginType !== 'username';
+    const preferDisplayName = resolvedLoginType !== 'email' && resolvedLoginType !== 'username';
     const userRecord = fromSupabaseUser(user, { preferDisplayName });
 
     // 6단계: 세션 생성과 캐시 저장을 병렬로 처리
     const [authSession] = await Promise.all([
-      this.authService.createAuthSession(userRecord, loginType),
+      this.authService.createAuthSession(userRecord, resolvedLoginType),
       this.setCachedOAuthUser(accessToken, userRecord),
       this.authService.warmAuthCaches(userRecord)
     ]);
@@ -492,12 +510,12 @@ export class SocialAuthService {
           appleTokenPromise,
           googleTokenPromise,
         ]);
-        if (loginType === 'apple' && finalAppleRefreshToken) {
-          await this.supabaseService.saveAppleRefreshToken(userRecord.id, finalAppleRefreshToken);
-        }
-        if (loginType === 'google' && finalGoogleRefreshToken) {
-          await this.supabaseService.saveGoogleRefreshToken(userRecord.id, finalGoogleRefreshToken);
-        }
+    if (resolvedLoginType === 'apple' && finalAppleRefreshToken) {
+      await this.supabaseService.saveAppleRefreshToken(userRecord.id, finalAppleRefreshToken);
+    }
+    if (resolvedLoginType === 'google' && finalGoogleRefreshToken) {
+      await this.supabaseService.saveGoogleRefreshToken(userRecord.id, finalGoogleRefreshToken);
+    }
       })
     );
 
