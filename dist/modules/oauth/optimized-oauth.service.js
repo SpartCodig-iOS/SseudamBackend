@@ -23,15 +23,18 @@ let OptimizedOAuthService = OptimizedOAuthService_1 = class OptimizedOAuthServic
         this.supabaseService = supabaseService;
         this.logger = new common_1.Logger(OptimizedOAuthService_1.name);
         this.FAST_OAUTH_CACHE_PREFIX = 'fast_oauth';
-        this.FAST_OAUTH_CACHE_TTL = 2 * 60; // 2분
+        this.FAST_OAUTH_CACHE_TTL = 10 * 60; // 10분으로 확대해 재사용률 향상
+        this.FAST_OAUTH_REDIS_PREFIX = 'oauth_fast';
+        this.LOOKUP_REDIS_PREFIX = 'lookup';
+        this.LOOKUP_TTL = 5 * 60; // 5분
     }
     getFastCacheKey(accessToken, loginType) {
         const hash = (0, crypto_1.createHash)('sha256').update(`${accessToken}:${loginType}`).digest('hex');
-        return `${this.FAST_OAUTH_CACHE_PREFIX}:${hash.substring(0, 16)}`;
+        return `${hash.substring(0, 16)}`;
     }
     getLookupCacheKey(accessToken) {
         const hash = (0, crypto_1.createHash)('sha256').update(accessToken).digest('hex');
-        return `lookup:${hash.substring(0, 12)}`;
+        return `${hash.substring(0, 12)}`;
     }
     /**
      * 초고속 OAuth 로그인 - 중복 요청 최적화
@@ -41,7 +44,9 @@ let OptimizedOAuthService = OptimizedOAuthService_1 = class OptimizedOAuthServic
         const cacheKey = this.getFastCacheKey(accessToken, loginType);
         try {
             // 1. 빠른 캐시 체크 (이미 처리된 요청인지 확인)
-            const cachedResult = await this.cacheService.get(cacheKey);
+            const cachedResult = await this.cacheService.get(cacheKey, {
+                prefix: this.FAST_OAUTH_REDIS_PREFIX,
+            });
             if (cachedResult) {
                 const duration = Date.now() - startTime;
                 this.logger.debug(`Ultra-fast OAuth (cached): ${duration}ms`);
@@ -51,7 +56,10 @@ let OptimizedOAuthService = OptimizedOAuthService_1 = class OptimizedOAuthServic
             const resultPromise = this.socialAuthService.loginWithOAuthToken(accessToken, loginType, options);
             // 3. 결과를 캐시에 저장 (다음 동일한 요청을 위해)
             resultPromise.then((result) => {
-                this.cacheService.set(cacheKey, result, { ttl: this.FAST_OAUTH_CACHE_TTL })
+                this.cacheService.set(cacheKey, result, {
+                    ttl: this.FAST_OAUTH_CACHE_TTL,
+                    prefix: this.FAST_OAUTH_REDIS_PREFIX,
+                })
                     .catch(err => this.logger.warn(`Failed to cache OAuth result: ${err.message}`));
             });
             const result = await resultPromise;
@@ -88,7 +96,9 @@ let OptimizedOAuthService = OptimizedOAuthService_1 = class OptimizedOAuthServic
         const cacheKey = this.getLookupCacheKey(accessToken);
         try {
             // 1단계: 캐시에서 초고속 조회 (< 1ms)
-            const cached = await this.cacheService.get(cacheKey);
+            const cached = await this.cacheService.get(cacheKey, {
+                prefix: this.LOOKUP_REDIS_PREFIX,
+            });
             if (cached !== null) {
                 const duration = Date.now() - startTime;
                 this.logger.debug(`ULTRA-FAST lookup (cache hit): ${duration}ms`);
@@ -98,7 +108,7 @@ let OptimizedOAuthService = OptimizedOAuthService_1 = class OptimizedOAuthServic
             const existingCheck = this.socialAuthService.getCachedCheck?.(accessToken);
             if (existingCheck) {
                 // 결과를 Redis에 캐시하고 즉시 반환
-                this.cacheService.set(cacheKey, existingCheck, { ttl: 300 }); // 5분
+                this.cacheService.set(cacheKey, existingCheck, { ttl: this.LOOKUP_TTL, prefix: this.LOOKUP_REDIS_PREFIX }); // 5분
                 const duration = Date.now() - startTime;
                 this.logger.debug(`FAST lookup (memory cache hit): ${duration}ms`);
                 return existingCheck;

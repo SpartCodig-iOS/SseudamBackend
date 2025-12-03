@@ -193,6 +193,10 @@ let CacheService = CacheService_1 = class CacheService {
     async invalidateUserCache(userId) {
         const patterns = [
             `user:${userId}`, // 사용자 기본 정보
+            `profile:${userId}`, // 프로필 캐시
+            `profile:${userId}:*`,
+            `avatar:${userId}`, // 아바타 캐시
+            `avatar:${userId}:*`,
             `auth:${userId}:*`, // 인증 관련 캐시
             `oauth:user-index:${userId}`, // OAuth 토큰 인덱스
             `travel:user:${userId}:*`, // 여행 관련 캐시

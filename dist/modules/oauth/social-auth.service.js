@@ -49,6 +49,8 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         this.OAUTH_CHECK_CACHE_TTL = 5 * 60 * 1000; // 5분
         this.LOOKUP_INFLIGHT_TTL = 5 * 1000; // 동일 토큰 연속 호출 병합용 (5초)
         this.PROFILE_EXISTS_TTL = 60 * 1000; // 프로필 존재 여부 캐시
+        this.PROFILE_EXISTS_REDIS_TTL = 5 * 60; // 5분
+        this.PROFILE_EXISTS_REDIS_PREFIX = 'profile_exists';
         this.localTokenCache = new Map();
         this.LOCAL_TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5분
         this.dbWarmupPromise = null;
@@ -90,6 +92,21 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             return cached.exists;
         }
         try {
+            const redisCached = await this.cacheService.get(userId, {
+                prefix: this.PROFILE_EXISTS_REDIS_PREFIX,
+            });
+            if (typeof redisCached === 'boolean') {
+                this.profileExistenceCache.set(userId, {
+                    exists: redisCached,
+                    expiresAt: Date.now() + this.PROFILE_EXISTS_TTL,
+                });
+                return redisCached;
+            }
+        }
+        catch (error) {
+            this.logger.warn(`Redis profile exists miss for ${userId}:`, error);
+        }
+        try {
             const pool = await (0, pool_1.getPool)();
             const result = await pool.query(`SELECT 1 FROM profiles WHERE id = $1 LIMIT 1`, [userId]);
             const exists = Boolean(result.rows[0]);
@@ -97,6 +114,11 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                 exists,
                 expiresAt: Date.now() + this.PROFILE_EXISTS_TTL,
             });
+            // Redis에도 캐싱
+            this.cacheService.set(userId, exists, {
+                prefix: this.PROFILE_EXISTS_REDIS_PREFIX,
+                ttl: this.PROFILE_EXISTS_REDIS_TTL,
+            }).catch(() => undefined);
             return exists;
         }
         catch (error) {
@@ -108,6 +130,10 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                     exists,
                     expiresAt: Date.now() + Math.floor(this.PROFILE_EXISTS_TTL / 2),
                 });
+                this.cacheService.set(userId, exists, {
+                    prefix: this.PROFILE_EXISTS_REDIS_PREFIX,
+                    ttl: this.PROFILE_EXISTS_REDIS_TTL,
+                }).catch(() => undefined);
                 return exists;
             }
             catch (fallbackError) {

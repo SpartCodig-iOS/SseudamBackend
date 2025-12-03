@@ -12,6 +12,7 @@ import { getPool } from '../../db/pool';
 import { CreateTravelInput } from '../../validators/travelSchemas';
 import { UserRecord } from '../../types/user';
 import { MetaService } from '../meta/meta.service';
+import { CacheService } from '../../services/cacheService';
 
 export interface TravelSummary {
   id: string;
@@ -57,30 +58,69 @@ export class TravelService {
   // 여행 상세 캐시: 10분 TTL
   private readonly travelDetailCache = new Map<string, { data: TravelDetail; expiresAt: number }>();
   private readonly TRAVEL_DETAIL_CACHE_TTL = 10 * 60 * 1000; // 10분
+  private readonly TRAVEL_LIST_REDIS_PREFIX = 'travel:list';
+  private readonly TRAVEL_DETAIL_REDIS_PREFIX = 'travel:detail';
 
-  constructor(private readonly metaService: MetaService) {}
+  constructor(
+    private readonly metaService: MetaService,
+    private readonly cacheService: CacheService = new CacheService(),
+  ) {}
 
-  private getCachedTravelList(userId: string): TravelSummary[] | null {
-    const cached = this.travelListCache.get(userId);
+  private async getCachedTravelList(key: string, rawKey = false): Promise<TravelSummary[] | null> {
+    const cacheKey = rawKey ? key : `${key}`;
+    // Redis 우선
+    try {
+      const redisData = await this.cacheService.get<TravelSummary[]>(cacheKey, {
+        prefix: this.TRAVEL_LIST_REDIS_PREFIX,
+      });
+      if (redisData) {
+        this.travelListCache.set(cacheKey, { data: redisData, expiresAt: Date.now() + this.TRAVEL_LIST_CACHE_TTL });
+        return redisData;
+      }
+    } catch (error) {
+      this.logger.warn(`[Travel] Redis travel list miss for ${cacheKey}:`, error);
+    }
+
+    const cached = this.travelListCache.get(cacheKey);
     if (!cached || Date.now() > cached.expiresAt) {
-      this.travelListCache.delete(userId);
+      this.travelListCache.delete(cacheKey);
       return null;
     }
     return cached.data;
   }
 
-  private setCachedTravelList(userId: string, travels: TravelSummary[]): void {
+  private setCachedTravelList(key: string, travels: TravelSummary[], rawKey = false): void {
+    const cacheKey = rawKey ? key : `${key}`;
     if (this.travelListCache.size >= this.MAX_CACHE_SIZE) {
       const oldestKey = this.travelListCache.keys().next().value;
       if (oldestKey) this.travelListCache.delete(oldestKey);
     }
-    this.travelListCache.set(userId, {
+    this.travelListCache.set(cacheKey, {
       data: travels,
       expiresAt: Date.now() + this.TRAVEL_LIST_CACHE_TTL
     });
+
+    // Redis에도 캐싱
+    this.cacheService.set(cacheKey, travels, {
+      prefix: this.TRAVEL_LIST_REDIS_PREFIX,
+      ttl: Math.floor(this.TRAVEL_LIST_CACHE_TTL / 1000),
+    }).catch(() => undefined);
   }
 
-  private getCachedTravelDetail(travelId: string): TravelDetail | null {
+  private async getCachedTravelDetail(travelId: string): Promise<TravelDetail | null> {
+    // Redis 우선
+    try {
+      const redisData = await this.cacheService.get<TravelDetail>(travelId, {
+        prefix: this.TRAVEL_DETAIL_REDIS_PREFIX,
+      });
+      if (redisData) {
+        this.travelDetailCache.set(travelId, { data: redisData, expiresAt: Date.now() + this.TRAVEL_DETAIL_CACHE_TTL });
+        return redisData;
+      }
+    } catch (error) {
+      this.logger.warn(`[Travel] Redis travel detail miss for ${travelId}:`, error);
+    }
+
     const cached = this.travelDetailCache.get(travelId);
     if (!cached || Date.now() > cached.expiresAt) {
       this.travelDetailCache.delete(travelId);
@@ -98,14 +138,22 @@ export class TravelService {
       data: travel,
       expiresAt: Date.now() + this.TRAVEL_DETAIL_CACHE_TTL
     });
+
+    this.cacheService.set(travelId, travel, {
+      prefix: this.TRAVEL_DETAIL_REDIS_PREFIX,
+      ttl: Math.floor(this.TRAVEL_DETAIL_CACHE_TTL / 1000),
+    }).catch(() => undefined);
   }
 
   private invalidateUserTravelCache(userId: string): void {
-    this.travelListCache.delete(userId);
+    const keys = Array.from(this.travelListCache.keys()).filter(key => key.startsWith(`${userId}:`));
+    keys.forEach(key => this.travelListCache.delete(key));
+    this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:${userId}:*`).catch(() => undefined);
   }
 
   private invalidateTravelDetailCache(travelId: string): void {
     this.travelDetailCache.delete(travelId);
+    this.cacheService.del(travelId, { prefix: this.TRAVEL_DETAIL_REDIS_PREFIX }).catch(() => undefined);
   }
 
   private async ensureOwner(travelId: string, userId: string, runner?: Pool | PoolClient): Promise<void> {
@@ -210,7 +258,7 @@ export class TravelService {
       throw new ForbiddenException('여행에 참여 중인 사용자만 조회할 수 있습니다.');
     }
 
-    const cached = this.getCachedTravelDetail(travelId);
+    const cached = await this.getCachedTravelDetail(travelId);
     if (cached) {
       return cached;
     }
@@ -385,6 +433,12 @@ export class TravelService {
     const limit = Math.min(100, Math.max(1, pagination.limit ?? 20));
     const offset = (page - 1) * limit;
     const statusCondition = this.buildStatusCondition(pagination.status, 't');
+    const cacheKey = `${userId}:${page}:${limit}:${pagination.status ?? 'all'}`;
+
+    const cachedList = await this.getCachedTravelList(cacheKey);
+    if (cachedList) {
+      return { total: cachedList.length, page, limit, items: cachedList };
+    }
 
     const totalPromise = pool.query(
       `SELECT COUNT(*)::int AS total
@@ -444,12 +498,16 @@ export class TravelService {
 
     const [totalResult, listResult] = await Promise.all([totalPromise, listPromise]);
     const total = totalResult.rows[0]?.total ?? 0;
+    const items = listResult.rows.map((row) => this.mapSummary(row));
+
+    // 캐시에 저장 (Redis + 메모리)
+    this.setCachedTravelList(cacheKey, items);
 
     return {
       total,
       page,
       limit,
-      items: listResult.rows.map((row) => this.mapSummary(row)),
+      items,
     };
   }
 

@@ -6,6 +6,8 @@ import { SupabaseService } from '../../services/supabaseService';
 import { fromSupabaseUser } from '../../utils/mappers';
 import { UserRecord } from '../../types/user';
 import { SessionService } from '../../services/sessionService';
+import { CacheService } from '../../services/cacheService';
+import { createHash } from 'crypto';
 import { getPool } from '../../db/pool';
 
 interface LocalAuthResult {
@@ -23,11 +25,14 @@ interface CachedUser {
 export class AuthGuard implements CanActivate {
   private readonly tokenCache = new Map<string, CachedUser>();
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5분 캐시
+  private readonly REDIS_PREFIX = 'auth:token';
+  private readonly REDIS_TTL_SECONDS = 5 * 60;
 
   constructor(
     private readonly jwtTokenService: JwtTokenService,
     private readonly supabaseService: SupabaseService,
     private readonly sessionService: SessionService,
+    private readonly cacheService: CacheService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -41,8 +46,18 @@ export class AuthGuard implements CanActivate {
     if (localUser) {
       // ⚡ LIGHTNING-FAST: 모든 DB/세션 체크 스킵하고 JWT만으로 즉시 응답
       this.setCachedUser(token, localUser.user);
+      void this.setRedisCachedUser(token, { user: localUser.user, loginType: localUser.loginType });
       request.currentUser = localUser.user;
       request.loginType = localUser.loginType;
+      return true;
+    }
+
+    // Redis 캐시 확인 (프로세스 재시작 후에도 빠르게)
+    const redisUser = await this.getRedisCachedUser(token);
+    if (redisUser) {
+      this.setCachedUser(token, redisUser.user);
+      request.currentUser = redisUser.user;
+      request.loginType = redisUser.loginType ?? 'email';
       return true;
     }
 
@@ -60,6 +75,7 @@ export class AuthGuard implements CanActivate {
       if (supabaseUser?.email) {
         const userRecord = await this.hydrateUserRole(fromSupabaseUser(supabaseUser));
         this.setCachedUser(token, userRecord);
+        void this.setRedisCachedUser(token, { user: userRecord, loginType: 'email' });
         request.currentUser = userRecord;
         request.loginType = 'email';
         return true;
@@ -92,6 +108,33 @@ export class AuthGuard implements CanActivate {
     }
 
     return cached.user;
+  }
+
+  private getTokenCacheKey(token: string): string {
+    return createHash('sha256').update(token).digest('hex').slice(0, 32);
+  }
+
+  private async getRedisCachedUser(token: string): Promise<{ user: UserRecord; loginType?: LoginType } | null> {
+    try {
+      const key = this.getTokenCacheKey(token);
+      return await this.cacheService.get<{ user: UserRecord; loginType?: LoginType }>(key, {
+        prefix: this.REDIS_PREFIX,
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  private async setRedisCachedUser(token: string, payload: { user: UserRecord; loginType?: LoginType }): Promise<void> {
+    try {
+      const key = this.getTokenCacheKey(token);
+      await this.cacheService.set(key, payload, {
+        prefix: this.REDIS_PREFIX,
+        ttl: this.REDIS_TTL_SECONDS,
+      });
+    } catch {
+      // Redis 실패는 무시하고 계속
+    }
   }
 
   private setCachedUser(token: string, user: UserRecord): void {

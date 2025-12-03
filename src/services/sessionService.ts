@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { getPool } from '../db/pool';
 import { LoginType } from '../types/auth';
 import { SupabaseService } from './supabaseService';
+import { CacheService } from './cacheService';
 
 export type SessionStatus = 'active' | 'revoked' | 'expired';
 
@@ -26,12 +27,17 @@ export class SessionService {
   private readonly CLEANUP_INTERVAL_MS = process.env.NODE_ENV === 'production' ? 60 * 60 * 1000 : 45 * 60 * 1000; // Railway Sleep 친화적: 운영 1시간, 개발 45분
   private lastCleanupRun = 0;
 
-  constructor(private readonly supabaseService: SupabaseService) {}
+  constructor(
+    private readonly supabaseService: SupabaseService,
+    private readonly cacheService: CacheService,
+  ) {}
 
   // 세션 캐시: 10분 TTL, 최대 2000개 세션
   private readonly sessionCache = new Map<string, { data: SessionRecord; expiresAt: number }>();
   private readonly SESSION_CACHE_TTL = 15 * 60 * 1000; // 15분으로 확대해 캐시 적중률 향상
   private readonly MAX_CACHE_SIZE = 2000;
+  private readonly SESSION_REDIS_PREFIX = 'session';
+  private readonly SESSION_REDIS_TTL = 15 * 60; // 15분
   // Supabase 세션 유효성 캐시: 5분 TTL
   private readonly supabaseValidityCache = new Map<string, { valid: boolean; expiresAt: number }>();
   private readonly SUPABASE_VALIDITY_TTL = 5 * 60 * 1000;
@@ -56,6 +62,27 @@ export class SessionService {
       }
     }
     this.indexesEnsured = true;
+  }
+
+  private async attachSupabaseValidity(sessionId: string, session: SessionRecord): Promise<SessionRecord> {
+    if (!session.isActive) return session;
+
+    const cachedValidity = this.getCachedSupabaseValidity(session.userId);
+    if (cachedValidity !== null) {
+      session.supabaseSessionValid = cachedValidity;
+      if (!cachedValidity) {
+        session.status = 'revoked';
+        session.isActive = false;
+      }
+      return session;
+    }
+
+    // 낙관적 반환 후 백그라운드 검증으로 응답 지연 최소화
+    session.supabaseSessionValid = true;
+    this.refreshSupabaseValidity(sessionId, session.userId).catch((err) =>
+      this.logger.warn(`Background Supabase validity check failed for session ${sessionId}`, err as Error)
+    );
+    return session;
   }
 
   // 세션 캐시 관리
@@ -90,10 +117,14 @@ export class SessionService {
       data: session,
       expiresAt: Date.now() + this.SESSION_CACHE_TTL
     });
+
+    // Redis에도 캐싱해 재시작 후에도 빠른 조회
+    this.setRedisSession(sessionId, session);
   }
 
   private clearCachedSession(sessionId: string): void {
     this.sessionCache.delete(sessionId);
+    this.cacheService.del(sessionId, { prefix: this.SESSION_REDIS_PREFIX }).catch(() => undefined);
   }
 
   private clearUserSessions(userId: string): void {
@@ -102,6 +133,28 @@ export class SessionService {
       if (cached.data.userId === userId) {
         this.sessionCache.delete(sessionId);
       }
+    }
+  }
+
+  private async getRedisSession(sessionId: string): Promise<SessionRecord | null> {
+    try {
+      return await this.cacheService.get<SessionRecord>(sessionId, {
+        prefix: this.SESSION_REDIS_PREFIX,
+      });
+    } catch (error) {
+      this.logger.warn(`Redis session get failed for ${sessionId}: ${(error as Error).message}`);
+      return null;
+    }
+  }
+
+  private async setRedisSession(sessionId: string, session: SessionRecord): Promise<void> {
+    try {
+      await this.cacheService.set(sessionId, session, {
+        prefix: this.SESSION_REDIS_PREFIX,
+        ttl: this.SESSION_REDIS_TTL,
+      });
+    } catch {
+      // Redis 실패는 무시
     }
   }
 
@@ -272,24 +325,20 @@ export class SessionService {
     // 캐시에서 먼저 확인
     const cachedSession = this.getCachedSession(sessionId);
     if (cachedSession) {
-      if (cachedSession.isActive) {
-        // Supabase 유효성 캐시를 우선 확인하여 바로 반환
-        const cachedValidity = this.getCachedSupabaseValidity(cachedSession.userId);
-        if (cachedValidity !== null) {
-          cachedSession.supabaseSessionValid = cachedValidity;
-          if (!cachedValidity) {
-            cachedSession.status = 'revoked';
-            cachedSession.isActive = false;
-          }
-        } else {
-          // Supabase 체크는 백그라운드로 처리하여 응답을 빠르게
-          cachedSession.supabaseSessionValid = true;
-          this.refreshSupabaseValidity(sessionId, cachedSession.userId).catch((err) =>
-            this.logger.warn(`Background Supabase validity check failed for cache hit ${sessionId}`, err as Error)
-          );
-        }
+      return this.attachSupabaseValidity(sessionId, cachedSession);
+    }
+
+    // Redis 캐시 확인
+    const redisSession = await this.getRedisSession(sessionId);
+    if (redisSession) {
+      // 만료된 세션은 캐시에서 제거
+      if (new Date(redisSession.expiresAt) <= new Date()) {
+        this.clearCachedSession(sessionId);
+        return null;
       }
-      return cachedSession;
+      const hydrated = await this.attachSupabaseValidity(sessionId, redisSession);
+      this.setCachedSession(sessionId, hydrated);
+      return hydrated;
     }
 
     const pool = await this.getClient();
@@ -312,27 +361,12 @@ export class SessionService {
 
     const session = this.mapRowToSession(row);
 
-    // 세션이 활성 상태이면 Supabase 세션 상태도 확인 (비동기 우선)
-    if (session.isActive) {
-      const cachedValidity = this.getCachedSupabaseValidity(session.userId);
-      if (cachedValidity !== null) {
-        session.supabaseSessionValid = cachedValidity;
-        if (!cachedValidity) {
-          session.status = 'revoked';
-          session.isActive = false;
-        }
-      } else {
-        session.supabaseSessionValid = true; // 낙관적 반환으로 응답 시간 단축
-        this.refreshSupabaseValidity(sessionId, session.userId).catch((err) =>
-          this.logger.warn(`Background Supabase validity check failed for session ${sessionId}`, err as Error)
-        );
-      }
-    }
+    const hydrated = await this.attachSupabaseValidity(sessionId, session);
 
     // 캐시에 저장
-    this.setCachedSession(sessionId, session);
+    this.setCachedSession(sessionId, hydrated);
 
-    return session;
+    return hydrated;
   }
 
   async touchSession(sessionId: string): Promise<void> {
@@ -352,6 +386,13 @@ export class SessionService {
     const cached = this.sessionCache.get(sessionId);
     if (cached && cached.data.isActive) {
       cached.data.lastSeenAt = new Date().toISOString();
+    }
+
+    // Redis 캐시도 갱신
+    const redisSession = await this.getRedisSession(sessionId);
+    if (redisSession && redisSession.isActive) {
+      redisSession.lastSeenAt = new Date().toISOString();
+      this.setRedisSession(sessionId, redisSession);
     }
   }
 

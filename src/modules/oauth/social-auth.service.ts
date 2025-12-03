@@ -44,6 +44,8 @@ export class SocialAuthService {
   private readonly OAUTH_CHECK_CACHE_TTL = 5 * 60 * 1000; // 5분
   private readonly LOOKUP_INFLIGHT_TTL = 5 * 1000; // 동일 토큰 연속 호출 병합용 (5초)
   private readonly PROFILE_EXISTS_TTL = 60 * 1000; // 프로필 존재 여부 캐시
+  private readonly PROFILE_EXISTS_REDIS_TTL = 5 * 60; // 5분
+  private readonly PROFILE_EXISTS_REDIS_PREFIX = 'profile_exists';
   private readonly localTokenCache = new Map<string, { user: UserRecord; expiresAt: number }>();
   private readonly LOCAL_TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5분
   private dbWarmupPromise: Promise<void> | null = null;
@@ -99,6 +101,21 @@ export class SocialAuthService {
     }
 
     try {
+      const redisCached = await this.cacheService.get<boolean>(userId, {
+        prefix: this.PROFILE_EXISTS_REDIS_PREFIX,
+      });
+      if (typeof redisCached === 'boolean') {
+        this.profileExistenceCache.set(userId, {
+          exists: redisCached,
+          expiresAt: Date.now() + this.PROFILE_EXISTS_TTL,
+        });
+        return redisCached;
+      }
+    } catch (error) {
+      this.logger.warn(`Redis profile exists miss for ${userId}:`, error as Error);
+    }
+
+    try {
       const pool = await getPool();
       const result = await pool.query(
         `SELECT 1 FROM profiles WHERE id = $1 LIMIT 1`,
@@ -109,6 +126,11 @@ export class SocialAuthService {
         exists,
         expiresAt: Date.now() + this.PROFILE_EXISTS_TTL,
       });
+      // Redis에도 캐싱
+      this.cacheService.set(userId, exists, {
+        prefix: this.PROFILE_EXISTS_REDIS_PREFIX,
+        ttl: this.PROFILE_EXISTS_REDIS_TTL,
+      }).catch(() => undefined);
       return exists;
     } catch (error) {
       this.logger.warn(`Fast profile existence check failed for user ${userId}, falling back to Supabase`, error as Error);
@@ -119,6 +141,10 @@ export class SocialAuthService {
           exists,
           expiresAt: Date.now() + Math.floor(this.PROFILE_EXISTS_TTL / 2),
         });
+        this.cacheService.set(userId, exists, {
+          prefix: this.PROFILE_EXISTS_REDIS_PREFIX,
+          ttl: this.PROFILE_EXISTS_REDIS_TTL,
+        }).catch(() => undefined);
         return exists;
       } catch (fallbackError) {
         this.logger.warn(`Profile existence fallback failed for user ${userId}`, fallbackError as Error);

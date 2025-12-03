@@ -15,14 +15,19 @@ const jwtService_1 = require("../../services/jwtService");
 const supabaseService_1 = require("../../services/supabaseService");
 const mappers_1 = require("../../utils/mappers");
 const sessionService_1 = require("../../services/sessionService");
+const cacheService_1 = require("../../services/cacheService");
+const crypto_1 = require("crypto");
 const pool_1 = require("../../db/pool");
 let AuthGuard = class AuthGuard {
-    constructor(jwtTokenService, supabaseService, sessionService) {
+    constructor(jwtTokenService, supabaseService, sessionService, cacheService) {
         this.jwtTokenService = jwtTokenService;
         this.supabaseService = supabaseService;
         this.sessionService = sessionService;
+        this.cacheService = cacheService;
         this.tokenCache = new Map();
         this.CACHE_TTL = 5 * 60 * 1000; // 5분 캐시
+        this.REDIS_PREFIX = 'auth:token';
+        this.REDIS_TTL_SECONDS = 5 * 60;
         // 역할 캐시 추가 (10분 TTL)
         this.roleCache = new Map();
         this.ROLE_CACHE_TTL = 10 * 60 * 1000; // 10분
@@ -37,8 +42,17 @@ let AuthGuard = class AuthGuard {
         if (localUser) {
             // ⚡ LIGHTNING-FAST: 모든 DB/세션 체크 스킵하고 JWT만으로 즉시 응답
             this.setCachedUser(token, localUser.user);
+            void this.setRedisCachedUser(token, { user: localUser.user, loginType: localUser.loginType });
             request.currentUser = localUser.user;
             request.loginType = localUser.loginType;
+            return true;
+        }
+        // Redis 캐시 확인 (프로세스 재시작 후에도 빠르게)
+        const redisUser = await this.getRedisCachedUser(token);
+        if (redisUser) {
+            this.setCachedUser(token, redisUser.user);
+            request.currentUser = redisUser.user;
+            request.loginType = redisUser.loginType ?? 'email';
             return true;
         }
         // 캐시된 사용자 확인
@@ -54,6 +68,7 @@ let AuthGuard = class AuthGuard {
             if (supabaseUser?.email) {
                 const userRecord = await this.hydrateUserRole((0, mappers_1.fromSupabaseUser)(supabaseUser));
                 this.setCachedUser(token, userRecord);
+                void this.setRedisCachedUser(token, { user: userRecord, loginType: 'email' });
                 request.currentUser = userRecord;
                 request.loginType = 'email';
                 return true;
@@ -84,6 +99,32 @@ let AuthGuard = class AuthGuard {
             return null;
         }
         return cached.user;
+    }
+    getTokenCacheKey(token) {
+        return (0, crypto_1.createHash)('sha256').update(token).digest('hex').slice(0, 32);
+    }
+    async getRedisCachedUser(token) {
+        try {
+            const key = this.getTokenCacheKey(token);
+            return await this.cacheService.get(key, {
+                prefix: this.REDIS_PREFIX,
+            });
+        }
+        catch {
+            return null;
+        }
+    }
+    async setRedisCachedUser(token, payload) {
+        try {
+            const key = this.getTokenCacheKey(token);
+            await this.cacheService.set(key, payload, {
+                prefix: this.REDIS_PREFIX,
+                ttl: this.REDIS_TTL_SECONDS,
+            });
+        }
+        catch {
+            // Redis 실패는 무시하고 계속
+        }
     }
     setCachedUser(token, user) {
         this.tokenCache.set(token, {
@@ -180,5 +221,6 @@ exports.AuthGuard = AuthGuard = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [jwtService_1.JwtTokenService,
         supabaseService_1.SupabaseService,
-        sessionService_1.SessionService])
+        sessionService_1.SessionService,
+        cacheService_1.CacheService])
 ], AuthGuard);

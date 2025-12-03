@@ -285,6 +285,12 @@ export class ProfileService {
 
     // 캐시 무효화 - 메모리와 Redis 모두
     this.setCachedProfile(userId, updated);
+    if (updated.avatar_url) {
+      this.setCachedStorageAvatar(userId, updated.avatar_url);
+      this.cacheService.set(userId, updated.avatar_url, { prefix: this.AVATAR_CACHE_PREFIX, ttl: 300 }).catch(() => undefined);
+    } else {
+      this.cacheService.del(userId, { prefix: this.AVATAR_CACHE_PREFIX }).catch(() => undefined);
+    }
 
     // Redis에서 사용자 관련 모든 캐시 무효화 (비동기로 실행하여 응답 속도 영향 최소화)
     this.cacheService.invalidateUserCache(userId)
@@ -382,7 +388,15 @@ export class ProfileService {
         return dbAvatar;
       }
 
-      // 5. Storage에서 최신 아바타를 조회 (DB에 없는 경우)
+      // 5. Storage에서 최신 아바타를 동기 조회 (1회 시도)
+      const storageAvatar = await this.fetchAvatarWithTimeout(userId, 800); // 첫 조회는 더 길게 시도
+      if (storageAvatar) {
+        // 캐시에 반영해 다음 호출 가속화
+        this.setCachedStorageAvatar(userId, storageAvatar);
+        this.cacheService.set(userId, storageAvatar, { prefix: this.AVATAR_CACHE_PREFIX, ttl: 300 }).catch(() => undefined);
+        return storageAvatar;
+      }
+
       return null;
     } catch (error) {
       this.logger.warn(`Avatar URL lookup failed for user ${userId}:`, error);
