@@ -49,19 +49,19 @@ export class OptimizedDeleteService {
       // 3. 로컬 데이터 삭제를 트랜잭션으로 빠르게 처리
       const localDeletePromise = this.performFastLocalDeletion(user.id);
 
-      // 4. Supabase 사용자 삭제를 병렬로 처리
+      // 4. Supabase 사용자 삭제 (auth only)
       const supabaseDeletePromise = this.deleteSupabaseUserAsync(user.id);
 
-      // 4-1. 프로필 이미지 삭제 (스토리지)
+      // 5. 프로필 이미지 삭제 (스토리지)
       const profileImageDeletePromise = this.supabaseService.deleteProfileImage(avatarUrl)
         .catch(error => this.logger.warn(`Profile image deletion failed: ${error instanceof Error ? error.message : 'Unknown error'}`));
 
-      // 5. 캐시 무효화: 로컬 삭제 완료 후 해당 여행/사용자 캐시 제거
+      // 6. 캐시 무효화: 로컬 삭제 완료 후 해당 여행/사용자 캐시 제거
       const cacheCleanupPromise = localDeletePromise.then(travelIds =>
         this.invalidateUserCaches(user.id, travelIds)
       );
 
-      // 6. 중요한 작업들만 대기 (소셜 해제는 백그라운드)
+      // 7. 중요한 작업들만 대기 (소셜 해제는 백그라운드)
       const [supabaseResult] = await Promise.all([
         supabaseDeletePromise,
         cacheCleanupPromise,

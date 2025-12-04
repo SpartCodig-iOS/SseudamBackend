@@ -558,7 +558,7 @@ let AuthService = AuthService_1 = class AuthService {
                 client.release();
             }
         })();
-        // 4) Supabase 사용자 삭제
+        // 4) Supabase 사용자 삭제 (auth 테이블만)
         let supabaseDeleted = false;
         const supabaseDeletion = (async () => {
             try {
