@@ -22,9 +22,28 @@ export class VersionService {
   private readonly networkTimeout = 5000;
   private readonly appVersionCache = new Map<string, { data: AppVersionMeta; expiresAt: number }>();
   private readonly appVersionCacheTTL = 1000 * 60 * 5; // 5분
+  private appVersionTableReady = false;
+
+  private async ensureAppVersionTable(): Promise<void> {
+    if (this.appVersionTableReady) return;
+    const pool = await getPool();
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS app_versions (
+        bundle_id TEXT PRIMARY KEY,
+        latest_version TEXT NOT NULL,
+        min_supported_version TEXT,
+        force_update BOOLEAN DEFAULT false,
+        release_notes TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    this.appVersionTableReady = true;
+  }
 
   private async fetchDbVersion(bundleId: string) {
     try {
+      await this.ensureAppVersionTable();
       const pool = await getPool();
       const result = await pool.query(
         `SELECT bundle_id,
@@ -95,6 +114,7 @@ export class VersionService {
     currentVersion?: string,
     forceUpdateOverride?: boolean,
   ): Promise<AppVersionMeta> {
+    await this.ensureAppVersionTable();
     const resolvedBundleId = (bundleId ?? env.appleClientId ?? '').trim();
     if (!resolvedBundleId) {
       throw new ServiceUnavailableException('bundleId (APPLE_CLIENT_ID) is not configured');
@@ -171,6 +191,7 @@ export class VersionService {
 
   private async upsertDbVersion(data: AppVersionMeta): Promise<void> {
     try {
+      await this.ensureAppVersionTable();
       const pool = await getPool();
       await pool.query(
         `INSERT INTO app_versions (bundle_id, latest_version, min_supported_version, force_update, release_notes)

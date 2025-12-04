@@ -155,15 +155,15 @@ export class TravelExpenseService {
 
   private async invalidateExpenseCaches(travelId: string, expenseId?: string): Promise<void> {
     // 리스트 캐시 삭제
-    this.cacheService.delPattern(`${this.EXPENSE_LIST_PREFIX}:${travelId}:*`).catch(() => undefined);
+    await this.cacheService.delPattern(`${this.EXPENSE_LIST_PREFIX}:${travelId}:*`).catch(() => undefined);
     if (expenseId) {
-      this.cacheService.del(expenseId, { prefix: this.EXPENSE_DETAIL_PREFIX }).catch(() => undefined);
+      await this.cacheService.del(expenseId, { prefix: this.EXPENSE_DETAIL_PREFIX }).catch(() => undefined);
     }
     // 정산 요약 캐시도 무효화
-    this.cacheService.del(travelId, { prefix: 'settlement:summary' }).catch(() => undefined);
+    await this.cacheService.del(travelId, { prefix: 'settlement:summary' }).catch(() => undefined);
     // 컨텍스트 캐시도 함께 무효화 (멤버 변경 가능성)
     this.contextCache.delete(travelId);
-    this.cacheService.del(travelId, { prefix: this.CONTEXT_PREFIX }).catch(() => undefined);
+    await this.cacheService.del(travelId, { prefix: this.CONTEXT_PREFIX }).catch(() => undefined);
   }
 
   private async getCachedExpenseList(cacheKey: string): Promise<{ total: number; items: TravelExpense[] } | null> {

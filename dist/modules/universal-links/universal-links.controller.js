@@ -47,6 +47,7 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.UniversalLinksController = void 0;
 const common_1 = require("@nestjs/common");
+const swagger_1 = require("@nestjs/swagger");
 const path = __importStar(require("path"));
 const fs = __importStar(require("fs"));
 let UniversalLinksController = class UniversalLinksController {
@@ -63,6 +64,7 @@ let UniversalLinksController = class UniversalLinksController {
 };
 exports.UniversalLinksController = UniversalLinksController;
 __decorate([
+    (0, swagger_1.ApiExcludeEndpoint)(),
     (0, common_1.Get)('.well-known/apple-app-site-association'),
     (0, common_1.Header)('Content-Type', 'application/json'),
     (0, common_1.Header)('Cache-Control', 'no-cache'),

@@ -1,10 +1,12 @@
 import { Controller, Get, Header, Res } from '@nestjs/common';
+import { ApiExcludeEndpoint } from '@nestjs/swagger';
 import { Response } from 'express';
 import * as path from 'path';
 import * as fs from 'fs';
 
 @Controller()
 export class UniversalLinksController {
+  @ApiExcludeEndpoint()
   @Get('.well-known/apple-app-site-association')
   @Header('Content-Type', 'application/json')
   @Header('Cache-Control', 'no-cache')
