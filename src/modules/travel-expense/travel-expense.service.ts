@@ -293,8 +293,8 @@ export class TravelExpenseService {
         participants,
       };
 
-      // 생성 후 캐시 무효화는 비동기로 처리해 응답 지연 최소화
-      void this.invalidateExpenseCaches(travelId);
+      // 생성 후 캐시 무효화 (동기)로 즉시 반영
+      await this.invalidateExpenseCaches(travelId);
 
       return result;
     } catch (error) {
@@ -537,8 +537,8 @@ export class TravelExpenseService {
         participants,
       };
 
-      // 수정 후 캐시 무효화 (비동기)
-      void this.invalidateExpenseCaches(travelId, expenseId);
+      // 수정 후 캐시 무효화 (동기로 처리해 즉시 반영)
+      await this.invalidateExpenseCaches(travelId, expenseId);
 
       return result;
     } catch (error) {
@@ -604,8 +604,8 @@ export class TravelExpenseService {
 
       await client.query('COMMIT');
 
-      // 삭제 후 캐시 무효화 (비동기)
-      void this.invalidateExpenseCaches(travelId, expenseId);
+      // 삭제 후 캐시 무효화 (동기로 처리해 즉시 반영)
+      await this.invalidateExpenseCaches(travelId, expenseId);
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;

@@ -234,8 +234,8 @@ let TravelExpenseService = class TravelExpenseService {
                 payerName,
                 participants,
             };
-            // 생성 후 캐시 무효화는 비동기로 처리해 응답 지연 최소화
-            void this.invalidateExpenseCaches(travelId);
+            // 생성 후 캐시 무효화 (동기)로 즉시 반영
+            await this.invalidateExpenseCaches(travelId);
             return result;
         }
         catch (error) {
@@ -420,8 +420,8 @@ let TravelExpenseService = class TravelExpenseService {
                 payerName,
                 participants,
             };
-            // 수정 후 캐시 무효화 (비동기)
-            void this.invalidateExpenseCaches(travelId, expenseId);
+            // 수정 후 캐시 무효화 (동기로 처리해 즉시 반영)
+            await this.invalidateExpenseCaches(travelId, expenseId);
             return result;
         }
         catch (error) {
@@ -468,8 +468,8 @@ let TravelExpenseService = class TravelExpenseService {
                 throw new common_1.NotFoundException('삭제할 지출을 찾을 수 없습니다.');
             }
             await client.query('COMMIT');
-            // 삭제 후 캐시 무효화 (비동기)
-            void this.invalidateExpenseCaches(travelId, expenseId);
+            // 삭제 후 캐시 무효화 (동기로 처리해 즉시 반영)
+            await this.invalidateExpenseCaches(travelId, expenseId);
         }
         catch (error) {
             await client.query('ROLLBACK');
