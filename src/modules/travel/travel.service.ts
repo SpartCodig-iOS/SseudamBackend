@@ -168,6 +168,9 @@ export class TravelService {
 
     // Redis 캐시에서도 해당 사용자의 모든 여행 목록 삭제
     this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:${userId}:*`).catch(() => undefined);
+    // 최적화 서비스 캐시도 함께 제거
+    this.cacheService.delPattern(`user_travels:${userId}:*`).catch(() => undefined);
+    this.cacheService.delPattern(`travel_detail:*`).catch(() => undefined);
   }
 
   private invalidateTravelDetailCache(travelId: string): void {

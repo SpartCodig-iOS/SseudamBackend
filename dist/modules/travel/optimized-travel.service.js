@@ -26,6 +26,7 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
         this.countryCurrencyCache = new Map();
         this.countryCurrencyLoaded = false;
         this.countryCurrencyLoadPromise = null;
+        this.CACHE_TTL_SECONDS = 10; // Redis 캐시 TTL
         this.transformTravelRow = (row) => {
             const destinationCurrency = this.resolveDestinationCurrency(row.country_code, row.base_currency);
             const result = {
@@ -70,14 +71,19 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
         const status = pagination.status === 'active' || pagination.status === 'archived' ? pagination.status : undefined;
         // 국가-통화 매핑 확인 (백그라운드로 실행)
         this.ensureCountryCurrencyLoaded().catch(error => this.logger.warn(`Failed to load country currency mapping: ${error.message}`));
-        // 캐시 확인
-        const cacheKey = this.getTravelListCacheKey(userId, page, limit, status);
-        const cached = await this.cacheService.get(cacheKey);
-        if (cached) {
-            this.logger.debug(`Travel list cache hit for user ${userId}`);
-            return cached;
-        }
         const startTime = process.hrtime.bigint();
+        const cacheKey = this.getTravelListCacheKey(userId, page, limit, status);
+        // Redis 캐시 조회 (짧은 TTL)
+        try {
+            const cached = await this.cacheService.get(cacheKey);
+            if (cached) {
+                this.logger.debug(`Travel list cache hit (redis) for user ${userId}`);
+                return cached;
+            }
+        }
+        catch (error) {
+            this.logger.warn(`Travel list cache read failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
         try {
             const pool = await (0, pool_1.getPool)();
             // 병렬로 총 개수와 목록 조회
@@ -93,8 +99,8 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
                 limit,
                 items,
             };
-            // 결과 캐싱 (비동기로 실행)
-            this.cacheService.set(cacheKey, result, { ttl: this.CACHE_TTL }).catch(error => this.logger.warn(`Failed to cache travel list: ${error.message}`));
+            // Redis 캐시에 짧게 저장 (비동기)
+            this.cacheService.set(cacheKey, result, { ttl: this.CACHE_TTL_SECONDS }).catch(error => this.logger.warn(`Failed to cache travel list: ${error.message}`));
             const endTime = process.hrtime.bigint();
             const durationMs = Number(endTime - startTime) / 1000000;
             if (durationMs > 200) {
@@ -202,12 +208,17 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
     // 여행 상세 정보 캐시드 조회
     async getTravelDetailCached(travelId, userId) {
         const cacheKey = this.getTravelDetailCacheKey(travelId);
-        const cached = await this.cacheService.get(cacheKey);
-        if (cached) {
-            this.logger.debug(`Travel detail cache hit for travel ${travelId}`);
-            return cached;
+        // Redis 캐시 조회 (짧은 TTL)
+        try {
+            const cached = await this.cacheService.get(cacheKey);
+            if (cached) {
+                this.logger.debug(`Travel detail cache hit (redis) for travel ${travelId}`);
+                return cached;
+            }
         }
-        // 캐시 미스 - DB에서 조회 (기존 로직)
+        catch (error) {
+            this.logger.warn(`Travel detail cache read failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
         const pool = await (0, pool_1.getPool)();
         const result = await pool.query(`SELECT
          t.id::text AS id,
@@ -245,14 +256,13 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
             return null;
         }
         const travel = this.transformTravelRow(result.rows[0]);
-        // 결과 캐싱
-        this.cacheService.set(cacheKey, travel, { ttl: this.CACHE_TTL }).catch(error => this.logger.warn(`Failed to cache travel detail: ${error.message}`));
+        // Redis 캐시에 짧게 저장 (비동기)
+        this.cacheService.set(cacheKey, travel, { ttl: this.CACHE_TTL_SECONDS }).catch(error => this.logger.warn(`Failed to cache travel detail: ${error.message}`));
         return travel;
     }
     // 캐시 무효화 메서드들
     async invalidateTravelListCache(userId) {
         try {
-            // 해당 사용자의 모든 여행 목록 캐시 삭제
             await this.cacheService.delPattern(`${this.TRAVEL_LIST_CACHE_PREFIX}:${userId}:*`);
             this.logger.debug(`Invalidated travel list cache for user ${userId}`);
         }
