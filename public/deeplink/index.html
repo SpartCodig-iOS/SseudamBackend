@@ -19,6 +19,7 @@
   <meta name="keywords" content="쓰담,여행,정산,가계부,여행가계부">
   <meta name="author" content="쓰담">
   <link rel="canonical" href="https://sseudam.up.railway.app/deeplink">
+  <meta name="apple-itunes-app" content="app-id=6755368590, app-argument=https://sseudam.up.railway.app/deeplink">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="쓰담 여행 초대">
   <meta name="twitter:description" content="링크를 열면 쓰담 앱에서 여행 정산을 바로 시작할 수 있어요.">
@@ -83,13 +84,18 @@
     (function () {
       const params = new URLSearchParams(window.location.search);
       const inviteCode = params.get('inviteCode') || params.get('code');
+      const targetUrl = params.get('targeturl');
+      const encodedTargetUrl = targetUrl ? encodeURIComponent(targetUrl) : null;
       const deepLink = inviteCode
-        ? `sseudam://travel/join?inviteCode=${encodeURIComponent(inviteCode)}`
-        : 'sseudam://open';
-      const fallback = '/';
+        ? `sseudam://travel/join?inviteCode=${encodeURIComponent(inviteCode)}${encodedTargetUrl ? `&targeturl=${encodedTargetUrl}` : ''}`
+        : `sseudam://open${encodedTargetUrl ? `?targeturl=${encodedTargetUrl}` : ''}`;
+      const fallback = 'https://apps.apple.com/app/id6755368590';
 
       const anchor = document.getElementById('open-link');
       anchor.href = deepLink;
+      if (encodedTargetUrl) {
+        anchor.textContent = '앱에서 열기 (타겟 포함)';
+      }
 
       // 시도 1: 즉시 앱 열기
       window.location.href = deepLink;
