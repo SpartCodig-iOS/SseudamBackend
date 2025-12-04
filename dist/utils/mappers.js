@@ -10,10 +10,10 @@ const formatDate = (value) => {
 const toUserResponse = (user) => ({
     id: user.id,
     email: user.email,
-    name: user.name,
-    avatarURL: user.avatar_url,
+    name: user.name ?? null,
+    avatarURL: user.avatar_url ?? null,
     role: user.role,
-    createdAt: formatDate(user.created_at),
+    createdAt: formatDate(user.created_at) ?? null,
     userId: user.username,
 });
 exports.toUserResponse = toUserResponse;
