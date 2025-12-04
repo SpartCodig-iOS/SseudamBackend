@@ -17,10 +17,12 @@ const supabase_js_1 = require("@supabase/supabase-js");
 const env_1 = require("../../config/env");
 const crypto_1 = require("crypto");
 const cacheService_1 = require("../../services/cacheService");
+const supabaseService_1 = require("../../services/supabaseService");
 require("multer");
 let ProfileService = ProfileService_1 = class ProfileService {
-    constructor(cacheService) {
+    constructor(cacheService, supabaseService) {
         this.cacheService = cacheService;
+        this.supabaseService = supabaseService;
         this.logger = new common_1.Logger(ProfileService_1.name);
         this.storageClient = (0, supabase_js_1.createClient)(env_1.env.supabaseUrl, env_1.env.supabaseServiceRoleKey);
         this.avatarBucket = 'profileimages';
@@ -60,6 +62,24 @@ let ProfileService = ProfileService_1 = class ProfileService {
     }
     clearCachedProfile(userId) {
         this.profileCache.delete(userId);
+    }
+    /**
+     * 아바타가 스토리지 경로가 아니면 백그라운드에서 미러링해 영구 URL로 교체.
+     */
+    ensureAvatarMirrored(profile) {
+        if (!profile?.avatar_url)
+            return;
+        void this.supabaseService.ensureProfileAvatar(profile.id, profile.avatar_url)
+            .then((mirrored) => {
+            if (mirrored && mirrored !== profile.avatar_url) {
+                profile.avatar_url = mirrored;
+                this.setCachedProfile(profile.id, profile);
+                this.cacheService.set(`profile:${profile.id}`, profile, { ttl: 600 }).catch(() => undefined);
+            }
+        })
+            .catch((error) => {
+            this.logger.warn(`Avatar mirror failed for ${profile.id}:`, error);
+        });
     }
     getCachedStorageAvatar(userId) {
         const cached = this.storageAvatarCache.get(userId);
@@ -104,6 +124,7 @@ let ProfileService = ProfileService_1 = class ProfileService {
         // 캐시에서 먼저 확인
         const cachedProfile = this.getCachedProfile(userId);
         if (cachedProfile) {
+            this.ensureAvatarMirrored(cachedProfile);
             return cachedProfile;
         }
         // DB 조회와 Redis 캐시 조회를 병렬로 처리
@@ -114,11 +135,13 @@ let ProfileService = ProfileService_1 = class ProfileService {
         // Redis 캐시에서 찾았다면 반환
         if (redisProfile.status === 'fulfilled' && redisProfile.value) {
             this.setCachedProfile(userId, redisProfile.value);
+            this.ensureAvatarMirrored(redisProfile.value);
             return redisProfile.value;
         }
         // DB에서 조회한 결과 처리
         if (dbResult.status === 'fulfilled' && dbResult.value) {
             const profile = dbResult.value;
+            this.ensureAvatarMirrored(profile);
             // 메모리 캐시와 Redis 캐시에 동시에 저장 (비동기)
             Promise.allSettled([
                 Promise.resolve(this.setCachedProfile(userId, profile)),
@@ -135,6 +158,7 @@ let ProfileService = ProfileService_1 = class ProfileService {
         // 1. 메모리 캐시 확인 (가장 빠름)
         const cachedProfile = this.getCachedProfile(userId);
         if (cachedProfile) {
+            this.ensureAvatarMirrored(cachedProfile);
             return cachedProfile;
         }
         // 2. Redis 캐시 확인 (두 번째로 빠름)
@@ -142,6 +166,7 @@ let ProfileService = ProfileService_1 = class ProfileService {
             const redisProfile = await this.cacheService.get(`profile:${userId}`);
             if (redisProfile) {
                 this.setCachedProfile(userId, redisProfile);
+                this.ensureAvatarMirrored(redisProfile);
                 return redisProfile;
             }
         }
@@ -153,6 +178,7 @@ let ProfileService = ProfileService_1 = class ProfileService {
         try {
             const dbProfile = await this.getProfileFromDB(userId);
             if (dbProfile) {
+                this.ensureAvatarMirrored(dbProfile);
                 // 캐시에 저장 (비동기)
                 Promise.allSettled([
                     Promise.resolve(this.setCachedProfile(userId, dbProfile)),
@@ -454,5 +480,6 @@ let ProfileService = ProfileService_1 = class ProfileService {
 exports.ProfileService = ProfileService;
 exports.ProfileService = ProfileService = ProfileService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [cacheService_1.CacheService])
+    __metadata("design:paramtypes", [cacheService_1.CacheService,
+        supabaseService_1.SupabaseService])
 ], ProfileService);

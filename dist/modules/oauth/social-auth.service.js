@@ -359,6 +359,10 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
     }
     async loginWithOAuthToken(accessToken, loginType = 'email', options = {}) {
         const startTime = Date.now();
+        const marks = [];
+        const mark = (label) => {
+            marks.push(`${label}:${Date.now() - startTime}ms`);
+        };
         if (!accessToken) {
             throw new common_1.UnauthorizedException('Missing Supabase access token');
         }
@@ -422,11 +426,15 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                 });
             }
             const authSession = await this.authService.createAuthSession(userForSession, resolvedLoginType);
+            mark('cache-hit-complete');
             // 백그라운드에서 캐시 워밍 (응답에 영향 없음)
             setImmediate(() => {
                 this.authService.warmAuthCaches(userForSession);
             });
             const duration = Date.now() - startTime;
+            if (duration > 1200) {
+                this.logger.warn(`[OAuthPerf][cache-hit] ${duration}ms steps=${marks.join(' | ')}`);
+            }
             // this.logger.debug(`ULTRA-FAST OAuth login completed in ${duration}ms (cache hit)`);
             return authSession;
         }
@@ -439,6 +447,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                 // 항상 Supabase Admin으로 최신 사용자 조회 (provider/metadata 확보)
                 try {
                     supabaseUser = await this.supabaseService.getUserById(decoded.sub);
+                    mark('admin-getUserById');
                 }
                 catch (adminError) {
                     this.logger.warn(`Offline path admin fetch failed for ${decoded.sub}:`, adminError);
@@ -450,6 +459,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                     try {
                         await this.supabaseService.ensureProfileFromSupabaseUser(supabaseUser, detectedLoginType);
                         profile = await this.supabaseService.findProfileById(decoded.sub);
+                        mark('offline-ensureProfile');
                     }
                     catch (ensureError) {
                         this.logger.warn(`Offline path ensureProfile failed for ${decoded.sub}:`, ensureError);
@@ -501,9 +511,13 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                     }
                     const authSession = await this.authService.createAuthSession(userRecord, detectedLoginType);
                     void this.setCachedOAuthUser(accessToken, userRecord);
+                    mark('offline-session');
                     void this.authService.warmAuthCaches(userRecord);
                     void this.verifySupabaseUser(accessToken, decoded.sub).catch(() => undefined);
                     const duration = Date.now() - startTime;
+                    if (duration > 1200) {
+                        this.logger.warn(`[OAuthPerf][offline-path] ${duration}ms steps=${marks.join(' | ')}`);
+                    }
                     // this.logger.debug(`ULTRA-FAST OAuth login via offline profile/token path in ${duration}ms`);
                     return authSession;
                 }
@@ -521,6 +535,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             throw new common_1.UnauthorizedException('Invalid Supabase access token');
         }
         const user = supabaseUser.value;
+        mark('supabase-getUserFromToken');
         const resolvedLoginType = this.resolveLoginType(loginType, user);
         const { appleRefreshToken, googleRefreshToken, authorizationCode, codeVerifier, redirectUri } = options;
         // 3단계: 프로필 존재 체크와 토큰 교환을 병렬로 실행
@@ -537,6 +552,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         if (!profileExists || (resolvedLoginType !== 'email' && resolvedLoginType !== 'username')) {
             // 프로필 생성을 백그라운드로 처리하지 않고 즉시 처리 (필수 작업)
             await this.supabaseService.ensureProfileFromSupabaseUser(user, resolvedLoginType);
+            mark('ensureProfile');
         }
         // 5단계: 사용자 객체 생성 및 캐싱
         const preferDisplayName = resolvedLoginType !== 'email' && resolvedLoginType !== 'username';
@@ -547,6 +563,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             this.setCachedOAuthUser(accessToken, userRecord),
             this.authService.warmAuthCaches(userRecord)
         ]);
+        mark('session-created');
         // 🔄 새로운 로그인이므로 기존 캐시 무효화 (최신 데이터 반영)
         void this.invalidateUserCaches(userRecord.id).catch(error => this.logger.warn(`Failed to invalidate caches for ${userRecord.id}:`, error));
         // 7단계: 리프레시 토큰 저장 (이미 병렬로 받아온 결과 사용)
@@ -571,6 +588,9 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         }));
         Promise.allSettled(backgroundTasks);
         const duration = Date.now() - startTime;
+        if (duration > 1200) {
+            this.logger.warn(`[OAuthPerf][miss] ${duration}ms steps=${marks.join(' | ')}`);
+        }
         // this.logger.debug(`FAST OAuth login completed in ${duration}ms for ${userRecord.email} (optimized flow)`);
         return authSession;
     }

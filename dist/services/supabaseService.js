@@ -22,6 +22,7 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
         this.logger = new common_1.Logger(SupabaseService_1.name);
         this.avatarBucket = 'profileimages';
         this.avatarBucketEnsured = false;
+        this.avatarMirrorPromises = new Map();
         if (!env_1.env.supabaseUrl || !env_1.env.supabaseServiceRoleKey) {
             console.warn('[SupabaseService] SUPABASE_URL 또는 SUPABASE_SERVICE_ROLE_KEY가 설정되어 있지 않습니다.');
             return;
@@ -484,6 +485,29 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
             this.logger.warn(`[mirrorProfileAvatar] Failed for user ${userId} from ${trimmedUrl}`, error);
             return null;
         }
+    }
+    /**
+     * 아바타가 스토리지에 없으면 다운로드 후 업로드해 영속화. 병렬 중복은 dedupe.
+     */
+    async ensureProfileAvatar(userId, avatarUrl) {
+        if (!avatarUrl)
+            return null;
+        // 이미 Supabase 스토리지 경로면 그대로 사용
+        if (this.parseAvatarStoragePath(avatarUrl)) {
+            return avatarUrl;
+        }
+        const key = `${userId}:${avatarUrl}`;
+        const inFlight = this.avatarMirrorPromises.get(key);
+        if (inFlight)
+            return inFlight;
+        const promise = this.mirrorProfileAvatar(userId, avatarUrl)
+            .catch((error) => {
+            this.logger.warn(`[ensureProfileAvatar] mirror failed for ${userId}`, error);
+            return null;
+        })
+            .finally(() => this.avatarMirrorPromises.delete(key));
+        this.avatarMirrorPromises.set(key, promise);
+        return promise;
     }
     async deleteProfileImage(avatarUrl) {
         const pathInfo = this.parseAvatarStoragePath(avatarUrl);

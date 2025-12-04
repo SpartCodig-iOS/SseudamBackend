@@ -7,6 +7,7 @@ import { env } from '../../config/env';
 import { randomUUID } from 'crypto';
 import { Express } from 'express';
 import { CacheService } from '../../services/cacheService';
+import { SupabaseService } from '../../services/supabaseService';
 import 'multer';
 
 @Injectable()
@@ -20,7 +21,10 @@ export class ProfileService {
   private readonly AVATAR_CACHE_PREFIX = 'avatar';
   private readonly AVATAR_FETCH_TIMEOUT_MS = 300; // 아바타 동기 조회 타임아웃 단축
 
-  constructor(private readonly cacheService: CacheService) {}
+  constructor(
+    private readonly cacheService: CacheService,
+    private readonly supabaseService: SupabaseService,
+  ) {}
 
   // 프로필 캐시: 10분 TTL, 최대 1000개
   private readonly profileCache = new Map<string, { data: UserRecord; expiresAt: number }>();
@@ -56,6 +60,24 @@ export class ProfileService {
 
   private clearCachedProfile(userId: string): void {
     this.profileCache.delete(userId);
+  }
+
+  /**
+   * 아바타가 스토리지 경로가 아니면 백그라운드에서 미러링해 영구 URL로 교체.
+   */
+  private ensureAvatarMirrored(profile: UserRecord | null): void {
+    if (!profile?.avatar_url) return;
+    void this.supabaseService.ensureProfileAvatar(profile.id, profile.avatar_url)
+      .then((mirrored) => {
+        if (mirrored && mirrored !== profile.avatar_url) {
+          profile.avatar_url = mirrored;
+          this.setCachedProfile(profile.id, profile);
+          this.cacheService.set(`profile:${profile.id}`, profile, { ttl: 600 }).catch(() => undefined);
+        }
+      })
+      .catch((error) => {
+        this.logger.warn(`Avatar mirror failed for ${profile.id}:`, error);
+      });
   }
 
   private getCachedStorageAvatar(userId: string): string | null {
@@ -100,6 +122,7 @@ export class ProfileService {
     // 캐시에서 먼저 확인
     const cachedProfile = this.getCachedProfile(userId);
     if (cachedProfile) {
+      this.ensureAvatarMirrored(cachedProfile);
       return cachedProfile;
     }
 
@@ -112,12 +135,14 @@ export class ProfileService {
     // Redis 캐시에서 찾았다면 반환
     if (redisProfile.status === 'fulfilled' && redisProfile.value) {
       this.setCachedProfile(userId, redisProfile.value);
+      this.ensureAvatarMirrored(redisProfile.value);
       return redisProfile.value;
     }
 
     // DB에서 조회한 결과 처리
     if (dbResult.status === 'fulfilled' && dbResult.value) {
       const profile = dbResult.value;
+      this.ensureAvatarMirrored(profile);
 
       // 메모리 캐시와 Redis 캐시에 동시에 저장 (비동기)
       Promise.allSettled([
@@ -138,6 +163,7 @@ export class ProfileService {
     // 1. 메모리 캐시 확인 (가장 빠름)
     const cachedProfile = this.getCachedProfile(userId);
     if (cachedProfile) {
+      this.ensureAvatarMirrored(cachedProfile);
       return cachedProfile;
     }
 
@@ -146,6 +172,7 @@ export class ProfileService {
       const redisProfile = await this.cacheService.get<UserRecord>(`profile:${userId}`);
       if (redisProfile) {
         this.setCachedProfile(userId, redisProfile);
+        this.ensureAvatarMirrored(redisProfile);
         return redisProfile;
       }
     } catch (error) {
@@ -157,6 +184,7 @@ export class ProfileService {
     try {
       const dbProfile = await this.getProfileFromDB(userId);
       if (dbProfile) {
+        this.ensureAvatarMirrored(dbProfile);
         // 캐시에 저장 (비동기)
         Promise.allSettled([
           Promise.resolve(this.setCachedProfile(userId, dbProfile)),

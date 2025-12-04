@@ -11,12 +11,13 @@ const common_1 = require("@nestjs/common");
 const profile_controller_1 = require("./profile.controller");
 const profile_service_1 = require("./profile.service");
 const cacheService_1 = require("../../services/cacheService");
+const supabaseService_1 = require("../../services/supabaseService");
 let ProfileModule = class ProfileModule {
 };
 exports.ProfileModule = ProfileModule;
 exports.ProfileModule = ProfileModule = __decorate([
     (0, common_1.Module)({
         controllers: [profile_controller_1.ProfileController],
-        providers: [profile_service_1.ProfileService, cacheService_1.CacheService],
+        providers: [profile_service_1.ProfileService, cacheService_1.CacheService, supabaseService_1.SupabaseService],
     })
 ], ProfileModule);

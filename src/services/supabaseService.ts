@@ -11,6 +11,7 @@ export class SupabaseService {
   private readonly logger = new Logger(SupabaseService.name);
   private readonly avatarBucket = 'profileimages';
   private avatarBucketEnsured = false;
+  private readonly avatarMirrorPromises = new Map<string, Promise<string | null>>();
 
   constructor() {
     if (!env.supabaseUrl || !env.supabaseServiceRoleKey) {
@@ -560,6 +561,32 @@ export class SupabaseService {
       this.logger.warn(`[mirrorProfileAvatar] Failed for user ${userId} from ${trimmedUrl}`, error as Error);
       return null;
     }
+  }
+
+  /**
+   * 아바타가 스토리지에 없으면 다운로드 후 업로드해 영속화. 병렬 중복은 dedupe.
+   */
+  async ensureProfileAvatar(userId: string, avatarUrl?: string | null): Promise<string | null> {
+    if (!avatarUrl) return null;
+
+    // 이미 Supabase 스토리지 경로면 그대로 사용
+    if (this.parseAvatarStoragePath(avatarUrl)) {
+      return avatarUrl;
+    }
+
+    const key = `${userId}:${avatarUrl}`;
+    const inFlight = this.avatarMirrorPromises.get(key);
+    if (inFlight) return inFlight;
+
+    const promise = this.mirrorProfileAvatar(userId, avatarUrl)
+      .catch((error) => {
+        this.logger.warn(`[ensureProfileAvatar] mirror failed for ${userId}`, error as Error);
+        return null;
+      })
+      .finally(() => this.avatarMirrorPromises.delete(key));
+
+    this.avatarMirrorPromises.set(key, promise);
+    return promise;
   }
 
   async deleteProfileImage(avatarUrl?: string | null): Promise<void> {
