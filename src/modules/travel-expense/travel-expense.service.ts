@@ -38,10 +38,10 @@ export class TravelExpenseService {
 
   private readonly EXPENSE_LIST_PREFIX = 'expense:list';
   private readonly EXPENSE_DETAIL_PREFIX = 'expense:detail';
-  private readonly EXPENSE_LIST_TTL_SECONDS = 120; // 2분
-  private readonly EXPENSE_DETAIL_TTL_SECONDS = 120; // 2분
+  private readonly EXPENSE_LIST_TTL_SECONDS = 600; // 10분 (5배 증가) // 2분
+  private readonly EXPENSE_DETAIL_TTL_SECONDS = 600; // 10분
   private readonly CONTEXT_PREFIX = 'expense:context';
-  private readonly CONTEXT_TTL_SECONDS = 120; // 2분
+  private readonly CONTEXT_TTL_SECONDS = 1800; // 30분 (안정적 데이터)
   private readonly contextCache = new Map<string, { data: TravelContext; expiresAt: number }>();
 
   private async getTravelContext(travelId: string, userId: string): Promise<TravelContext> {
@@ -309,13 +309,7 @@ export class TravelExpenseService {
       return { total: cached.total, page, limit, items: cached.items };
     }
 
-    const totalPromise = pool.query(
-      `SELECT COUNT(*)::int AS total
-       FROM travel_expenses
-       WHERE travel_id = $1`,
-      [travelId],
-    );
-
+    // 최적화: COUNT와 LIST를 병렬로 실행하되, LIST에서 total 정보도 함께 조회
     const listPromise = pool.query(
       `SELECT
          e.id::text,
@@ -328,7 +322,8 @@ export class TravelExpenseService {
          e.category,
          e.author_id::text,
          e.payer_id::text,
-         payer.name AS payer_name
+         payer.name AS payer_name,
+         COUNT(*) OVER() AS total_count
        FROM travel_expenses e
        LEFT JOIN profiles payer ON payer.id = e.payer_id
        WHERE e.travel_id = $1
@@ -337,8 +332,8 @@ export class TravelExpenseService {
       [travelId, limit, offset],
     );
 
-    const [totalResult, listResult] = await Promise.all([totalPromise, listPromise]);
-    const total = totalResult.rows[0]?.total ?? 0;
+    const listResult = await listPromise;
+    const total = listResult.rows[0]?.total_count ?? 0;
 
     const expenseIds = listResult.rows.map((row) => row.id);
     let participantsMap = new Map<string, Array<{ memberId: string; name: string | null }>>();

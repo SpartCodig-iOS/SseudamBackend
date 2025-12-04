@@ -142,7 +142,13 @@
       "WebFetch(domain:sseudam.up.railway.app)",
       "Bash(python3:*)",
       "Bash(__NEW_LINE__ curl -v -H \"Authorization: Bearer $TOKEN\" -H \"Accept: application/json\" -X POST http://localhost:8081/api/v1/travels -d '{\n  \"\"title\"\": \"\"deepLink 테스트 여행\"\",\n  \"\"startDate\"\": \"\"2025-01-10\"\",\n  \"\"endDate\"\": \"\"2025-01-15\"\", \n  \"\"countryCode\"\": \"\"KR\"\",\n  \"\"baseCurrency\"\": \"\"KRW\"\",\n  \"\"baseExchangeRate\"\": 1\n}' -H \"Content-Type: application/json\")",
-      "Bash(__NEW_LINE__ echo \"=== 수정된 deepLink 형식 테스트 ===\")"
+      "Bash(__NEW_LINE__ echo \"=== 수정된 deepLink 형식 테스트 ===\")",
+      "Bash(__NEW_LINE__ echo \"=== 새로운 여행 생성 테스트 ===\")",
+      "Bash(__NEW_LINE__ echo \"TOKEN = $TOKEN\")",
+      "Bash(__NEW_LINE__ echo \"=== 새로운 여행 생성 테스트 (shareUrl 제거됨) ===\")",
+      "Bash(__NEW_LINE__ curl -s -H \"Authorization: Bearer $TOKEN\" -H \"Accept: application/json\" -X POST http://localhost:8081/api/v1/travels -d '{\n  \"\"title\"\": \"\"shareUrl 제거 확인\"\",\n  \"\"startDate\"\": \"\"2025-01-15\"\",\n  \"\"endDate\"\": \"\"2025-01-20\"\", \n  \"\"countryCode\"\": \"\"JP\"\",\n  \"\"baseCurrency\"\": \"\"KRW\"\",\n  \"\"baseExchangeRate\"\": 105.6\n}' -H \"Content-Type: application/json\")",
+      "Bash(PORT=8082 npm start:*)",
+      "Bash(__NEW_LINE__ curl -s -H \"Authorization: Bearer $TOKEN\" -H \"Accept: application/json\" http://localhost:8082/api/v1/travels)"
     ],
     "deny": [],
     "ask": []

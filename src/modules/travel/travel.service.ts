@@ -1072,14 +1072,18 @@ export class TravelService {
     // 수정 후 관련 캐시 무효화
     this.invalidateTravelDetailCache(travelId);
 
-    // 여행에 참여한 모든 멤버의 목록 캐시도 무효화
+    // 업데이트한 사용자의 여행 목록 캐시 직접 무효화
+    this.invalidateUserTravelCache(userId);
+
+    // 여행에 참여한 모든 멤버의 목록 캐시도 무효화 (최적화된 패턴 삭제)
     await this.invalidateTravelCachesForMembers(travelId);
 
-    const summary = await this.fetchSummaryForMember(travelId, userId);
+    // 업데이트 응답에는 멤버 정보 불필요 - 성능 개선
+    const summary = await this.fetchSummaryForMember(travelId, userId, false);
+
+    // 결과 캐시에 저장 (후속 요청 성능 개선)
     this.setCachedTravelDetail(travelId, summary);
-    if (summary.members) {
-      this.setMemberListCache(travelId, summary.members);
-    }
+
     return summary;
   }
 
