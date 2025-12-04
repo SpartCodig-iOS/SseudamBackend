@@ -51,6 +51,7 @@ let TravelExpenseService = class TravelExpenseService {
         const result = await pool.query(`SELECT
          t.id::text,
          t.base_currency,
+         t.base_exchange_rate,
          json_agg(
            json_build_object(
              'id', tm.user_id::text,
@@ -78,6 +79,7 @@ let TravelExpenseService = class TravelExpenseService {
         const context = {
             id: row.id,
             baseCurrency: row.base_currency || 'KRW',
+            baseExchangeRate: Number(row.base_exchange_rate ?? 0),
             memberIds,
             memberNameMap,
         };
@@ -85,7 +87,7 @@ let TravelExpenseService = class TravelExpenseService {
         this.cacheService.set(travelId, context, { prefix: this.CONTEXT_PREFIX, ttl: this.CONTEXT_TTL_SECONDS }).catch(() => undefined);
         return context;
     }
-    async convertAmount(amount, currency, targetCurrency) {
+    async convertAmount(amount, currency, targetCurrency, fallbackRate) {
         if (currency === targetCurrency) {
             return amount;
         }
@@ -94,6 +96,9 @@ let TravelExpenseService = class TravelExpenseService {
             return Number(conversion.quoteAmount);
         }
         catch (error) {
+            if (fallbackRate && targetCurrency === 'KRW' && currency !== targetCurrency) {
+                return Number((amount * fallbackRate).toFixed(2));
+            }
             // 환율 API 실패 시 fallback: 동일 금액 반환 (추가 오류 방지)
             return amount;
         }
@@ -171,7 +176,7 @@ let TravelExpenseService = class TravelExpenseService {
             throw new common_1.BadRequestException('최소 한 명 이상의 참여자가 필요합니다.');
         }
         // 환율 변환은 독립적으로 실행 가능하므로 병렬 처리 대상
-        const convertedAmount = await this.convertAmount(payload.amount, payload.currency, context.baseCurrency);
+        const convertedAmount = await this.convertAmount(payload.amount, payload.currency, 'KRW', context.baseExchangeRate);
         const splitAmount = Number((convertedAmount / participantIds.length).toFixed(2));
         const pool = await (0, pool_1.getPool)();
         const client = await pool.connect();
@@ -297,12 +302,13 @@ let TravelExpenseService = class TravelExpenseService {
        ORDER BY pe.row_num`, [travelId, limit, (page - 1) * limit]);
         const total = Number(combinedResult.rows[0]?.total_count ?? 0);
         const items = await Promise.all(combinedResult.rows.map(async (row) => {
-            const convertedAmount = await this.convertAmount(Number(row.amount), row.currency, context.baseCurrency);
+            const amount = Number(row.amount);
+            const convertedAmount = await this.convertAmount(amount, row.currency, 'KRW', context.baseExchangeRate);
             return {
                 id: row.id,
                 title: row.title,
                 note: row.note,
-                amount: Number(row.amount),
+                amount,
                 currency: row.currency,
                 convertedAmount,
                 expenseDate: row.expense_date,
@@ -347,7 +353,7 @@ let TravelExpenseService = class TravelExpenseService {
             throw new common_1.BadRequestException('최소 한 명 이상의 참여자가 필요합니다.');
         }
         // 환율 변환
-        const convertedAmount = await this.convertAmount(payload.amount, payload.currency, context.baseCurrency);
+        const convertedAmount = await this.convertAmount(payload.amount, payload.currency, 'KRW', context.baseExchangeRate);
         const splitAmount = Number((convertedAmount / participantIds.length).toFixed(2));
         // 4. 트랜잭션으로 지출 수정
         const client = await pool.connect();

@@ -7,6 +7,7 @@ import { CacheService } from '../../services/cacheService';
 interface TravelContext {
   id: string;
   baseCurrency: string;
+  baseExchangeRate: number;
   memberIds: string[];
   memberNameMap: Map<string, string | null>;
 }
@@ -70,6 +71,7 @@ export class TravelExpenseService {
       `SELECT
          t.id::text,
          t.base_currency,
+         t.base_exchange_rate,
          json_agg(
            json_build_object(
              'id', tm.user_id::text,
@@ -99,6 +101,7 @@ export class TravelExpenseService {
     const context: TravelContext = {
       id: row.id,
       baseCurrency: row.base_currency || 'KRW',
+      baseExchangeRate: Number(row.base_exchange_rate ?? 0),
       memberIds,
       memberNameMap,
     };
@@ -112,6 +115,7 @@ export class TravelExpenseService {
     amount: number,
     currency: string,
     targetCurrency: string,
+    fallbackRate?: number,
   ): Promise<number> {
     if (currency === targetCurrency) {
       return amount;
@@ -120,6 +124,9 @@ export class TravelExpenseService {
       const conversion = await this.metaService.getExchangeRate(currency, targetCurrency, amount);
       return Number(conversion.quoteAmount);
     } catch (error) {
+      if (fallbackRate && targetCurrency === 'KRW' && currency !== targetCurrency) {
+        return Number((amount * fallbackRate).toFixed(2));
+      }
       // 환율 API 실패 시 fallback: 동일 금액 반환 (추가 오류 방지)
       return amount;
     }
@@ -214,7 +221,8 @@ export class TravelExpenseService {
     const convertedAmount = await this.convertAmount(
       payload.amount,
       payload.currency,
-      context.baseCurrency,
+      'KRW',
+      context.baseExchangeRate,
     );
     const splitAmount = Number((convertedAmount / participantIds.length).toFixed(2));
 
@@ -364,17 +372,19 @@ export class TravelExpenseService {
     const total = Number(combinedResult.rows[0]?.total_count ?? 0);
 
     const items = await Promise.all(combinedResult.rows.map(async (row) => {
+      const amount = Number(row.amount);
       const convertedAmount = await this.convertAmount(
-        Number(row.amount),
+        amount,
         row.currency,
-        context.baseCurrency
+        'KRW',
+        context.baseExchangeRate
       );
 
       return {
         id: row.id,
         title: row.title,
         note: row.note,
-        amount: Number(row.amount),
+        amount,
         currency: row.currency,
         convertedAmount,
         expenseDate: row.expense_date,
@@ -440,7 +450,8 @@ export class TravelExpenseService {
     const convertedAmount = await this.convertAmount(
       payload.amount,
       payload.currency,
-      context.baseCurrency,
+      'KRW',
+      context.baseExchangeRate,
     );
     const splitAmount = Number((convertedAmount / participantIds.length).toFixed(2));
 
