@@ -88,16 +88,14 @@ async function bootstrap() {
         contentSecurityPolicy: false,
     };
     app.use((0, helmet_1.default)(helmetOptions));
+    // API 성능: 소형 응답은 압축하지 않고, 속도 우선
     app.use((0, compression_1.default)({
-        threshold: 2048, // 2KB 이상만 압축: 작은 응답은 CPU 낭비 방지
-        level: node_zlib_1.constants.Z_BEST_SPEED, // 압축률 대신 속도 우선
+        threshold: 2048,
+        level: node_zlib_1.constants.Z_BEST_SPEED,
         windowBits: 15,
         filter: (req, res) => {
-            // 압축 제외 조건
-            if (req.headers['x-no-compression']) {
+            if (req.headers['x-no-compression'])
                 return false;
-            }
-            // 이미 압축된 파일 타입 제외
             const contentType = res.getHeader('content-type');
             if (contentType) {
                 const skipCompressionTypes = [
@@ -110,9 +108,8 @@ async function bootstrap() {
                     return false;
                 }
             }
-            // 매우 작은 응답은 압축하지 않음
             const contentLength = res.getHeader('content-length');
-            if (contentLength && parseInt(contentLength) < 512) {
+            if (contentLength && parseInt(contentLength) < 1024) { // 1KB 미만은 압축 안 함
                 return false;
             }
             return compression_1.default.filter(req, res);

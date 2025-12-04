@@ -69,7 +69,7 @@ export class ApiOptimizationInterceptor implements NestInterceptor {
         });
 
         // 느린 API 로깅
-        if (responseTime > 1000) {
+        if (responseTime > 500) { // 슬로우 로그 임계값 500ms로 단축
           this.logger.warn(`Slow API: ${method} ${endpoint} took ${responseTime.toFixed(2)}ms`, {
             userId,
             statusCode: response.statusCode,
@@ -80,9 +80,7 @@ export class ApiOptimizationInterceptor implements NestInterceptor {
         }
 
         // 매우 빠른 응답은 캐시된 것일 가능성
-        if (responseTime < 10 && !cacheHit) {
-          response.set('X-Cache', 'LIKELY');
-        }
+        // 아주 빠른 응답은 굳이 헤더 변형 안 함
       }),
       catchError((error) => {
         const endTime = process.hrtime.bigint();

@@ -694,7 +694,7 @@ let TravelService = TravelService_1 = class TravelService {
             throw new common_1.BadRequestException('이미 호스트입니다.');
         }
         await this.ensureTransaction(async (client) => {
-            const travelRow = await client.query(`SELECT owner_id FROM travels WHERE id = $1 LIMIT 1`, [travelId]);
+            const travelRow = await client.query(`SELECT owner_id FROM travels WHERE id = $1 LIMIT 1 FOR UPDATE`, [travelId]);
             if (!travelRow.rows[0]) {
                 throw new common_1.NotFoundException('여행을 찾을 수 없습니다.');
             }
@@ -797,22 +797,35 @@ let TravelService = TravelService_1 = class TravelService {
     }
     async leaveTravel(travelId, userId) {
         const pool = await (0, pool_1.getPool)();
-        const membership = await pool.query(`SELECT tm.role, t.owner_id,
-              (SELECT COUNT(*)::int FROM travel_members WHERE travel_id = $1) AS member_count
-       FROM travel_members tm
-       INNER JOIN travels t ON t.id = tm.travel_id
-       WHERE tm.travel_id = $1 AND tm.user_id = $2
-       LIMIT 1`, [travelId, userId]);
-        const row = membership.rows[0];
-        if (!row) {
-            throw new common_1.NotFoundException('여행을 찾을 수 없거나 멤버가 아닙니다.');
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            const membership = await client.query(`SELECT tm.role, t.owner_id,
+                (SELECT COUNT(*)::int FROM travel_members WHERE travel_id = $1) AS member_count
+         FROM travel_members tm
+         INNER JOIN travels t ON t.id = tm.travel_id
+         WHERE tm.travel_id = $1 AND tm.user_id = $2
+         LIMIT 1
+         FOR UPDATE`, [travelId, userId]);
+            const row = membership.rows[0];
+            if (!row) {
+                throw new common_1.NotFoundException('여행을 찾을 수 없거나 멤버가 아닙니다.');
+            }
+            // 소유자(owner)는 여행을 나갈 수 없음
+            if (row.role === 'owner' || row.owner_id === userId) {
+                throw new common_1.ForbiddenException('여행 호스트는 나갈 수 없습니다. 다른 멤버에게 호스트 권한을 위임하거나 여행을 삭제해주세요.');
+            }
+            // 일반 멤버 탈퇴: 멤버만 제거, 데이터 유지
+            await client.query(`DELETE FROM travel_members WHERE travel_id = $1 AND user_id = $2`, [travelId, userId]);
+            await client.query('COMMIT');
         }
-        // 소유자(owner)는 여행을 나갈 수 없음
-        if (row.role === 'owner' || row.owner_id === userId) {
-            throw new common_1.ForbiddenException('여행 호스트는 나갈 수 없습니다. 다른 멤버에게 호스트 권한을 위임하거나 여행을 삭제해주세요.');
+        catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
         }
-        // 일반 멤버 탈퇴: 멤버만 제거, 데이터 유지
-        await pool.query(`DELETE FROM travel_members WHERE travel_id = $1 AND user_id = $2`, [travelId, userId]);
+        finally {
+            client.release();
+        }
         // 멤버 탈퇴 후 관련 캐시 무효화
         this.invalidateUserTravelCache(userId);
         this.invalidateTravelDetailCache(travelId);
@@ -824,46 +837,61 @@ let TravelService = TravelService_1 = class TravelService {
     }
     async updateTravel(travelId, userId, payload) {
         const pool = await (0, pool_1.getPool)();
-        const result = await pool.query(`UPDATE travels
-       SET title = $3,
-           start_date = $4,
-           end_date = $5,
-           country_code = $6,
-           country_name_kr = $7,
-           base_currency = $8,
-           base_exchange_rate = $9,
-           status = CASE WHEN $5 < CURRENT_DATE THEN 'archived' ELSE 'active' END,
-           updated_at = NOW()
-       WHERE id = $1 AND owner_id = $2
-       RETURNING
-         id::text AS id,
-         title,
-         start_date::text,
-         end_date::text,
-         country_code,
-         country_name_kr,
-         base_currency,
-         base_exchange_rate,
-         invite_code,
-         status,
-         created_at::text`, [
-            travelId,
-            userId,
-            payload.title,
-            payload.startDate,
-            payload.endDate,
-            payload.countryCode,
-            payload.countryNameKr,
-            payload.baseCurrency,
-            payload.baseExchangeRate,
-        ]);
-        const travelRow = result.rows[0];
-        if (!travelRow) {
-            const exists = await pool.query(`SELECT 1 FROM travels WHERE id = $1 LIMIT 1`, [travelId]);
-            if (!exists.rows[0]) {
-                throw new common_1.NotFoundException('여행을 찾을 수 없습니다.');
+        const client = await pool.connect();
+        let travelRow;
+        try {
+            await client.query('BEGIN');
+            // 소유자 확인 + 행 잠금
+            const ownerCheck = await client.query(`SELECT 1 FROM travels WHERE id = $1 AND owner_id = $2 LIMIT 1 FOR UPDATE`, [travelId, userId]);
+            if (!ownerCheck.rows[0]) {
+                const exists = await client.query(`SELECT 1 FROM travels WHERE id = $1 LIMIT 1`, [travelId]);
+                if (!exists.rows[0]) {
+                    throw new common_1.NotFoundException('여행을 찾을 수 없습니다.');
+                }
+                throw new common_1.ForbiddenException('여행 수정 권한이 없습니다.');
             }
-            throw new common_1.ForbiddenException('여행 수정 권한이 없습니다.');
+            const result = await client.query(`UPDATE travels
+         SET title = $3,
+             start_date = $4,
+             end_date = $5,
+             country_code = $6,
+             country_name_kr = $7,
+             base_currency = $8,
+             base_exchange_rate = $9,
+             status = CASE WHEN $5 < CURRENT_DATE THEN 'archived' ELSE 'active' END,
+             updated_at = NOW()
+         WHERE id = $1 AND owner_id = $2
+         RETURNING
+           id::text AS id,
+           title,
+           start_date::text,
+           end_date::text,
+           country_code,
+           country_name_kr,
+           base_currency,
+           base_exchange_rate,
+           invite_code,
+           status,
+           created_at::text`, [
+                travelId,
+                userId,
+                payload.title,
+                payload.startDate,
+                payload.endDate,
+                payload.countryCode,
+                payload.countryNameKr,
+                payload.baseCurrency,
+                payload.baseExchangeRate,
+            ]);
+            travelRow = result.rows[0];
+            await client.query('COMMIT');
+        }
+        catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        }
+        finally {
+            client.release();
         }
         // 수정 후 관련 캐시 무효화
         this.invalidateTravelDetailCache(travelId);
@@ -889,7 +917,23 @@ let TravelService = TravelService_1 = class TravelService {
         if (ownerId === memberId) {
             throw new common_1.BadRequestException('호스트는 스스로를 삭제할 수 없습니다.');
         }
-        await pool.query(`DELETE FROM travel_members WHERE travel_id = $1 AND user_id = $2`, [travelId, memberId]);
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            const target = await client.query(`SELECT 1 FROM travel_members WHERE travel_id = $1 AND user_id = $2 FOR UPDATE`, [travelId, memberId]);
+            if (!target.rows[0]) {
+                throw new common_1.NotFoundException('멤버를 찾을 수 없습니다.');
+            }
+            await client.query(`DELETE FROM travel_members WHERE travel_id = $1 AND user_id = $2`, [travelId, memberId]);
+            await client.query('COMMIT');
+        }
+        catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        }
+        finally {
+            client.release();
+        }
         // 멤버 삭제 후 캐시 무효화
         this.invalidateUserTravelCache(memberId);
         this.invalidateTravelDetailCache(travelId);

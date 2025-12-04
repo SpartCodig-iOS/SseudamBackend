@@ -51,7 +51,7 @@ let ApiOptimizationInterceptor = ApiOptimizationInterceptor_1 = class ApiOptimiz
                 timestamp: new Date().toISOString(),
             });
             // 느린 API 로깅
-            if (responseTime > 1000) {
+            if (responseTime > 500) { // 슬로우 로그 임계값 500ms로 단축
                 this.logger.warn(`Slow API: ${method} ${endpoint} took ${responseTime.toFixed(2)}ms`, {
                     userId,
                     statusCode: response.statusCode,
@@ -61,9 +61,7 @@ let ApiOptimizationInterceptor = ApiOptimizationInterceptor_1 = class ApiOptimiz
                 });
             }
             // 매우 빠른 응답은 캐시된 것일 가능성
-            if (responseTime < 10 && !cacheHit) {
-                response.set('X-Cache', 'LIKELY');
-            }
+            // 아주 빠른 응답은 굳이 헤더 변형 안 함
         }), (0, operators_1.catchError)((error) => {
             const endTime = process.hrtime.bigint();
             const responseTime = Number(endTime - startTime) / 1000000;

@@ -18,7 +18,7 @@ let TravelSettlementService = class TravelSettlementService {
     constructor(cacheService) {
         this.cacheService = cacheService;
         this.SETTLEMENT_PREFIX = 'settlement:summary';
-        this.SETTLEMENT_TTL = 5 * 60; // 5분
+        this.SETTLEMENT_TTL = 60; // 1분으로 단축 (실시간성 강화)
     }
     async ensureTransaction(callback, poolInput) {
         const pool = poolInput ?? (await (0, pool_1.getPool)());

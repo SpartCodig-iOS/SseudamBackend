@@ -57,18 +57,15 @@ async function bootstrap() {
   };
 
   app.use(helmet(helmetOptions));
+  // API 성능: 소형 응답은 압축하지 않고, 속도 우선
   app.use(
     compression({
-      threshold: 2048, // 2KB 이상만 압축: 작은 응답은 CPU 낭비 방지
-      level: zlibConstants.Z_BEST_SPEED, // 압축률 대신 속도 우선
+      threshold: 2048,
+      level: zlibConstants.Z_BEST_SPEED,
       windowBits: 15,
       filter: (req, res) => {
-        // 압축 제외 조건
-        if (req.headers['x-no-compression']) {
-          return false;
-        }
+        if (req.headers['x-no-compression']) return false;
 
-        // 이미 압축된 파일 타입 제외
         const contentType = res.getHeader('content-type') as string;
         if (contentType) {
           const skipCompressionTypes = [
@@ -82,9 +79,8 @@ async function bootstrap() {
           }
         }
 
-        // 매우 작은 응답은 압축하지 않음
         const contentLength = res.getHeader('content-length');
-        if (contentLength && parseInt(contentLength as string) < 512) {
+        if (contentLength && parseInt(contentLength as string) < 1024) { // 1KB 미만은 압축 안 함
           return false;
         }
 

@@ -33,7 +33,7 @@ export interface SettlementSummary {
 @Injectable()
 export class TravelSettlementService {
   private readonly SETTLEMENT_PREFIX = 'settlement:summary';
-  private readonly SETTLEMENT_TTL = 5 * 60; // 5분
+  private readonly SETTLEMENT_TTL = 60; // 1분으로 단축 (실시간성 강화)
 
   constructor(private readonly cacheService: CacheService) {}
 

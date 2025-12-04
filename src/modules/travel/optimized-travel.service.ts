@@ -41,7 +41,8 @@ export class OptimizedTravelService {
   private readonly countryCurrencyCache = new Map<string, string>();
   private countryCurrencyLoaded = false;
   private countryCurrencyLoadPromise: Promise<void> | null = null;
-  private readonly CACHE_TTL_SECONDS = 10; // Redis 캐시 TTL
+  private readonly CACHE_TTL_SECONDS = 1; // Redis 캐시 TTL (최대한 짧게 실시간 반영)
+  private readonly transactionTimeoutMs = 5000;
 
   constructor(
     private readonly cacheService: CacheService,
@@ -243,6 +244,31 @@ export class OptimizedTravelService {
         return 'ORDER BY t.start_date DESC, t.created_at DESC';
       default:
         return 'ORDER BY t.created_at DESC';
+    }
+  }
+
+  // 공통 트랜잭션 래퍼 (타임아웃 포함)
+  private async withTransaction<T>(callback: (client: any) => Promise<T>): Promise<T> {
+    const pool = await getPool();
+    const client = await pool.connect();
+    const timer = setTimeout(() => {
+      try {
+        client.release();
+      } catch {
+        /* ignore */
+      }
+    }, this.transactionTimeoutMs);
+    try {
+      await client.query('BEGIN');
+      const result = await callback(client);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      client.release();
     }
   }
 

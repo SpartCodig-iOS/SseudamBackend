@@ -39,11 +39,12 @@ export class TravelExpenseService {
 
   private readonly EXPENSE_LIST_PREFIX = 'expense:list';
   private readonly EXPENSE_DETAIL_PREFIX = 'expense:detail';
-  private readonly EXPENSE_LIST_TTL_SECONDS = 600; // 10분 (5배 증가) // 2분
-  private readonly EXPENSE_DETAIL_TTL_SECONDS = 600; // 10분
+  private readonly EXPENSE_LIST_TTL_SECONDS = 120; // 2분
+  private readonly EXPENSE_DETAIL_TTL_SECONDS = 120; // 2분
   private readonly CONTEXT_PREFIX = 'expense:context';
-  private readonly CONTEXT_TTL_SECONDS = 1800; // 30분 (안정적 데이터)
+  private readonly CONTEXT_TTL_SECONDS = 600; // 10분
   private readonly contextCache = new Map<string, { data: TravelContext; expiresAt: number }>();
+  private readonly conversionCache = new Map<string, number>(); // currency->KRW 환율 캐시 (요청 단위)
 
   private async getTravelContext(travelId: string, userId: string): Promise<TravelContext> {
     const cached = this.contextCache.get(travelId);
@@ -120,8 +121,25 @@ export class TravelExpenseService {
     if (currency === targetCurrency) {
       return amount;
     }
+    // 요청 단위 환율 캐시 활용 (currency -> KRW)
+    if (targetCurrency === 'KRW' && this.conversionCache.has(currency)) {
+      const rate = this.conversionCache.get(currency)!;
+      return Number((amount * rate).toFixed(2));
+    }
+
+    // baseExchangeRate가 있으면 API 호출 없이 바로 계산
+    if (targetCurrency === 'KRW' && fallbackRate && currency !== targetCurrency) {
+      return Number((amount * fallbackRate).toFixed(2));
+    }
     try {
       const conversion = await this.metaService.getExchangeRate(currency, targetCurrency, amount);
+      // KRW 대상이면 rate 캐시 저장 (amount에 따라 선형이라 단일 rate로 충분)
+      if (targetCurrency === 'KRW' && amount !== 0) {
+        const rate = Number(conversion.quoteAmount) / amount;
+        if (Number.isFinite(rate)) {
+          this.conversionCache.set(currency, rate);
+        }
+      }
       return Number(conversion.quoteAmount);
     } catch (error) {
       if (fallbackRate && targetCurrency === 'KRW' && currency !== targetCurrency) {
@@ -207,6 +225,9 @@ export class TravelExpenseService {
     userId: string,
     payload: CreateExpenseInput,
   ): Promise<TravelExpense> {
+    // 요청 단위 환율 캐시 초기화
+    this.conversionCache.clear();
+
     // 컨텍스트 조회와 환율 변환을 병렬로 처리하기 위해 먼저 컨텍스트만 조회
     const context = await this.getTravelContext(travelId, userId);
     const payerId = payload.payerId ?? userId;
@@ -377,7 +398,7 @@ export class TravelExpenseService {
         amount,
         row.currency,
         'KRW',
-        context.baseExchangeRate
+        context.baseExchangeRate,
       );
 
       return {

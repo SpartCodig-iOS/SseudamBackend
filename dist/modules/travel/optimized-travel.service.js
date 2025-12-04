@@ -26,7 +26,8 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
         this.countryCurrencyCache = new Map();
         this.countryCurrencyLoaded = false;
         this.countryCurrencyLoadPromise = null;
-        this.CACHE_TTL_SECONDS = 10; // Redis 캐시 TTL
+        this.CACHE_TTL_SECONDS = 1; // Redis 캐시 TTL (최대한 짧게 실시간 반영)
+        this.transactionTimeoutMs = 5000;
         this.transformTravelRow = (row) => {
             const destinationCurrency = this.resolveDestinationCurrency(row.country_code, row.base_currency);
             const result = {
@@ -206,6 +207,33 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
                 return 'ORDER BY t.start_date DESC, t.created_at DESC';
             default:
                 return 'ORDER BY t.created_at DESC';
+        }
+    }
+    // 공통 트랜잭션 래퍼 (타임아웃 포함)
+    async withTransaction(callback) {
+        const pool = await (0, pool_1.getPool)();
+        const client = await pool.connect();
+        const timer = setTimeout(() => {
+            try {
+                client.release();
+            }
+            catch {
+                /* ignore */
+            }
+        }, this.transactionTimeoutMs);
+        try {
+            await client.query('BEGIN');
+            const result = await callback(client);
+            await client.query('COMMIT');
+            return result;
+        }
+        catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        }
+        finally {
+            clearTimeout(timer);
+            client.release();
         }
     }
     buildStatusCondition(status, alias) {

@@ -10,6 +10,7 @@ import * as Sentry from '@sentry/node';
 import { ZodError, ZodIssue } from 'zod';
 import { logger } from '../../utils/logger';
 import { env } from '../../config/env';
+import { DatabaseError } from 'pg';
 
 const formatZodIssue = (issue: ZodIssue) => ({
   path: issue.path,
@@ -29,6 +30,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
+    const normalizeDbError = (err: DatabaseError) => {
+      const code = err.code;
+      // PostgreSQL 에러코드 매핑 (https://www.postgresql.org/docs/current/errcodes-appendix.html)
+      if (code === '23505') return { status: HttpStatus.CONFLICT, message: '이미 존재하는 데이터입니다.' };
+      if (code === '23503') return { status: HttpStatus.BAD_REQUEST, message: '관련된 데이터가 남아 있어 삭제/수정할 수 없습니다.' };
+      if (code === '23514') return { status: HttpStatus.BAD_REQUEST, message: '데이터 제약 조건을 위반했습니다.' };
+      return null;
+    };
 
     if (exception instanceof ZodError) {
       const issues = exception.issues.map(formatZodIssue);
@@ -68,6 +77,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     const status = HttpStatus.INTERNAL_SERVER_ERROR;
     const message = (exception as Error)?.message || 'Internal Server Error';
+    // DB 에러라면 공통 매핑 시도
+    if ((exception as any)?.code && (exception as any)?.severity) {
+      const mapped = normalizeDbError(exception as DatabaseError);
+      if (mapped) {
+        return response.status(mapped.status).json({
+          code: mapped.status,
+          data: [],
+          message: mapped.message,
+        });
+      }
+    }
     logger.error('Unhandled exception', { message, stack: (exception as Error)?.stack });
     this.capture(exception);
 

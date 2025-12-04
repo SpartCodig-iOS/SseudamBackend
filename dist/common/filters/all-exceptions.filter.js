@@ -61,6 +61,17 @@ let AllExceptionsFilter = class AllExceptionsFilter {
     catch(exception, host) {
         const ctx = host.switchToHttp();
         const response = ctx.getResponse();
+        const normalizeDbError = (err) => {
+            const code = err.code;
+            // PostgreSQL 에러코드 매핑 (https://www.postgresql.org/docs/current/errcodes-appendix.html)
+            if (code === '23505')
+                return { status: common_1.HttpStatus.CONFLICT, message: '이미 존재하는 데이터입니다.' };
+            if (code === '23503')
+                return { status: common_1.HttpStatus.BAD_REQUEST, message: '관련된 데이터가 남아 있어 삭제/수정할 수 없습니다.' };
+            if (code === '23514')
+                return { status: common_1.HttpStatus.BAD_REQUEST, message: '데이터 제약 조건을 위반했습니다.' };
+            return null;
+        };
         if (exception instanceof zod_1.ZodError) {
             const issues = exception.issues.map(formatZodIssue);
             logger_1.logger.info('Validation failed', { issues });
@@ -94,6 +105,17 @@ let AllExceptionsFilter = class AllExceptionsFilter {
         }
         const status = common_1.HttpStatus.INTERNAL_SERVER_ERROR;
         const message = exception?.message || 'Internal Server Error';
+        // DB 에러라면 공통 매핑 시도
+        if (exception?.code && exception?.severity) {
+            const mapped = normalizeDbError(exception);
+            if (mapped) {
+                return response.status(mapped.status).json({
+                    code: mapped.status,
+                    data: [],
+                    message: mapped.message,
+                });
+            }
+        }
         logger_1.logger.error('Unhandled exception', { message, stack: exception?.stack });
         this.capture(exception);
         return response.status(status).json({
