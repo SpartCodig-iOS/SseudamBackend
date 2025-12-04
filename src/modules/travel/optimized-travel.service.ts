@@ -18,6 +18,7 @@ interface OptimizedTravelSummary {
   startDate: string;
   endDate: string;
   countryCode: string;
+  countryNameKr?: string;
   baseCurrency: string;
   baseExchangeRate: number;
   inviteCode?: string;
@@ -127,6 +128,7 @@ export class OptimizedTravelService {
            t.start_date::text AS start_date,
            t.end_date::text AS end_date,
            t.country_code,
+           t.country_name_kr,
            t.base_currency,
            t.base_exchange_rate,
            ti.invite_code,
@@ -165,6 +167,7 @@ export class OptimizedTravelService {
            t.start_date::text AS start_date,
            t.end_date::text AS end_date,
            t.country_code,
+           t.country_name_kr,
            t.base_currency,
            t.base_exchange_rate,
            ti.invite_code,
@@ -196,6 +199,7 @@ export class OptimizedTravelService {
       startDate: row.start_date,
       endDate: row.end_date,
       countryCode: row.country_code,
+      countryNameKr: row.country_name_kr,
       baseCurrency: row.base_currency,
       baseExchangeRate: parseFloat(row.base_exchange_rate),
       inviteCode: row.invite_code,
@@ -235,6 +239,7 @@ export class OptimizedTravelService {
          t.start_date::text,
          t.end_date::text,
          t.country_code,
+         t.country_name_kr,
          t.base_currency,
          t.base_exchange_rate,
          t.invite_code,
@@ -337,6 +342,7 @@ export class OptimizedTravelService {
            t.start_date::text,
            t.end_date::text,
            t.country_code,
+           t.country_name_kr,
            t.base_currency,
            t.base_exchange_rate,
            t.invite_code,
