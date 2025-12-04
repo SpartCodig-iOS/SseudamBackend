@@ -13,7 +13,7 @@ import { appleRevokeSchema, oauthTokenSchema } from '../../validators/authSchema
 import { success } from '../../types/api';
 import { LoginResponseDto } from '../auth/dto/auth-response.dto';
 import { SocialLookupResponseDto } from './dto/oauth-response.dto';
-import { buildAuthSessionResponse } from '../auth/auth-response.util';
+import { buildLightweightAuthResponse } from '../auth/auth-response.util';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RequestWithUser } from '../../types/request';
 
@@ -40,7 +40,7 @@ export class OAuthController {
         redirectUri: payload.redirectUri,
       },
     );
-    return success(buildAuthSessionResponse(result), message);
+    return success(buildLightweightAuthResponse(result), message);
   }
 
   @Post('signup')

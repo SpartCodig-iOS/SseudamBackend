@@ -23,10 +23,10 @@ let OptimizedOAuthService = OptimizedOAuthService_1 = class OptimizedOAuthServic
         this.supabaseService = supabaseService;
         this.logger = new common_1.Logger(OptimizedOAuthService_1.name);
         this.FAST_OAUTH_CACHE_PREFIX = 'fast_oauth';
-        this.FAST_OAUTH_CACHE_TTL = 10 * 60; // 10분으로 확대해 재사용률 향상
+        this.FAST_OAUTH_CACHE_TTL = 3 * 60; // 3분으로 단축 (메모리 최적화)
         this.FAST_OAUTH_REDIS_PREFIX = 'oauth_fast';
         this.LOOKUP_REDIS_PREFIX = 'lookup';
-        this.LOOKUP_TTL = 5 * 60; // 5분
+        this.LOOKUP_TTL = 2 * 60; // 2분으로 단축
     }
     getFastCacheKey(accessToken, loginType) {
         const hash = (0, crypto_1.createHash)('sha256').update(`${accessToken}:${loginType}`).digest('hex');
@@ -54,19 +54,13 @@ let OptimizedOAuthService = OptimizedOAuthService_1 = class OptimizedOAuthServic
             }
             // 2. 백그라운드 캐시 설정과 함께 OAuth 처리
             const resultPromise = this.socialAuthService.loginWithOAuthToken(accessToken, loginType, options);
-            // 3. 결과를 캐시에 저장 (다음 동일한 요청을 위해)
-            resultPromise.then((result) => {
-                this.cacheService.set(cacheKey, result, {
-                    ttl: this.FAST_OAUTH_CACHE_TTL,
-                    prefix: this.FAST_OAUTH_REDIS_PREFIX,
-                })
-                    .catch(err => this.logger.warn(`Failed to cache OAuth result: ${err.message}`));
-            });
+            // 3. 결과를 즉시 받고 백그라운드에서 캐싱
             const result = await resultPromise;
-            // 🔄 새로운 세션 생성 후 관련 캐시 무효화 (백그라운드)
-            if (result.user?.id) {
-                void this.socialAuthService.invalidateUserCaches(result.user.id).catch(error => this.logger.warn(`Failed to invalidate OAuth caches for ${result.user.id}:`, error));
-            }
+            // 백그라운드 캐싱 (응답 시간에 영향 없음)
+            this.cacheService.set(cacheKey, result, {
+                ttl: this.FAST_OAUTH_CACHE_TTL,
+                prefix: this.FAST_OAUTH_REDIS_PREFIX,
+            }).catch(err => this.logger.warn(`Failed to cache OAuth result: ${err.message}`));
             const duration = Date.now() - startTime;
             // this.logger.debug(`Fast OAuth login completed: ${duration}ms`);
             return result;

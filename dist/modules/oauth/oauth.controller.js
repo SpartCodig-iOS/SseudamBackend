@@ -38,7 +38,7 @@ let OAuthController = class OAuthController {
             codeVerifier: payload.codeVerifier,
             redirectUri: payload.redirectUri,
         });
-        return (0, api_1.success)((0, auth_response_util_1.buildAuthSessionResponse)(result), message);
+        return (0, api_1.success)((0, auth_response_util_1.buildLightweightAuthResponse)(result), message);
     }
     async issueToken(body) {
         return this.handleOAuthLogin(body, 'Login successful');
