@@ -18,6 +18,7 @@ export class ProfileService {
   private readonly storageAvatarCache = new Map<string, { url: string; expiresAt: number }>();
   private readonly STORAGE_AVATAR_TTL = 5 * 60 * 1000; // 5분 캐시
   private readonly AVATAR_CACHE_PREFIX = 'avatar';
+  private readonly AVATAR_FETCH_TIMEOUT_MS = 300; // 아바타 동기 조회 타임아웃 단축
 
   constructor(private readonly cacheService: CacheService) {}
 
@@ -468,14 +469,15 @@ export class ProfileService {
     const cachedStorage = this.getCachedStorageAvatar(userId);
     if (cachedStorage) return cachedStorage;
 
+    const effectiveTimeout = Math.min(timeoutMs, this.AVATAR_FETCH_TIMEOUT_MS);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const timeout = setTimeout(() => controller.abort(), effectiveTimeout);
 
     try {
       const avatar = await Promise.race([
         this.resolveAvatarFromStorage(userId),
         new Promise<string | null>((_, reject) => {
-          setTimeout(() => reject(new Error('storage-timeout')), timeoutMs);
+          setTimeout(() => reject(new Error('storage-timeout')), effectiveTimeout);
         })
       ]);
 
