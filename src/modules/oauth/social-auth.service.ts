@@ -391,9 +391,10 @@ export class SocialAuthService {
       // this.logger.debug(`OAuth user cache hit for token ${accessToken.substring(0, 10)}...`);
       const resolvedLoginType = this.resolveLoginType(loginType);
       let userForSession = cachedUser;
+      const needsProfileHydration = !cachedUser.name || !cachedUser.avatar_url;
 
-      // 캐시에 이름/아바타가 없거나 소셜 로그인이라면 Supabase 데이터로 즉시 보강
-      if (!cachedUser.name || !cachedUser.avatar_url || (resolvedLoginType !== 'email' && resolvedLoginType !== 'username')) {
+      // 캐시에 충분한 프로필이 있으면 Supabase 네트워크 호출을 생략해 응답 지연을 줄임
+      if (needsProfileHydration) {
         try {
           const supabaseUser = await this.supabaseService.getUserFromToken(accessToken);
           const detectedLoginType = this.resolveLoginType(resolvedLoginType, supabaseUser);
@@ -423,6 +424,25 @@ export class SocialAuthService {
         } catch (error) {
           this.logger.warn(`Cache-hit profile refresh skipped: ${error instanceof Error ? error.message : error}`);
         }
+      } else if ((resolvedLoginType === 'apple' || resolvedLoginType === 'google') && options.authorizationCode) {
+        // 프로필은 캐시로 충분하지만 auth code가 왔으면 리프레시 토큰 교환만 백그라운드로 처리
+        const exchangePromise = resolvedLoginType === 'apple'
+          ? this.exchangeAppleAuthorizationCode(options.authorizationCode)
+          : this.exchangeGoogleAuthorizationCode(options.authorizationCode, {
+            codeVerifier: options.codeVerifier,
+            redirectUri: options.redirectUri,
+          });
+
+        exchangePromise
+          .then((refreshToken) => {
+            if (resolvedLoginType === 'apple') {
+              return this.supabaseService.saveAppleRefreshToken(userForSession.id, refreshToken);
+            }
+            return this.supabaseService.saveGoogleRefreshToken(userForSession.id, refreshToken);
+          })
+          .catch((error) => {
+            this.logger.warn(`Background social token exchange failed for cached user ${userForSession.id}: ${error instanceof Error ? error.message : error}`);
+          });
       }
 
       const authSession = await this.authService.createAuthSession(userForSession, resolvedLoginType);
