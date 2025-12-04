@@ -98,7 +98,7 @@ export class TravelExpenseService {
     });
     const context: TravelContext = {
       id: row.id,
-      baseCurrency: row.base_currency,
+      baseCurrency: row.base_currency || 'KRW',
       memberIds,
       memberNameMap,
     };
@@ -116,8 +116,13 @@ export class TravelExpenseService {
     if (currency === targetCurrency) {
       return amount;
     }
-    const conversion = await this.metaService.getExchangeRate(currency, targetCurrency, amount);
-    return Number(conversion.quoteAmount);
+    try {
+      const conversion = await this.metaService.getExchangeRate(currency, targetCurrency, amount);
+      return Number(conversion.quoteAmount);
+    } catch (error) {
+      // 환율 API 실패 시 fallback: 동일 금액 반환 (추가 오류 방지)
+      return amount;
+    }
   }
 
   private normalizeParticipants(memberIds: string[], provided?: string[]): string[] {
@@ -297,7 +302,7 @@ export class TravelExpenseService {
     userId: string,
     pagination: { page?: number; limit?: number } = {},
   ): Promise<{ total: number; page: number; limit: number; items: TravelExpense[] }> {
-    await this.getTravelContext(travelId, userId);
+    const context = await this.getTravelContext(travelId, userId);
     const pool = await getPool();
     const page = Math.max(1, pagination.page ?? 1);
     const limit = Math.min(100, Math.max(1, pagination.limit ?? 20));
@@ -358,19 +363,25 @@ export class TravelExpenseService {
 
     const total = combinedResult.rows[0]?.total_count ?? 0;
 
-    const items = combinedResult.rows.map((row) => ({
-      id: row.id,
-      title: row.title,
-      note: row.note,
-      amount: Number(row.amount),
-      currency: row.currency,
-      convertedAmount: Number(row.converted_amount),
-      expenseDate: row.expense_date,
-      category: row.category,
-      payerId: row.payer_id,
-      payerName: row.payer_name ?? null,
-      authorId: row.author_id,
-      participants: Array.isArray(row.participants) ? row.participants : [],
+    const items = await Promise.all(combinedResult.rows.map(async (row) => {
+      const convertedAmount = row.converted_amount !== null && row.converted_amount !== undefined
+        ? Number(row.converted_amount)
+        : await this.convertAmount(Number(row.amount), row.currency, context.baseCurrency);
+
+      return {
+        id: row.id,
+        title: row.title,
+        note: row.note,
+        amount: Number(row.amount),
+        currency: row.currency,
+        convertedAmount,
+        expenseDate: row.expense_date,
+        category: row.category,
+        payerId: row.payer_id,
+        payerName: row.payer_name ?? null,
+        authorId: row.author_id,
+        participants: Array.isArray(row.participants) ? row.participants : [],
+      };
     }));
 
     // 캐시에 저장

@@ -30,7 +30,7 @@ let ProfileService = ProfileService_1 = class ProfileService {
         this.storageAvatarCache = new Map();
         this.STORAGE_AVATAR_TTL = 5 * 60 * 1000; // 5분 캐시
         this.AVATAR_CACHE_PREFIX = 'avatar';
-        this.AVATAR_FETCH_TIMEOUT_MS = 300; // 아바타 동기 조회 타임아웃 단축
+        this.AVATAR_FETCH_TIMEOUT_MS = 1200; // 아바타 동기 조회 타임아웃 (초기 조회 실패 방지)
         // 프로필 캐시: 10분 TTL, 최대 1000개
         this.profileCache = new Map();
         this.PROFILE_CACHE_TTL = 15 * 60 * 1000; // 15분으로 확대해 캐시 적중률 향상

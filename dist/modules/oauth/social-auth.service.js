@@ -443,7 +443,9 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         if (decoded?.sub) {
             try {
                 const userId = decoded.sub;
-                const profile = await this.supabaseService.findProfileById(userId);
+                // 캐시 우선으로 프로필 스냅샷 확보 (created_at/updated_at 포함)
+                const cachedProfile = await this.cacheService.get(`profile:${userId}`).catch(() => null);
+                const profile = cachedProfile ?? await this.supabaseService.findProfileById(userId);
                 const email = profile?.email ?? decoded.email ?? '';
                 // 이메일이 없으면 정상 세션 생성이 어려우므로 네트워크 경로로 폴백
                 if (email) {
@@ -459,6 +461,10 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                         created_at: profile?.created_at ? new Date(profile.created_at) : null,
                         updated_at: profile?.updated_at ? new Date(profile.updated_at) : null,
                     };
+                    // 프로필을 캐시에 채워 넣어 후속 요청 가속
+                    if (profile && !cachedProfile) {
+                        void this.cacheService.set(`profile:${userId}`, profile, { ttl: 600 }).catch(() => undefined);
+                    }
                     // 세션 즉시 생성
                     const authSession = await this.authService.createAuthSession(userRecord, detectedLoginType);
                     void this.setCachedOAuthUser(accessToken, userRecord);

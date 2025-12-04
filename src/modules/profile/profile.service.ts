@@ -19,7 +19,7 @@ export class ProfileService {
   private readonly storageAvatarCache = new Map<string, { url: string; expiresAt: number }>();
   private readonly STORAGE_AVATAR_TTL = 5 * 60 * 1000; // 5분 캐시
   private readonly AVATAR_CACHE_PREFIX = 'avatar';
-  private readonly AVATAR_FETCH_TIMEOUT_MS = 300; // 아바타 동기 조회 타임아웃 단축
+  private readonly AVATAR_FETCH_TIMEOUT_MS = 1200; // 아바타 동기 조회 타임아웃 (초기 조회 실패 방지)
 
   constructor(
     private readonly cacheService: CacheService,
