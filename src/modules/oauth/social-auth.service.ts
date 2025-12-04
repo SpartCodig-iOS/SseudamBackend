@@ -469,97 +469,73 @@ export class SocialAuthService {
     const decoded = this.decodeAccessToken(accessToken);
     if (decoded?.sub) {
       try {
-        let profile = await this.supabaseService.findProfileById(decoded.sub);
-        let supabaseUser: any | null = null;
+        const userId = decoded.sub as string;
+        const email = decoded.email ?? '';
+        const cachedProfile = await this.cacheService.get<UserRecord>(`profile:${userId}`).catch(() => null);
 
-        // 항상 Supabase Admin으로 최신 사용자 조회 (provider/metadata 확보)
-        try {
-          supabaseUser = await this.supabaseService.getUserById(decoded.sub);
-          mark('admin-getUserById');
-        } catch (adminError) {
-          this.logger.warn(`Offline path admin fetch failed for ${decoded.sub}:`, adminError as Error);
-        }
-
-        const detectedLoginType = this.resolveLoginType(loginType, supabaseUser);
-        const preferDisplayName = detectedLoginType !== 'email' && detectedLoginType !== 'username';
-
-        // 소셜/미등록 프로필은 강제로 생성/업데이트
-        if (supabaseUser && (!profile || detectedLoginType !== 'email')) {
-          try {
-            await this.supabaseService.ensureProfileFromSupabaseUser(supabaseUser, detectedLoginType);
-            profile = await this.supabaseService.findProfileById(decoded.sub);
-            mark('offline-ensureProfile');
-          } catch (ensureError) {
-            this.logger.warn(`Offline path ensureProfile failed for ${decoded.sub}:`, ensureError as Error);
-          }
-        }
-
-        const email =
-          profile?.email ??
-          (supabaseUser?.email as string | undefined) ??
-          decoded.email ??
-          '';
-
+        // 이메일이 없으면 정상 세션 생성이 어려우므로 네트워크 경로로 폴백
         if (email) {
-          const userRecord: UserRecord = supabaseUser
-            ? fromSupabaseUser(supabaseUser, { preferDisplayName })
-            : {
-                id: profile?.id ?? decoded.sub,
-                email,
-                name: (profile?.name as string | null) ?? decoded.name ?? null,
-                avatar_url: (profile?.avatar_url as string | null) ?? null,
-                username: profile?.username ?? email.split('@')[0] ?? decoded.sub,
-                password_hash: '',
-                role: (profile?.role as UserRecord['role']) ?? 'user',
-                created_at: profile?.created_at ? new Date(profile.created_at) : null,
-                updated_at: profile?.updated_at ? new Date(profile.updated_at) : null,
-              };
+          const detectedLoginType = this.resolveLoginType(loginType);
 
-          // 토큰 저장 (Supabase metadata + code exchange 포함)
-          const appleTokenFromUser =
-            (supabaseUser?.user_metadata as any)?.apple_refresh_token ?? null;
-          const googleTokenFromUser =
-            (supabaseUser?.user_metadata as any)?.google_refresh_token ?? null;
+          const userRecord: UserRecord = {
+            id: userId,
+            email,
+            name: cachedProfile?.name ?? decoded.name ?? null,
+            avatar_url: cachedProfile?.avatar_url ?? null,
+            username: cachedProfile?.username ?? email.split('@')[0] ?? userId,
+            password_hash: '',
+            role: cachedProfile?.role ?? 'user',
+            created_at: cachedProfile?.created_at ?? null,
+            updated_at: cachedProfile?.updated_at ?? null,
+          };
 
-          const appleToken =
-            detectedLoginType === 'apple'
-              ? options.appleRefreshToken ??
-                appleTokenFromUser ??
-                (options.authorizationCode
-                  ? await this.exchangeAppleAuthorizationCode(options.authorizationCode)
-                  : null)
-              : null;
-
-          const googleToken =
-            detectedLoginType === 'google'
-              ? options.googleRefreshToken ??
-                googleTokenFromUser ??
-                (options.authorizationCode
-                  ? await this.exchangeGoogleAuthorizationCode(options.authorizationCode, {
-                      codeVerifier: options.codeVerifier,
-                      redirectUri: options.redirectUri,
-                    })
-                  : null)
-              : null;
-
-          if (appleToken) {
-            await this.supabaseService.saveAppleRefreshToken(userRecord.id, appleToken);
-          }
-          if (googleToken) {
-            await this.supabaseService.saveGoogleRefreshToken(userRecord.id, googleToken);
-          }
-
+          // 세션 즉시 생성
           const authSession = await this.authService.createAuthSession(userRecord, detectedLoginType);
           void this.setCachedOAuthUser(accessToken, userRecord);
           mark('offline-session');
           void this.authService.warmAuthCaches(userRecord);
-          void this.verifySupabaseUser(accessToken, decoded.sub).catch(() => undefined);
+
+          // 느린 작업(프로필 보강/리프레시 토큰 저장)은 백그라운드로 실행
+          setImmediate(async () => {
+            try {
+              const supabaseUser = await this.supabaseService.getUserById(userId);
+              await this.supabaseService.ensureProfileFromSupabaseUser(supabaseUser, detectedLoginType);
+              const appleTokenFromUser = (supabaseUser?.user_metadata as any)?.apple_refresh_token ?? null;
+              const googleTokenFromUser = (supabaseUser?.user_metadata as any)?.google_refresh_token ?? null;
+
+              if (detectedLoginType === 'apple') {
+                const token =
+                  options.appleRefreshToken ??
+                  appleTokenFromUser ??
+                  (options.authorizationCode
+                    ? await this.exchangeAppleAuthorizationCode(options.authorizationCode)
+                    : null);
+                if (token) {
+                  await this.supabaseService.saveAppleRefreshToken(userRecord.id, token);
+                }
+              } else if (detectedLoginType === 'google') {
+                const token =
+                  options.googleRefreshToken ??
+                  googleTokenFromUser ??
+                  (options.authorizationCode
+                    ? await this.exchangeGoogleAuthorizationCode(options.authorizationCode, {
+                        codeVerifier: options.codeVerifier,
+                        redirectUri: options.redirectUri,
+                      })
+                    : null);
+                if (token) {
+                  await this.supabaseService.saveGoogleRefreshToken(userRecord.id, token);
+                }
+              }
+            } catch (error) {
+              this.logger.warn(`[offline-path][bg] ensure profile/token failed for ${userId}:`, error as Error);
+            }
+          });
 
           const duration = Date.now() - startTime;
           if (duration > 1200) {
             this.logger.warn(`[OAuthPerf][offline-path] ${duration}ms steps=${marks.join(' | ')}`);
           }
-          // this.logger.debug(`ULTRA-FAST OAuth login via offline profile/token path in ${duration}ms`);
           return authSession;
         }
       } catch (error) {

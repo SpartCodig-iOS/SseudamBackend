@@ -348,7 +348,7 @@ export class SupabaseService {
     const client = this.getClient();
     const { data: existingProfile, error: existingProfileError } = await client
       .from(env.supabaseProfileTable)
-      .select('username, name')
+      .select('username, name, avatar_url')
       .eq('id', user.id)
       .limit(1)
       .maybeSingle();
@@ -359,6 +359,8 @@ export class SupabaseService {
       (existingProfile?.username as string | undefined) ?? null;
     const existingProfileName =
       (existingProfile?.name as string | undefined) ?? null;
+    const existingAvatar =
+      (existingProfile?.avatar_url as string | undefined) ?? null;
 
     const proposedUsername =
       (user.user_metadata?.username as string | undefined) ??
@@ -375,7 +377,7 @@ export class SupabaseService {
       user.id;
 
     // 소셜 로그인에서 아바타 URL 추출 (identity 데이터 포함)
-    const avatarUrl = this.resolveAvatarFromUser(user);
+    const avatarUrl = this.resolveAvatarFromUser(user) ?? existingAvatar ?? null;
 
     await this.upsertProfile({
       id: user.id,
