@@ -4,19 +4,21 @@ import postgres from 'postgres';
 // IPv4 우선 사용 (Node 18+)
 dns.setDefaultResultOrder('ipv4first');
 
-const connectionString = process.env.DATABASE_URL;
+// DB URL 우선순위: Railway → DATABASE_URL → Supabase aliases
+const connectionString =
+  process.env.RAILWAY_DATABASE_URL ||
+  process.env.DATABASE_URL ||
+  process.env.SUPERBASE_DB_URL ||
+  process.env.SUPABASE_DB_URL;
 
 if (!connectionString) {
-  throw new Error('DATABASE_URL is not set');
+  throw new Error('RAILWAY_DATABASE_URL / DATABASE_URL is not set');
 }
 
-// Supabase는 sslmode=require 붙은 URL을 주기 때문에
-// 보통 옵션 없이 connectionString만 넘겨도 됨.
+// sslmode=require 가 포함된 URL이면 ssl 옵션 없이도 동작함
 const sql = postgres(connectionString, {
-  // 필요하면 여기 옵션 추가 가능
-  // ssl: 'require', // 보통 URL에 ?sslmode=require 있으면 이거도 자동 처리됨
-  max: 10,          // 동시 연결 수 (선택)
-  idle_timeout: 20, // 초 단위 (선택)
+  max: 10,
+  idle_timeout: 20,
 });
 
 export default sql;
