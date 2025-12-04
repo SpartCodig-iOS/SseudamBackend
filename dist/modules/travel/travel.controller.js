@@ -34,11 +34,13 @@ let TravelController = class TravelController {
         const limit = Number(request.query?.limit ?? '20') || 20;
         const rawStatus = request.query?.status?.toLowerCase();
         const status = rawStatus === 'active' || rawStatus === 'archived' ? rawStatus : undefined;
+        // 정렬 파라미터는 받지 않고 시작일 오름차순으로 고정
+        const sort = 'start_date';
         if (rawStatus && !status) {
             throw new common_1.BadRequestException('status 값은 active 또는 archived 여야 합니다.');
         }
         // 최적화된 여행 서비스 사용 (200-400ms 목표) - 항상 멤버 정보 포함
-        const result = await this.optimizedTravelService.listTravelsOptimized(req.currentUser.id, { page, limit, status }, true // 항상 멤버 정보 포함
+        const result = await this.optimizedTravelService.listTravelsOptimized(req.currentUser.id, { page, limit, status, sort }, true // 항상 멤버 정보 포함
         );
         return (0, api_1.success)(result);
     }

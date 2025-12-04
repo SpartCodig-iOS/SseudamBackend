@@ -65,13 +65,14 @@ export class OptimizedTravelService {
   // 최적화된 여행 목록 조회 (멤버 정보 없이 빠른 조회)
   async listTravelsOptimized(
     userId: string,
-    pagination: { page?: number; limit?: number; status?: 'active' | 'archived' } = {},
+    pagination: { page?: number; limit?: number; status?: 'active' | 'archived'; sort?: 'recent' | 'start_date' | 'start_date_desc' } = {},
     includeMembers = false,
   ): Promise<{ total: number; page: number; limit: number; items: OptimizedTravelSummary[] }> {
     const page = Math.max(1, pagination.page ?? 1);
     const limit = Math.min(100, Math.max(1, pagination.limit ?? 20));
     const offset = (page - 1) * limit;
     const status = pagination.status === 'active' || pagination.status === 'archived' ? pagination.status : undefined;
+    const sort: 'start_date' = 'start_date'; // 파라미터 없이 시작일 오름차순 고정
 
     // 국가-통화 매핑 확인 (백그라운드로 실행)
     this.ensureCountryCurrencyLoaded().catch(error =>
@@ -98,7 +99,7 @@ export class OptimizedTravelService {
       // 병렬로 총 개수와 목록 조회
       const [totalResult, listResult] = await Promise.all([
         this.getTotalTravelsCount(pool, userId, status),
-        this.getTravelsList(pool, userId, limit, offset, includeMembers, status),
+        this.getTravelsList(pool, userId, limit, offset, includeMembers, status, sort),
       ]);
 
       const total = totalResult.rows[0]?.total ?? 0;
@@ -151,9 +152,11 @@ export class OptimizedTravelService {
     limit: number,
     offset: number,
     includeMembers: boolean,
-    status?: 'active' | 'archived',
+    status: 'active' | 'archived' | undefined,
+    sort: 'recent' | 'start_date' | 'start_date_desc',
   ) {
     const statusCondition = this.buildStatusCondition(status, 't');
+    const orderClause = this.buildOrderClause(sort);
 
     if (includeMembers) {
       // 멤버 정보 포함 (최적화된 쿼리)
@@ -192,7 +195,7 @@ export class OptimizedTravelService {
          ) AS members ON TRUE
          WHERE 1 = 1
          ${statusCondition}
-         ORDER BY t.created_at DESC
+         ${orderClause}
          LIMIT $2 OFFSET $3`,
         [userId, limit, offset],
       );
@@ -215,20 +218,31 @@ export class OptimizedTravelService {
            owner_profile.name AS owner_name,
            member_counts.member_count
          FROM travels t
-         INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
-         INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
-           LEFT JOIN travel_invites ti ON ti.travel_id = t.id AND ti.status = 'active'
-           LEFT JOIN (
-             SELECT travel_id, COUNT(*)::int AS member_count
-             FROM travel_members
-             GROUP BY travel_id
-           ) AS member_counts ON member_counts.travel_id = t.id
-         WHERE 1 = 1
-         ${statusCondition}
-         ORDER BY t.created_at DESC
-         LIMIT $2 OFFSET $3`,
+           INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
+           INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
+             LEFT JOIN travel_invites ti ON ti.travel_id = t.id AND ti.status = 'active'
+             LEFT JOIN (
+               SELECT travel_id, COUNT(*)::int AS member_count
+               FROM travel_members
+               GROUP BY travel_id
+             ) AS member_counts ON member_counts.travel_id = t.id
+           WHERE 1 = 1
+           ${statusCondition}
+           ${orderClause}
+           LIMIT $2 OFFSET $3`,
         [userId, limit, offset],
       );
+    }
+  }
+
+  private buildOrderClause(sort: 'recent' | 'start_date' | 'start_date_desc'): string {
+    switch (sort) {
+      case 'start_date':
+        return 'ORDER BY t.start_date ASC, t.created_at DESC';
+      case 'start_date_desc':
+        return 'ORDER BY t.start_date DESC, t.created_at DESC';
+      default:
+        return 'ORDER BY t.created_at DESC';
     }
   }
 
