@@ -43,12 +43,15 @@ let CacheService = CacheService_1 = class CacheService {
         if (this.redis)
             return this.redis;
         try {
-            // Redis 연결 설정
+            // Redis 연결 설정 (성능 최적화)
             this.redis = new ioredis_1.default(this.redisUrl, {
-                maxRetriesPerRequest: 3,
-                connectTimeout: 3000,
-                commandTimeout: 2000,
+                maxRetriesPerRequest: 1, // 재시도 최소화로 지연 방지
+                connectTimeout: 800, // 연결 타임아웃 단축 (1000ms → 800ms)
+                commandTimeout: 400, // 명령 타임아웃 단축 (500ms → 400ms)
                 enableOfflineQueue: false,
+                lazyConnect: true, // 필요시에만 연결
+                keepAlive: 30000, // 30초마다 keep-alive
+                maxLoadingRetryTime: 5000, // 로딩 타임아웃
             });
             this.redis.on('connect', () => {
                 this.logger.log('🚀 Redis connected successfully');

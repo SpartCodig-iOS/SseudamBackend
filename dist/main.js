@@ -152,6 +152,7 @@ async function bootstrap() {
         next();
     });
     app.useGlobalFilters(new all_exceptions_filter_1.AllExceptionsFilter());
+    // Apple Universal Links는 이제 컨트롤러로 처리됨
     app.useStaticAssets(node_path_1.default.join(process.cwd(), 'public'));
     const swaggerConfig = new swagger_1.DocumentBuilder()
         .setTitle('Sseduam App Server API')

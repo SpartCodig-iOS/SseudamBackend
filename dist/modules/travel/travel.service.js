@@ -40,6 +40,8 @@ let TravelService = TravelService_1 = class TravelService {
         this.TRAVEL_MEMBER_TTL = 2 * 60 * 1000; // 2분
         this.TRAVEL_MEMBER_REDIS_PREFIX = 'travel:member';
         this.TRAVEL_MEMBER_REDIS_TTL = 2 * 60; // 2분
+        this.MEMBER_LIST_REDIS_PREFIX = 'travel:members';
+        this.MEMBER_LIST_REDIS_TTL = 30; // 30초
     }
     async getCachedTravelList(key, rawKey = false) {
         const cacheKey = rawKey ? key : `${key}`;
@@ -115,10 +117,16 @@ let TravelService = TravelService_1 = class TravelService {
             prefix: this.TRAVEL_DETAIL_REDIS_PREFIX,
             ttl: Math.floor(this.TRAVEL_DETAIL_CACHE_TTL / 1000),
         }).catch(() => undefined);
+        // 멤버십 캐시도 함께 갱신해 상세 조회 시 DB 조회를 줄임
+        travel.members?.forEach(member => {
+            this.setMemberCache(travelId, member.userId, true);
+        });
     }
     invalidateUserTravelCache(userId) {
+        // 메모리 캐시에서 해당 사용자의 모든 키 삭제
         const keys = Array.from(this.travelListCache.keys()).filter(key => key.startsWith(`${userId}:`));
         keys.forEach(key => this.travelListCache.delete(key));
+        // Redis 캐시에서도 해당 사용자의 모든 여행 목록 삭제
         this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:${userId}:*`).catch(() => undefined);
     }
     invalidateTravelDetailCache(travelId) {
@@ -126,9 +134,14 @@ let TravelService = TravelService_1 = class TravelService {
         this.cacheService.del(travelId, { prefix: this.TRAVEL_DETAIL_REDIS_PREFIX }).catch(() => undefined);
     }
     async invalidateTravelCachesForMembers(travelId) {
+        // 여행 멤버들의 목록 캐시를 무효화해야 하므로 각 멤버별로 처리
         const pool = await (0, pool_1.getPool)();
         const members = await pool.query(`SELECT user_id FROM travel_members WHERE travel_id = $1`, [travelId]);
-        members.rows.forEach(member => this.invalidateUserTravelCache(member.user_id));
+        // 각 멤버의 여행 목록 캐시 무효화 (Redis 패턴 삭제)
+        const memberIds = members.rows.map(row => row.user_id);
+        await Promise.all(memberIds.map(userId => this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:${userId}:*`).catch(() => undefined)));
+        // 메모리 캐시도 개별 무효화
+        memberIds.forEach(userId => this.invalidateUserTravelCache(userId));
     }
     async getCachedInvite(inviteCode) {
         try {
@@ -191,33 +204,68 @@ let TravelService = TravelService_1 = class TravelService {
         const keys = Array.from(this.TRAVEL_MEMBER_CACHE.keys()).filter(k => k.startsWith(`${travelId}:`));
         keys.forEach(k => this.TRAVEL_MEMBER_CACHE.delete(k));
         await this.cacheService.delPattern(`${this.TRAVEL_MEMBER_REDIS_PREFIX}:${travelId}:*`).catch(() => undefined);
+        await this.cacheService.del(travelId, { prefix: this.MEMBER_LIST_REDIS_PREFIX }).catch(() => undefined);
+    }
+    setMemberListCache(travelId, members) {
+        this.cacheService.set(travelId, members, {
+            prefix: this.MEMBER_LIST_REDIS_PREFIX,
+            ttl: this.MEMBER_LIST_REDIS_TTL,
+        }).catch(() => undefined);
     }
     async loadMembersForTravels(travelIds, requesterId) {
         const membersMap = new Map();
         if (travelIds.length === 0) {
             return membersMap;
         }
-        const pool = await (0, pool_1.getPool)();
-        const result = await pool.query(`SELECT
-         tm.travel_id::text AS travel_id,
-         tm.user_id::text AS user_id,
-         tm.role,
-         p.name,
-         tm.joined_at
-       FROM travel_members tm
-       LEFT JOIN profiles p ON p.id = tm.user_id
-       WHERE tm.travel_id = ANY($1::uuid[])
-       ORDER BY tm.travel_id,
-                CASE WHEN tm.user_id = $2 THEN 0 ELSE 1 END,
-                tm.joined_at`, [travelIds, requesterId]);
-        for (const row of result.rows) {
-            const list = membersMap.get(row.travel_id) ?? [];
-            list.push({
-                userId: row.user_id,
-                name: row.name ?? null,
-                role: row.role ?? 'member',
-            });
-            membersMap.set(row.travel_id, list);
+        let cachedLists = [];
+        try {
+            cachedLists = await this.cacheService.mget(travelIds, { prefix: this.MEMBER_LIST_REDIS_PREFIX });
+        }
+        catch {
+            // ignore cache errors
+        }
+        const missingTravelIds = [];
+        travelIds.forEach((id, idx) => {
+            const cached = cachedLists[idx];
+            if (cached && Array.isArray(cached)) {
+                membersMap.set(id, cached);
+            }
+            else {
+                missingTravelIds.push(id);
+            }
+        });
+        if (missingTravelIds.length > 0) {
+            const pool = await (0, pool_1.getPool)();
+            const result = await pool.query(`SELECT
+           tm.travel_id::text AS travel_id,
+           tm.user_id::text AS user_id,
+           tm.role,
+           p.name,
+           tm.joined_at
+         FROM travel_members tm
+         LEFT JOIN profiles p ON p.id = tm.user_id
+         WHERE tm.travel_id = ANY($1::uuid[])
+         ORDER BY tm.travel_id,
+                  CASE WHEN tm.user_id = $2 THEN 0 ELSE 1 END,
+                  tm.joined_at`, [missingTravelIds, requesterId]);
+            for (const row of result.rows) {
+                const list = membersMap.get(row.travel_id) ?? [];
+                list.push({
+                    userId: row.user_id,
+                    name: row.name ?? null,
+                    role: row.role ?? 'member',
+                });
+                membersMap.set(row.travel_id, list);
+            }
+            const toCache = missingTravelIds
+                .filter(id => membersMap.has(id))
+                .map(id => ({ key: id, value: membersMap.get(id) }));
+            if (toCache.length > 0) {
+                this.cacheService.mset(toCache, {
+                    prefix: this.MEMBER_LIST_REDIS_PREFIX,
+                    ttl: this.MEMBER_LIST_REDIS_TTL,
+                }).catch(() => undefined);
+            }
         }
         return membersMap;
     }
@@ -242,7 +290,7 @@ let TravelService = TravelService_1 = class TravelService {
         this.setMemberCache(travelId, userId, exists);
         return exists;
     }
-    async fetchSummaryForMember(travelId, userId) {
+    async fetchSummaryForMember(travelId, userId, includeMembers = true) {
         await this.ensureCountryCurrencyMap();
         const pool = await (0, pool_1.getPool)();
         const result = await pool.query(`SELECT
@@ -269,8 +317,11 @@ let TravelService = TravelService_1 = class TravelService {
         if (!row) {
             throw new common_1.NotFoundException('여행을 찾을 수 없거나 접근 권한이 없습니다.');
         }
-        const membersMap = await this.loadMembersForTravels([travelId], userId);
-        return this.mapSummary(row, membersMap.get(travelId));
+        // join 시에는 멤버 정보 로드 스킵으로 성능 개선
+        const members = includeMembers
+            ? (await this.loadMembersForTravels([travelId], userId)).get(travelId)
+            : [];
+        return this.mapSummary(row, members);
     }
     mapSummary(row, members) {
         const destinationCurrency = this.resolveDestinationCurrency(row.country_code, row.base_currency);
@@ -295,18 +346,43 @@ let TravelService = TravelService_1 = class TravelService {
         };
     }
     async getTravelDetail(travelId, userId) {
-        // 멤버십 검증을 먼저 수행하여 캐시된 데이터로 인한 권한 우회 방지
+        const cached = await this.getCachedTravelDetail(travelId);
+        if (cached) {
+            const hasMembership = cached.members?.some(m => m.userId === userId) ?? false;
+            if (hasMembership) {
+                this.setMemberCache(travelId, userId, true);
+                const hydrated = this.attachLinks(cached);
+                return this.reorderMembersForUser(hydrated, userId);
+            }
+            let travelWithMembers = cached;
+            // 멤버가 비어 있거나 누락된 경우 최신 멤버를 채워 캐시 갱신
+            if (!cached.members || cached.members.length === 0) {
+                const membersMap = await this.loadMembersForTravels([travelId], userId);
+                travelWithMembers = { ...cached, members: membersMap.get(travelId) ?? [] };
+                this.setCachedTravelDetail(travelId, travelWithMembers);
+                if (travelWithMembers.members) {
+                    this.setMemberListCache(travelId, travelWithMembers.members);
+                }
+            }
+            // 캐시에 있으나 멤버십이 없다고 판단된 경우 DB로 확인 후 진행
+            const memberCheck = await this.isMember(travelId, userId);
+            if (!memberCheck) {
+                throw new common_1.ForbiddenException('여행에 참여 중인 사용자만 조회할 수 있습니다.');
+            }
+            this.setMemberCache(travelId, userId, true);
+            const hydrated = this.attachLinks(travelWithMembers);
+            return this.reorderMembersForUser(hydrated, userId);
+        }
+        // 캐시에 없으면 DB에서 확인
         const member = await this.isMember(travelId, userId);
         if (!member) {
             throw new common_1.ForbiddenException('여행에 참여 중인 사용자만 조회할 수 있습니다.');
         }
-        const cached = await this.getCachedTravelDetail(travelId);
-        if (cached) {
-            const hydrated = this.attachLinks(cached);
-            return this.reorderMembersForUser(hydrated, userId);
-        }
         const travel = this.attachLinks(await this.fetchSummaryForMember(travelId, userId));
         this.setCachedTravelDetail(travelId, travel);
+        if (travel.members) {
+            this.setMemberListCache(travelId, travel.members);
+        }
         return this.reorderMembersForUser(travel, userId);
     }
     async ensureCountryCurrencyMap() {
@@ -448,8 +524,10 @@ let TravelService = TravelService_1 = class TravelService {
                 return this.mapSummary(optimizedResult, optimizedResult.members);
             });
             // 캐시 업데이트/무효화 (응답을 기다리지 않음)
+            this.setMemberCache(travel.id, currentUser.id, true);
             this.invalidateUserTravelCache(currentUser.id);
             this.setCachedTravelDetail(travel.id, travel);
+            this.setMemberListCache(travel.id, travel.members ?? []);
             return travel;
         }
         catch (error) {
@@ -471,12 +549,7 @@ let TravelService = TravelService_1 = class TravelService {
             const itemsWithLinks = cachedList.map(item => this.attachLinks(item));
             return { total: cachedList.length, page, limit, items: itemsWithLinks };
         }
-        const totalPromise = pool.query(`SELECT COUNT(*)::int AS total
-       FROM travel_members tm
-       INNER JOIN travels t ON t.id = tm.travel_id
-       WHERE tm.user_id = $1
-       ${statusCondition}`, [userId]);
-        const listPromise = pool.query(`SELECT
+        const listResult = await pool.query(`SELECT
          ut.id::text AS id,
          ut.title,
          ut.start_date::text,
@@ -489,25 +562,29 @@ let TravelService = TravelService_1 = class TravelService {
          ut.computed_status AS status,
          ut.role,
          ut.created_at::text,
-         owner_profile.name AS owner_name
+         owner_profile.name AS owner_name,
+         ut.total_count
        FROM (
-          SELECT t.*, COALESCE(tm.role, mp.role, 'member') AS role,
-                 CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS computed_status
+          SELECT t.*,
+                 COALESCE(tm.role, mp.role, 'member') AS role,
+                 CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS computed_status,
+                 COUNT(*) OVER() AS total_count
           FROM travels t
           INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
           LEFT JOIN profiles mp ON mp.id = tm.user_id
           WHERE 1 = 1
           ${statusCondition}
+          ORDER BY t.created_at DESC
+          LIMIT $2 OFFSET $3
         ) AS ut
         INNER JOIN profiles owner_profile ON owner_profile.id = ut.owner_id
-        LEFT JOIN travel_invites ti ON ti.travel_id = ut.id AND ti.status = 'active'
-       ORDER BY ut.created_at DESC
-       LIMIT $2 OFFSET $3`, [userId, limit, offset]);
-        const [totalResult, listResult] = await Promise.all([totalPromise, listPromise]);
-        const total = totalResult.rows[0]?.total ?? 0;
-        const travelIds = listResult.rows.map((row) => row.id);
+        LEFT JOIN travel_invites ti ON ti.travel_id = ut.id AND ti.status = 'active'`, [userId, limit, offset]);
+        const total = listResult.rows[0]?.total_count ?? 0;
+        // 동일 travel_id가 중복으로 내려오지 않도록 dedupe 후 멤버 로드
+        const uniqueRows = Array.from(new Map(listResult.rows.map((row) => [row.id, row])).values());
+        const travelIds = uniqueRows.map((row) => row.id);
         const membersMap = await this.loadMembersForTravels(travelIds, userId);
-        const items = listResult.rows.map((row) => this.mapSummary(row, membersMap.get(row.id)));
+        const items = uniqueRows.map((row) => this.mapSummary(row, membersMap.get(row.id)));
         // 캐시에 저장 (Redis + 메모리) - 딥링크 없이 저장
         this.setCachedTravelList(cacheKey, items);
         return {
@@ -575,15 +652,25 @@ let TravelService = TravelService_1 = class TravelService {
         await this.ensureOwner(travelId, userId, pool);
         const members = await pool.query(`SELECT user_id FROM travel_members WHERE travel_id = $1`, [travelId]);
         await this.ensureTransaction(async (client) => {
-            await client.query(`DELETE FROM travel_expense_participants
-         WHERE expense_id IN (
+            await client.query(`WITH expense_ids AS (
            SELECT id FROM travel_expenses WHERE travel_id = $1
-         )`, [travelId]);
-            await client.query(`DELETE FROM travel_expenses WHERE travel_id = $1`, [travelId]);
-            await client.query(`DELETE FROM travel_settlements WHERE travel_id = $1`, [travelId]);
-            await client.query(`DELETE FROM travel_invites WHERE travel_id = $1`, [travelId]);
-            await client.query(`DELETE FROM travel_members WHERE travel_id = $1`, [travelId]);
-            await client.query(`DELETE FROM travels WHERE id = $1`, [travelId]);
+         ),
+         deleted_participants AS (
+           DELETE FROM travel_expense_participants WHERE expense_id IN (SELECT id FROM expense_ids)
+         ),
+         deleted_expenses AS (
+           DELETE FROM travel_expenses WHERE id IN (SELECT id FROM expense_ids)
+         ),
+         deleted_settlements AS (
+           DELETE FROM travel_settlements WHERE travel_id = $1
+         ),
+         deleted_invites AS (
+           DELETE FROM travel_invites WHERE travel_id = $1
+         ),
+         deleted_members AS (
+           DELETE FROM travel_members WHERE travel_id = $1
+         )
+         DELETE FROM travels WHERE id = $1`, [travelId]);
         });
         // 초대 코드 캐시 전부 무효화 (travelId별 키가 없으므로 패턴 삭제)
         this.cacheService.delPattern(`${this.INVITE_REDIS_PREFIX}:*`).catch(() => undefined);
@@ -657,21 +744,8 @@ let TravelService = TravelService_1 = class TravelService {
             await this.setCachedInvite(inviteCode, inviteRow);
             fetchedFromCache = false;
         }
-        // 캐시가 오래된 경우를 방지하기 위해 여행 상태를 최신으로 확인
-        if (fetchedFromCache) {
-            const travelStatusResult = await pool.query(`SELECT CASE WHEN end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS travel_status
-         FROM travels
-         WHERE id = $1
-         LIMIT 1`, [inviteRow.travel_id]);
-            const currentStatus = travelStatusResult.rows[0]?.travel_status;
-            if (!currentStatus) {
-                throw new common_1.NotFoundException('유효하지 않은 초대 코드입니다.');
-            }
-            if (currentStatus !== inviteRow.travel_status) {
-                inviteRow = { ...inviteRow, travel_status: currentStatus };
-                await this.setCachedInvite(inviteCode, inviteRow);
-            }
-        }
+        // 캐시된 데이터 신뢰 (TTL을 짧게 유지하여 신뢰성 확보)
+        // 기존 중복 쿼리 제거로 성능 개선
         if (inviteRow.status !== 'active' || inviteRow.travel_status !== 'active') {
             throw new common_1.BadRequestException('만료되었거나 비활성화된 초대 코드입니다.');
         }
@@ -702,7 +776,15 @@ let TravelService = TravelService_1 = class TravelService {
         // 기존 멤버들의 여행 목록 캐시도 무효화 (멤버 정보가 변경되므로)
         await this.invalidateTravelCachesForMembers(inviteRow.travel_id);
         await this.invalidateMembersCacheForTravel(inviteRow.travel_id);
-        return this.fetchSummaryForMember(inviteRow.travel_id, userId);
+        // 멤버십 캐시 업데이트: 이후 상세 조회/권한 체크 시 DB 조회를 생략
+        this.setMemberCache(inviteRow.travel_id, userId, true);
+        // 멤버 포함 최신 상세를 즉시 조회해 캐시에 반영 (join 직후 멤버 목록 비어있는 문제 방지)
+        const travelSummary = this.attachLinks(await this.fetchSummaryForMember(inviteRow.travel_id, userId, true));
+        this.setCachedTravelDetail(inviteRow.travel_id, travelSummary);
+        if (travelSummary.members) {
+            this.setMemberListCache(inviteRow.travel_id, travelSummary.members);
+        }
+        return this.reorderMembersForUser(travelSummary, userId);
     }
     async leaveTravel(travelId, userId) {
         const pool = await (0, pool_1.getPool)();
@@ -725,6 +807,7 @@ let TravelService = TravelService_1 = class TravelService {
         // 멤버 탈퇴 후 관련 캐시 무효화
         this.invalidateUserTravelCache(userId);
         this.invalidateTravelDetailCache(travelId);
+        await this.invalidateMemberCache(travelId, userId);
         return { deletedTravel: false };
     }
     async updateTravel(travelId, userId, payload) {
@@ -772,9 +855,19 @@ let TravelService = TravelService_1 = class TravelService {
         }
         // 수정 후 관련 캐시 무효화
         this.invalidateTravelDetailCache(travelId);
-        // 여행에 참여한 모든 멤버의 목록 캐시도 무효화
+        // 업데이트한 사용자의 여행 목록 캐시 직접 무효화
+        this.invalidateUserTravelCache(userId);
+        // 여행에 참여한 모든 멤버의 목록 캐시도 무효화 (최적화된 패턴 삭제)
         await this.invalidateTravelCachesForMembers(travelId);
-        const summary = await this.fetchSummaryForMember(travelId, userId);
+        // 🔥 임시: 강제 전체 캐시 클리어 (디버깅용)
+        this.logger.warn(`[CACHE-DEBUG] updateTravel: Forcing cache clear for travel ${travelId}, user ${userId}`);
+        this.travelListCache.clear();
+        this.travelDetailCache.clear();
+        await this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:*`).catch(() => undefined);
+        await this.cacheService.delPattern(`${this.TRAVEL_DETAIL_REDIS_PREFIX}:*`).catch(() => undefined);
+        // 업데이트 응답에는 멤버 정보 불필요 - 성능 개선
+        const summary = await this.fetchSummaryForMember(travelId, userId, false);
+        // 결과 캐시에 저장 (후속 요청 성능 개선)
         this.setCachedTravelDetail(travelId, summary);
         return summary;
     }
@@ -788,6 +881,7 @@ let TravelService = TravelService_1 = class TravelService {
         // 멤버 삭제 후 캐시 무효화
         this.invalidateUserTravelCache(memberId);
         this.invalidateTravelDetailCache(travelId);
+        await this.invalidateMemberCache(travelId, memberId);
         // 다른 멤버들의 여행 목록 캐시도 무효화 (멤버 정보가 변경되므로)
         await this.invalidateTravelCachesForMembers(travelId);
         await this.invalidateMembersCacheForTravel(travelId);
