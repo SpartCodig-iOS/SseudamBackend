@@ -162,8 +162,11 @@ export class TravelService {
   }
 
   private invalidateUserTravelCache(userId: string): void {
+    // 메모리 캐시에서 해당 사용자의 모든 키 삭제
     const keys = Array.from(this.travelListCache.keys()).filter(key => key.startsWith(`${userId}:`));
     keys.forEach(key => this.travelListCache.delete(key));
+
+    // Redis 캐시에서도 해당 사용자의 모든 여행 목록 삭제
     this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:${userId}:*`).catch(() => undefined);
   }
 
@@ -173,20 +176,23 @@ export class TravelService {
   }
 
   private async invalidateTravelCachesForMembers(travelId: string): Promise<void> {
-    // Redis 패턴 기반 삭제로 N+1 쿼리 제거
-    try {
-      await this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:*:*:${travelId}`);
-    } catch (error) {
-      console.warn('Pattern-based cache invalidation failed, falling back to individual deletion:', error);
+    // 여행 멤버들의 목록 캐시를 무효화해야 하므로 각 멤버별로 처리
+    const pool = await getPool();
+    const members = await pool.query(
+      `SELECT user_id FROM travel_members WHERE travel_id = $1`,
+      [travelId]
+    );
 
-      // 패턴 삭제 실패 시만 기존 방식 사용
-      const pool = await getPool();
-      const members = await pool.query(
-        `SELECT user_id FROM travel_members WHERE travel_id = $1`,
-        [travelId]
-      );
-      members.rows.forEach(member => this.invalidateUserTravelCache(member.user_id));
-    }
+    // 각 멤버의 여행 목록 캐시 무효화 (Redis 패턴 삭제)
+    const memberIds = members.rows.map(row => row.user_id);
+    await Promise.all(
+      memberIds.map(userId =>
+        this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:${userId}:*`).catch(() => undefined)
+      )
+    );
+
+    // 메모리 캐시도 개별 무효화
+    memberIds.forEach(userId => this.invalidateUserTravelCache(userId));
   }
 
   private async getCachedInvite(inviteCode: string): Promise<{ travel_id: string; status: string; used_count: number; max_uses: number | null; expires_at: string | null; travel_status: string } | null> {
