@@ -130,11 +130,13 @@ let TravelService = TravelService_1 = class TravelService {
         this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:${userId}:*`).catch(() => undefined);
         // 최적화 서비스 캐시도 함께 제거
         this.cacheService.delPattern(`user_travels:${userId}:*`).catch(() => undefined);
-        this.cacheService.delPattern(`travel_detail:*`).catch(() => undefined);
+        // travel_detail:* 전체 삭제 대신 사용자 관련 목록 캐시만 제거
     }
     invalidateTravelDetailCache(travelId) {
         this.travelDetailCache.delete(travelId);
         this.cacheService.del(travelId, { prefix: this.TRAVEL_DETAIL_REDIS_PREFIX }).catch(() => undefined);
+        // 최적화 서비스의 상세 캐시도 함께 제거
+        this.cacheService.del(`travel_detail:${travelId}`).catch(() => undefined);
     }
     async invalidateTravelCachesForMembers(travelId) {
         // 여행 멤버들의 목록 캐시를 무효화해야 하므로 각 멤버별로 처리
@@ -142,7 +144,10 @@ let TravelService = TravelService_1 = class TravelService {
         const members = await pool.query(`SELECT user_id FROM travel_members WHERE travel_id = $1`, [travelId]);
         // 각 멤버의 여행 목록 캐시 무효화 (Redis 패턴 삭제)
         const memberIds = members.rows.map(row => row.user_id);
-        await Promise.all(memberIds.map(userId => this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:${userId}:*`).catch(() => undefined)));
+        await Promise.all(memberIds.map(userId => Promise.all([
+            this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:${userId}:*`).catch(() => undefined),
+            this.cacheService.delPattern(`user_travels:${userId}:*`).catch(() => undefined),
+        ])));
         // 메모리 캐시도 개별 무효화
         memberIds.forEach(userId => this.invalidateUserTravelCache(userId));
     }
@@ -722,6 +727,7 @@ let TravelService = TravelService_1 = class TravelService {
         // 모든 멤버의 리스트 캐시 무효화
         const members = await pool.query(`SELECT user_id FROM travel_members WHERE travel_id = $1`, [travelId]);
         members.rows.forEach(member => this.invalidateUserTravelCache(member.user_id));
+        await this.invalidateMembersCacheForTravel(travelId);
         return summary;
     }
     async joinByInviteCode(userId, inviteCode) {
@@ -811,6 +817,9 @@ let TravelService = TravelService_1 = class TravelService {
         this.invalidateUserTravelCache(userId);
         this.invalidateTravelDetailCache(travelId);
         await this.invalidateMemberCache(travelId, userId);
+        // 다른 멤버들의 목록/멤버십 캐시도 무효화해 즉시 반영
+        await this.invalidateTravelCachesForMembers(travelId);
+        await this.invalidateMembersCacheForTravel(travelId);
         return { deletedTravel: false };
     }
     async updateTravel(travelId, userId, payload) {

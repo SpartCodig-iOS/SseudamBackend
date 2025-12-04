@@ -170,12 +170,14 @@ export class TravelService {
     this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:${userId}:*`).catch(() => undefined);
     // 최적화 서비스 캐시도 함께 제거
     this.cacheService.delPattern(`user_travels:${userId}:*`).catch(() => undefined);
-    this.cacheService.delPattern(`travel_detail:*`).catch(() => undefined);
+    // travel_detail:* 전체 삭제 대신 사용자 관련 목록 캐시만 제거
   }
 
   private invalidateTravelDetailCache(travelId: string): void {
     this.travelDetailCache.delete(travelId);
     this.cacheService.del(travelId, { prefix: this.TRAVEL_DETAIL_REDIS_PREFIX }).catch(() => undefined);
+    // 최적화 서비스의 상세 캐시도 함께 제거
+    this.cacheService.del(`travel_detail:${travelId}`).catch(() => undefined);
   }
 
   private async invalidateTravelCachesForMembers(travelId: string): Promise<void> {
@@ -190,7 +192,10 @@ export class TravelService {
     const memberIds = members.rows.map(row => row.user_id);
     await Promise.all(
       memberIds.map(userId =>
-        this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:${userId}:*`).catch(() => undefined)
+        Promise.all([
+          this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:${userId}:*`).catch(() => undefined),
+          this.cacheService.delPattern(`user_travels:${userId}:*`).catch(() => undefined),
+        ])
       )
     );
 
@@ -896,6 +901,7 @@ export class TravelService {
       [travelId]
     );
     members.rows.forEach(member => this.invalidateUserTravelCache(member.user_id));
+    await this.invalidateMembersCacheForTravel(travelId);
 
     return summary;
   }
@@ -1023,6 +1029,9 @@ export class TravelService {
     this.invalidateUserTravelCache(userId);
     this.invalidateTravelDetailCache(travelId);
     await this.invalidateMemberCache(travelId, userId);
+    // 다른 멤버들의 목록/멤버십 캐시도 무효화해 즉시 반영
+    await this.invalidateTravelCachesForMembers(travelId);
+    await this.invalidateMembersCacheForTravel(travelId);
 
     return { deletedTravel: false };
   }
