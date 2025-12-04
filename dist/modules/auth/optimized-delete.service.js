@@ -127,27 +127,43 @@ let OptimizedDeleteService = OptimizedDeleteService_1 = class OptimizedDeleteSer
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
-            // 단일 쿼리로 모든 관련 데이터 삭제 (CASCADE 효과 활용)
+            // 단일 쿼리로 모든 관련 데이터 삭제 (사용자가 소유한 여행까지 함께 정리)
             await client.query(`
-        WITH deleted_expenses AS (
-          DELETE FROM travel_expenses WHERE payer_id = $1 RETURNING id
+        WITH target_travels AS (
+          SELECT id FROM travels WHERE owner_id = $1
+        ),
+        deleted_expenses AS (
+          DELETE FROM travel_expenses
+          WHERE payer_id = $1 OR travel_id IN (SELECT id FROM target_travels)
+          RETURNING id, travel_id
         ),
         deleted_participants AS (
           DELETE FROM travel_expense_participants
-          WHERE member_id = $1 OR expense_id IN (SELECT id FROM deleted_expenses)
+          WHERE member_id = $1
+             OR expense_id IN (SELECT id FROM deleted_expenses)
+             OR travel_id IN (SELECT id FROM target_travels)
+          RETURNING 1
+        ),
+        deleted_settlements AS (
+          DELETE FROM travel_settlements
+          WHERE from_member = $1 OR to_member = $1 OR travel_id IN (SELECT id FROM target_travels)
+          RETURNING 1
+        ),
+        deleted_invites AS (
+          DELETE FROM travel_invites
+          WHERE created_by = $1 OR travel_id IN (SELECT id FROM target_travels)
           RETURNING 1
         ),
         deleted_members AS (
-          DELETE FROM travel_members WHERE user_id = $1 RETURNING 1
-        ),
-        deleted_invites AS (
-          DELETE FROM travel_invites WHERE created_by = $1 RETURNING 1
-        ),
-        deleted_settlements AS (
-          DELETE FROM travel_settlements WHERE from_member = $1 OR to_member = $1 RETURNING 1
+          DELETE FROM travel_members
+          WHERE user_id = $1 OR travel_id IN (SELECT id FROM target_travels)
+          RETURNING 1
         ),
         deleted_sessions AS (
           DELETE FROM user_sessions WHERE user_id = $1 RETURNING 1
+        ),
+        deleted_travels AS (
+          DELETE FROM travels WHERE id IN (SELECT id FROM target_travels) RETURNING 1
         )
         DELETE FROM profiles WHERE id = $1
       `, [userId]);

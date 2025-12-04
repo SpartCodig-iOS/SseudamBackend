@@ -36,19 +36,37 @@ let HealthController = class HealthController {
             return 'unavailable';
         }
     }
+    async refreshHealthAsync() {
+        void (async () => {
+            const database = await Promise.race([
+                this.checkDatabaseHealth(),
+                new Promise((resolve) => setTimeout(() => resolve('unavailable'), 1000)),
+            ]);
+            this.lastHealthCheck = { result: database, timestamp: Date.now() };
+        })();
+    }
     async health() {
         // 캐시된 헬스 체크 결과 사용 (30초 캐시)
         const now = Date.now();
-        if (this.lastHealthCheck && (now - this.lastHealthCheck.timestamp) < this.HEALTH_CACHE_TTL) {
+        const cached = this.lastHealthCheck;
+        if (cached && (now - cached.timestamp) < this.HEALTH_CACHE_TTL) {
             return (0, api_1.success)({
                 status: 'ok',
-                database: this.lastHealthCheck.result,
+                database: cached.result,
             });
         }
-        // 빠른 헬스 체크 (타임아웃 500ms)
+        // 캐시가 있지만 만료된 경우: 비동기 갱신 후 즉시 응답해 지연 최소화
+        if (cached) {
+            this.refreshHealthAsync();
+            return (0, api_1.success)({
+                status: 'ok',
+                database: cached.result,
+            });
+        }
+        // 첫 호출 시만 빠른 헬스 체크 (타임아웃 1초)
         const database = await Promise.race([
             this.checkDatabaseHealth(),
-            new Promise((resolve) => setTimeout(() => resolve('unavailable'), 1500)),
+            new Promise((resolve) => setTimeout(() => resolve('unavailable'), 1000)),
         ]);
         // 결과 캐싱
         this.lastHealthCheck = { result: database, timestamp: now };

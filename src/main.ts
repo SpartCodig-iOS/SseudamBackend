@@ -6,6 +6,7 @@ import path from 'node:path';
 import { json, urlencoded } from 'express';
 import compression from 'compression';
 import helmet, { HelmetOptions } from 'helmet';
+import { constants as zlibConstants } from 'node:zlib';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
@@ -58,12 +59,9 @@ async function bootstrap() {
   app.use(helmet(helmetOptions));
   app.use(
     compression({
-      threshold: 512, // 512B 이상일 때만 압축 (더 작은 임계값)
-      level: 6, // 압축 레벨 (1: 빠름, 9: 최고 압축률, 6: 균형)
-      memLevel: 9, // 메모리 사용량 레벨 (1-9, 높을수록 빠름) - 증가
-      chunkSize: 32768, // 청크 크기 (32KB) - 증가
-      windowBits: 15, // 압축 윈도우 크기
-      // strategy: compression.constants.Z_DEFAULT_STRATEGY, // 기본 압축 전략
+      threshold: 2048, // 2KB 이상만 압축: 작은 응답은 CPU 낭비 방지
+      level: zlibConstants.Z_BEST_SPEED, // 압축률 대신 속도 우선
+      windowBits: 15,
       filter: (req, res) => {
         // 압축 제외 조건
         if (req.headers['x-no-compression']) {

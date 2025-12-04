@@ -29,6 +29,16 @@ export class HealthController {
     }
   }
 
+  private async refreshHealthAsync(): Promise<void> {
+    void (async () => {
+      const database = await Promise.race([
+        this.checkDatabaseHealth(),
+        new Promise<'unavailable'>((resolve) => setTimeout(() => resolve('unavailable'), 1000)),
+      ]);
+      this.lastHealthCheck = { result: database, timestamp: Date.now() };
+    })();
+  }
+
   @Get('health')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '서버 및 데이터베이스 상태 확인' })
@@ -36,18 +46,27 @@ export class HealthController {
   async health() {
     // 캐시된 헬스 체크 결과 사용 (30초 캐시)
     const now = Date.now();
-    if (this.lastHealthCheck && (now - this.lastHealthCheck.timestamp) < this.HEALTH_CACHE_TTL) {
+    const cached = this.lastHealthCheck;
+    if (cached && (now - cached.timestamp) < this.HEALTH_CACHE_TTL) {
       return success({
         status: 'ok',
-        database: this.lastHealthCheck.result,
+        database: cached.result,
       });
     }
 
-    // 빠른 헬스 체크 (타임아웃 500ms)
+    // 캐시가 있지만 만료된 경우: 비동기 갱신 후 즉시 응답해 지연 최소화
+    if (cached) {
+      this.refreshHealthAsync();
+      return success({
+        status: 'ok',
+        database: cached.result,
+      });
+    }
+
+    // 첫 호출 시만 빠른 헬스 체크 (타임아웃 1초)
     const database = await Promise.race([
       this.checkDatabaseHealth(),
-      // 타임아웃을 다소 여유 있게 늘려 초기 연결 지연으로 인한 오탐을 줄임
-      new Promise<'unavailable'>((resolve) => setTimeout(() => resolve('unavailable'), 3000)),
+      new Promise<'unavailable'>((resolve) => setTimeout(() => resolve('unavailable'), 1000)),
     ]);
 
     // 결과 캐싱
