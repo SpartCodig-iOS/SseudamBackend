@@ -32,8 +32,13 @@ let TravelController = class TravelController {
         }
         const page = Number(request.query?.page ?? '1') || 1;
         const limit = Number(request.query?.limit ?? '20') || 20;
+        const rawStatus = request.query?.status?.toLowerCase();
+        const status = rawStatus === 'active' || rawStatus === 'archived' ? rawStatus : undefined;
+        if (rawStatus && !status) {
+            throw new common_1.BadRequestException('status 값은 active 또는 archived 여야 합니다.');
+        }
         // 최적화된 여행 서비스 사용 (200-400ms 목표) - 항상 멤버 정보 포함
-        const result = await this.optimizedTravelService.listTravelsOptimized(req.currentUser.id, { page, limit }, true // 항상 멤버 정보 포함
+        const result = await this.optimizedTravelService.listTravelsOptimized(req.currentUser.id, { page, limit, status }, true // 항상 멤버 정보 포함
         );
         return (0, api_1.success)(result);
     }
@@ -135,6 +140,7 @@ __decorate([
     (0, swagger_1.ApiOkResponse)({ type: travel_response_dto_1.TravelSummaryDto, isArray: true }),
     (0, swagger_1.ApiQuery)({ name: 'page', required: false, type: Number, example: 1 }),
     (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number, example: 20 }),
+    (0, swagger_1.ApiQuery)({ name: 'status', required: false, enum: ['active', 'archived'], description: '여행 상태 필터' }),
     (0, swagger_1.ApiOkResponse)({ type: travel_response_dto_1.TravelListResponseDto }),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Req)()),

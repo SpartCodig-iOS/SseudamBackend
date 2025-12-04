@@ -39,6 +39,7 @@ export class TravelController {
   @ApiOkResponse({ type: TravelSummaryDto, isArray: true })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
+  @ApiQuery({ name: 'status', required: false, enum: ['active', 'archived'], description: '여행 상태 필터' })
   @ApiOkResponse({ type: TravelListResponseDto })
   async list(@Req() req: RequestWithUser, @Req() request: RequestWithUser) {
     if (!req.currentUser) {
@@ -46,11 +47,17 @@ export class TravelController {
     }
     const page = Number((request.query?.page as string) ?? '1') || 1;
     const limit = Number((request.query?.limit as string) ?? '20') || 20;
+    const rawStatus = (request.query?.status as string | undefined)?.toLowerCase();
+    const status = rawStatus === 'active' || rawStatus === 'archived' ? rawStatus : undefined;
+
+    if (rawStatus && !status) {
+      throw new BadRequestException('status 값은 active 또는 archived 여야 합니다.');
+    }
 
     // 최적화된 여행 서비스 사용 (200-400ms 목표) - 항상 멤버 정보 포함
     const result = await this.optimizedTravelService.listTravelsOptimized(
       req.currentUser.id,
-      { page, limit },
+      { page, limit, status },
       true // 항상 멤버 정보 포함
     );
     return success(result);

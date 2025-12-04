@@ -56,8 +56,8 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
         };
     }
     // 캐시 키 생성
-    getTravelListCacheKey(userId, page, limit) {
-        return `${this.TRAVEL_LIST_CACHE_PREFIX}:${userId}:${page}:${limit}`;
+    getTravelListCacheKey(userId, page, limit, status) {
+        return `${this.TRAVEL_LIST_CACHE_PREFIX}:${userId}:${page}:${limit}:${status ?? 'all'}`;
     }
     getTravelDetailCacheKey(travelId) {
         return `${this.TRAVEL_DETAIL_CACHE_PREFIX}:${travelId}`;
@@ -67,10 +67,11 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
         const page = Math.max(1, pagination.page ?? 1);
         const limit = Math.min(100, Math.max(1, pagination.limit ?? 20));
         const offset = (page - 1) * limit;
+        const status = pagination.status === 'active' || pagination.status === 'archived' ? pagination.status : undefined;
         // 국가-통화 매핑 확인 (백그라운드로 실행)
         this.ensureCountryCurrencyLoaded().catch(error => this.logger.warn(`Failed to load country currency mapping: ${error.message}`));
         // 캐시 확인
-        const cacheKey = this.getTravelListCacheKey(userId, page, limit);
+        const cacheKey = this.getTravelListCacheKey(userId, page, limit, status);
         const cached = await this.cacheService.get(cacheKey);
         if (cached) {
             this.logger.debug(`Travel list cache hit for user ${userId}`);
@@ -81,8 +82,8 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
             const pool = await (0, pool_1.getPool)();
             // 병렬로 총 개수와 목록 조회
             const [totalResult, listResult] = await Promise.all([
-                this.getTotalTravelsCount(pool, userId),
-                this.getTravelsList(pool, userId, limit, offset, includeMembers),
+                this.getTotalTravelsCount(pool, userId, status),
+                this.getTravelsList(pool, userId, limit, offset, includeMembers, status),
             ]);
             const total = totalResult.rows[0]?.total ?? 0;
             const items = listResult.rows.map(this.transformTravelRow);
@@ -108,12 +109,16 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
             throw error;
         }
     }
-    async getTotalTravelsCount(pool, userId) {
+    async getTotalTravelsCount(pool, userId, status) {
+        const statusCondition = this.buildStatusCondition(status, 't');
         return pool.query(`SELECT COUNT(*)::int AS total
        FROM travel_members tm
-       WHERE tm.user_id = $1`, [userId]);
+       INNER JOIN travels t ON t.id = tm.travel_id
+       WHERE tm.user_id = $1
+       ${statusCondition}`, [userId]);
     }
-    async getTravelsList(pool, userId, limit, offset, includeMembers) {
+    async getTravelsList(pool, userId, limit, offset, includeMembers, status) {
+        const statusCondition = this.buildStatusCondition(status, 't');
         if (includeMembers) {
             // 멤버 정보 포함 (최적화된 쿼리)
             return pool.query(`SELECT
@@ -135,12 +140,12 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
          INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
          INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
          LEFT JOIN travel_invites ti ON ti.travel_id = t.id AND ti.status = 'active'
-         LEFT JOIN LATERAL (
-           SELECT json_agg(
-                    json_build_object(
-                      'userId', tm2.user_id,
-                      'name', p.name,
-                      'role', tm2.role
+           LEFT JOIN LATERAL (
+             SELECT json_agg(
+                      json_build_object(
+                        'userId', tm2.user_id,
+                        'name', p.name,
+                        'role', tm2.role
                     )
                     ORDER BY tm2.joined_at
                   ) AS members
@@ -148,6 +153,8 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
            LEFT JOIN profiles p ON p.id = tm2.user_id
            WHERE tm2.travel_id = t.id
          ) AS members ON TRUE
+         WHERE 1 = 1
+         ${statusCondition}
          ORDER BY t.created_at DESC
          LIMIT $2 OFFSET $3`, [userId, limit, offset]);
         }
@@ -171,15 +178,26 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
          FROM travels t
          INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
          INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
-         LEFT JOIN travel_invites ti ON ti.travel_id = t.id AND ti.status = 'active'
-         LEFT JOIN (
-           SELECT travel_id, COUNT(*)::int AS member_count
-           FROM travel_members
-           GROUP BY travel_id
-         ) AS member_counts ON member_counts.travel_id = t.id
+           LEFT JOIN travel_invites ti ON ti.travel_id = t.id AND ti.status = 'active'
+           LEFT JOIN (
+             SELECT travel_id, COUNT(*)::int AS member_count
+             FROM travel_members
+             GROUP BY travel_id
+           ) AS member_counts ON member_counts.travel_id = t.id
+         WHERE 1 = 1
+         ${statusCondition}
          ORDER BY t.created_at DESC
          LIMIT $2 OFFSET $3`, [userId, limit, offset]);
         }
+    }
+    buildStatusCondition(status, alias) {
+        if (status === 'active') {
+            return `AND ${alias}.end_date >= CURRENT_DATE`;
+        }
+        if (status === 'archived') {
+            return `AND ${alias}.end_date < CURRENT_DATE`;
+        }
+        return '';
     }
     // 여행 상세 정보 캐시드 조회
     async getTravelDetailCached(travelId, userId) {

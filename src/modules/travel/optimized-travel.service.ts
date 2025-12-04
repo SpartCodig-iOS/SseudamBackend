@@ -48,8 +48,13 @@ export class OptimizedTravelService {
   ) {}
 
   // 캐시 키 생성
-  private getTravelListCacheKey(userId: string, page: number, limit: number): string {
-    return `${this.TRAVEL_LIST_CACHE_PREFIX}:${userId}:${page}:${limit}`;
+  private getTravelListCacheKey(
+    userId: string,
+    page: number,
+    limit: number,
+    status?: 'active' | 'archived',
+  ): string {
+    return `${this.TRAVEL_LIST_CACHE_PREFIX}:${userId}:${page}:${limit}:${status ?? 'all'}`;
   }
 
   private getTravelDetailCacheKey(travelId: string): string {
@@ -59,12 +64,13 @@ export class OptimizedTravelService {
   // 최적화된 여행 목록 조회 (멤버 정보 없이 빠른 조회)
   async listTravelsOptimized(
     userId: string,
-    pagination: { page?: number; limit?: number } = {},
+    pagination: { page?: number; limit?: number; status?: 'active' | 'archived' } = {},
     includeMembers = false,
   ): Promise<{ total: number; page: number; limit: number; items: OptimizedTravelSummary[] }> {
     const page = Math.max(1, pagination.page ?? 1);
     const limit = Math.min(100, Math.max(1, pagination.limit ?? 20));
     const offset = (page - 1) * limit;
+    const status = pagination.status === 'active' || pagination.status === 'archived' ? pagination.status : undefined;
 
     // 국가-통화 매핑 확인 (백그라운드로 실행)
     this.ensureCountryCurrencyLoaded().catch(error =>
@@ -72,7 +78,7 @@ export class OptimizedTravelService {
     );
 
     // 캐시 확인
-    const cacheKey = this.getTravelListCacheKey(userId, page, limit);
+    const cacheKey = this.getTravelListCacheKey(userId, page, limit, status);
     const cached = await this.cacheService.get<{ total: number; page: number; limit: number; items: OptimizedTravelSummary[] }>(cacheKey);
     if (cached) {
       this.logger.debug(`Travel list cache hit for user ${userId}`);
@@ -86,8 +92,8 @@ export class OptimizedTravelService {
 
       // 병렬로 총 개수와 목록 조회
       const [totalResult, listResult] = await Promise.all([
-        this.getTotalTravelsCount(pool, userId),
-        this.getTravelsList(pool, userId, limit, offset, includeMembers),
+        this.getTotalTravelsCount(pool, userId, status),
+        this.getTravelsList(pool, userId, limit, offset, includeMembers, status),
       ]);
 
       const total = totalResult.rows[0]?.total ?? 0;
@@ -122,16 +128,28 @@ export class OptimizedTravelService {
     }
   }
 
-  private async getTotalTravelsCount(pool: Pool, userId: string) {
+  private async getTotalTravelsCount(pool: Pool, userId: string, status?: 'active' | 'archived') {
+    const statusCondition = this.buildStatusCondition(status, 't');
     return pool.query(
       `SELECT COUNT(*)::int AS total
        FROM travel_members tm
-       WHERE tm.user_id = $1`,
+       INNER JOIN travels t ON t.id = tm.travel_id
+       WHERE tm.user_id = $1
+       ${statusCondition}`,
       [userId],
     );
   }
 
-  private async getTravelsList(pool: Pool, userId: string, limit: number, offset: number, includeMembers: boolean) {
+  private async getTravelsList(
+    pool: Pool,
+    userId: string,
+    limit: number,
+    offset: number,
+    includeMembers: boolean,
+    status?: 'active' | 'archived',
+  ) {
+    const statusCondition = this.buildStatusCondition(status, 't');
+
     if (includeMembers) {
       // 멤버 정보 포함 (최적화된 쿼리)
       return pool.query(
@@ -154,12 +172,12 @@ export class OptimizedTravelService {
          INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
          INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
          LEFT JOIN travel_invites ti ON ti.travel_id = t.id AND ti.status = 'active'
-         LEFT JOIN LATERAL (
-           SELECT json_agg(
-                    json_build_object(
-                      'userId', tm2.user_id,
-                      'name', p.name,
-                      'role', tm2.role
+           LEFT JOIN LATERAL (
+             SELECT json_agg(
+                      json_build_object(
+                        'userId', tm2.user_id,
+                        'name', p.name,
+                        'role', tm2.role
                     )
                     ORDER BY tm2.joined_at
                   ) AS members
@@ -167,6 +185,8 @@ export class OptimizedTravelService {
            LEFT JOIN profiles p ON p.id = tm2.user_id
            WHERE tm2.travel_id = t.id
          ) AS members ON TRUE
+         WHERE 1 = 1
+         ${statusCondition}
          ORDER BY t.created_at DESC
          LIMIT $2 OFFSET $3`,
         [userId, limit, offset],
@@ -192,17 +212,29 @@ export class OptimizedTravelService {
          FROM travels t
          INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
          INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
-         LEFT JOIN travel_invites ti ON ti.travel_id = t.id AND ti.status = 'active'
-         LEFT JOIN (
-           SELECT travel_id, COUNT(*)::int AS member_count
-           FROM travel_members
-           GROUP BY travel_id
-         ) AS member_counts ON member_counts.travel_id = t.id
+           LEFT JOIN travel_invites ti ON ti.travel_id = t.id AND ti.status = 'active'
+           LEFT JOIN (
+             SELECT travel_id, COUNT(*)::int AS member_count
+             FROM travel_members
+             GROUP BY travel_id
+           ) AS member_counts ON member_counts.travel_id = t.id
+         WHERE 1 = 1
+         ${statusCondition}
          ORDER BY t.created_at DESC
          LIMIT $2 OFFSET $3`,
         [userId, limit, offset],
       );
     }
+  }
+
+  private buildStatusCondition(status: 'active' | 'archived' | undefined, alias: string): string {
+    if (status === 'active') {
+      return `AND ${alias}.end_date >= CURRENT_DATE`;
+    }
+    if (status === 'archived') {
+      return `AND ${alias}.end_date < CURRENT_DATE`;
+    }
+    return '';
   }
 
   private transformTravelRow = (row: any): OptimizedTravelSummary => {
