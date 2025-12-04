@@ -692,7 +692,7 @@ export class TravelService {
       [userId, limit, offset],
     );
 
-    const total = listResult.rows[0]?.total_count ?? 0;
+    const total = Number(listResult.rows[0]?.total_count ?? 0);
     // 동일 travel_id가 중복으로 내려오지 않도록 dedupe 후 멤버 로드
     const uniqueRows = Array.from(
       new Map(listResult.rows.map((row) => [row.id, row])).values()

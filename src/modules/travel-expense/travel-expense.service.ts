@@ -361,7 +361,7 @@ export class TravelExpenseService {
       [travelId, limit, (page - 1) * limit],
     );
 
-    const total = combinedResult.rows[0]?.total_count ?? 0;
+    const total = Number(combinedResult.rows[0]?.total_count ?? 0);
 
     const items = await Promise.all(combinedResult.rows.map(async (row) => {
       const convertedAmount = await this.convertAmount(

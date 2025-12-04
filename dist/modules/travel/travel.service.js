@@ -579,7 +579,7 @@ let TravelService = TravelService_1 = class TravelService {
         ) AS ut
         INNER JOIN profiles owner_profile ON owner_profile.id = ut.owner_id
         LEFT JOIN travel_invites ti ON ti.travel_id = ut.id AND ti.status = 'active'`, [userId, limit, offset]);
-        const total = listResult.rows[0]?.total_count ?? 0;
+        const total = Number(listResult.rows[0]?.total_count ?? 0);
         // 동일 travel_id가 중복으로 내려오지 않도록 dedupe 후 멤버 로드
         const uniqueRows = Array.from(new Map(listResult.rows.map((row) => [row.id, row])).values());
         const travelIds = uniqueRows.map((row) => row.id);
