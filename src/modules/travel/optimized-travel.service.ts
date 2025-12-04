@@ -199,7 +199,7 @@ export class OptimizedTravelService {
       startDate: row.start_date,
       endDate: row.end_date,
       countryCode: row.country_code,
-      countryNameKr: row.country_name_kr,
+      countryNameKr: row.country_name_kr ?? undefined,
       baseCurrency: row.base_currency,
       baseExchangeRate: parseFloat(row.base_exchange_rate),
       inviteCode: row.invite_code,
