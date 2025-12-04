@@ -46,7 +46,8 @@ export class HealthController {
     // 빠른 헬스 체크 (타임아웃 500ms)
     const database = await Promise.race([
       this.checkDatabaseHealth(),
-      new Promise<'unavailable'>((resolve) => setTimeout(() => resolve('unavailable'), 1500)),
+      // 타임아웃을 다소 여유 있게 늘려 초기 연결 지연으로 인한 오탐을 줄임
+      new Promise<'unavailable'>((resolve) => setTimeout(() => resolve('unavailable'), 3000)),
     ]);
 
     // 결과 캐싱

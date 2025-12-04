@@ -106,21 +106,14 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
         }
         return `user_${userId.replace(/[^a-z0-9]/gi, '').slice(0, 12) || userId.slice(0, 12)}`;
     }
-    async ensureUniqueUsername(base, userId, client) {
-        const supabase = client ?? this.getClient();
+    async ensureUniqueUsername(base, userId) {
         const normalizedBase = this.normalizeUsername(base, userId);
         let candidate = normalizedBase;
         let attempts = 0;
         while (attempts < 10) {
-            const { data, error } = await supabase
-                .from(env_1.env.supabaseProfileTable)
-                .select('id')
-                .eq('username', candidate)
-                .limit(1);
-            if (error) {
-                throw error;
-            }
-            const existingId = data?.[0]?.id;
+            const pool = await (0, pool_1.getPool)();
+            const result = await pool.query(`SELECT id FROM ${env_1.env.supabaseProfileTable} WHERE username = $1 LIMIT 1`, [candidate]);
+            const existingId = result.rows[0]?.id;
             if (!existingId || existingId === userId) {
                 return candidate;
             }
@@ -167,71 +160,37 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
         return data.user;
     }
     async findProfileById(id) {
-        // 우선 DB 커넥션 풀을 통한 초고속 조회 (PK 인덱스 활용)
-        try {
-            const pool = await (0, pool_1.getPool)();
-            const result = await pool.query(`SELECT id::text, email, username, name, login_type, avatar_url, role, created_at, updated_at
-         FROM ${env_1.env.supabaseProfileTable}
-         WHERE id = $1
-         LIMIT 1`, [id]);
-            const row = result.rows[0];
-            if (row) {
-                return {
-                    id: row.id,
-                    email: row.email,
-                    username: row.username,
-                    name: row.name ?? null,
-                    login_type: row.login_type ?? null,
-                    avatar_url: row.avatar_url ?? null,
-                    role: row.role ?? null,
-                    created_at: row.created_at,
-                    updated_at: row.updated_at,
-                };
-            }
-        }
-        catch (error) {
-            this.logger.warn('[findProfileById] DB pool lookup failed, falling back to Supabase', error);
-        }
-        // 실패 시 Supabase REST 조회로 폴백
-        const client = this.getClient();
-        const { data, error } = await client
-            .from(env_1.env.supabaseProfileTable)
-            .select('id, email, username, name, login_type, avatar_url, role, created_at, updated_at')
-            .eq('id', id)
-            .limit(1)
-            .maybeSingle();
-        if (error) {
-            throw error;
-        }
-        return data;
+        const pool = await (0, pool_1.getPool)();
+        const result = await pool.query(`SELECT id::text, email, username, name, login_type, avatar_url, role, created_at, updated_at
+       FROM ${env_1.env.supabaseProfileTable}
+       WHERE id = $1
+       LIMIT 1`, [id]);
+        const row = result.rows[0];
+        if (!row)
+            return null;
+        return {
+            id: row.id,
+            email: row.email,
+            username: row.username,
+            name: row.name ?? null,
+            login_type: row.login_type ?? null,
+            avatar_url: row.avatar_url ?? null,
+            role: row.role ?? null,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        };
     }
     // 배치로 여러 프로필 조회 (성능 최적화)
     async findProfilesByIds(ids) {
         if (ids.length === 0)
             return [];
-        // 중복 ID 제거
         const uniqueIds = Array.from(new Set(ids));
-        // 배치 크기 제한 (PostgreSQL의 IN 절 최대 한계 고려)
-        const BATCH_SIZE = 1000;
-        const results = [];
-        for (let i = 0; i < uniqueIds.length; i += BATCH_SIZE) {
-            const batch = uniqueIds.slice(i, i + BATCH_SIZE);
-            const client = this.getClient();
-            const { data, error } = await client
-                .from(env_1.env.supabaseProfileTable)
-                .select('id, email, username, name, login_type, avatar_url, created_at, updated_at')
-                .in('id', batch)
-                .order('username'); // 정렬로 인덱스 활용
-            if (error) {
-                throw error;
-            }
-            if (data) {
-                results.push(...data);
-            }
-        }
-        // 원본 순서 유지를 위한 맵 생성
-        const profileMap = new Map(results.map(profile => [profile.id, profile]));
-        return ids.map(id => profileMap.get(id)).filter(Boolean);
+        const pool = await (0, pool_1.getPool)();
+        const result = await pool.query(`SELECT id::text, email, username, name, login_type, avatar_url, role, created_at, updated_at
+       FROM ${env_1.env.supabaseProfileTable}
+       WHERE id = ANY($1::uuid[])`, [uniqueIds]);
+        const profileMap = new Map(result.rows.map((profile) => [profile.id, profile]));
+        return ids.map((id) => profileMap.get(id)).filter(Boolean);
     }
     // 프로필 캐시를 위한 새로운 메서드
     async findProfilesByIdsWithCache(ids, cacheService) {
@@ -270,36 +229,37 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
         return ids.map(id => profileMap.get(id)).filter(Boolean);
     }
     async upsertProfile(params) {
-        const client = this.getClient();
+        const pool = await (0, pool_1.getPool)();
         const now = new Date().toISOString();
-        const payload = {
-            id: params.id,
-            email: params.email,
-            name: params.name,
-            username: params.username,
-            login_type: params.loginType ?? null,
-            avatar_url: params.avatarUrl ?? null,
-            created_at: now,
-            updated_at: now,
-        };
-        const { error } = await client.from(env_1.env.supabaseProfileTable).upsert(payload, { onConflict: 'id' });
-        if (error)
-            throw error;
+        await pool.query(`INSERT INTO ${env_1.env.supabaseProfileTable}
+         (id, email, name, username, login_type, avatar_url, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+       ON CONFLICT (id) DO UPDATE
+       SET email = EXCLUDED.email,
+           name = EXCLUDED.name,
+           username = EXCLUDED.username,
+           login_type = EXCLUDED.login_type,
+           avatar_url = EXCLUDED.avatar_url,
+           updated_at = EXCLUDED.updated_at`, [
+            params.id,
+            params.email,
+            params.name ?? null,
+            params.username,
+            params.loginType ?? null,
+            params.avatarUrl ?? null,
+            now,
+        ]);
     }
     async ensureProfileFromSupabaseUser(user, loginType) {
         if (!user.email) {
             throw new Error('Supabase user does not contain an email');
         }
-        const client = this.getClient();
-        const { data: existingProfile, error: existingProfileError } = await client
-            .from(env_1.env.supabaseProfileTable)
-            .select('username, name, avatar_url')
-            .eq('id', user.id)
-            .limit(1)
-            .maybeSingle();
-        if (existingProfileError) {
-            throw existingProfileError;
-        }
+        const pool = await (0, pool_1.getPool)();
+        const existingProfileResult = await pool.query(`SELECT username, name, avatar_url
+       FROM ${env_1.env.supabaseProfileTable}
+       WHERE id = $1
+       LIMIT 1`, [user.id]);
+        const existingProfile = existingProfileResult.rows[0];
         const existingProfileUsername = existingProfile?.username ?? null;
         const existingProfileName = existingProfile?.name ?? null;
         const existingAvatar = existingProfile?.avatar_url ?? null;
@@ -307,7 +267,7 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
             user.email.split('@')[0] ??
             user.id;
         const username = existingProfileUsername ??
-            (await this.ensureUniqueUsername(proposedUsername, user.id, client));
+            (await this.ensureUniqueUsername(proposedUsername, user.id));
         const resolvedName = this.resolveNameFromUser(user, loginType) ??
             existingProfileName ??
             user.email?.split('@')[0] ??
@@ -324,54 +284,28 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
         });
     }
     async saveAppleRefreshToken(userId, refreshToken) {
-        const client = this.getClient();
-        const { error } = await client
-            .from(env_1.env.supabaseProfileTable)
-            .update({
-            apple_refresh_token: refreshToken,
-            updated_at: new Date().toISOString(),
-        })
-            .eq('id', userId);
-        if (error) {
-            throw new Error(`[saveAppleRefreshToken] update failed: ${error.message}`);
-        }
+        const pool = await (0, pool_1.getPool)();
+        await pool.query(`UPDATE ${env_1.env.supabaseProfileTable}
+         SET apple_refresh_token = $1,
+             updated_at = NOW()
+       WHERE id = $2`, [refreshToken, userId]);
     }
     async getAppleRefreshToken(userId) {
-        const client = this.getClient();
-        const { data, error } = await client
-            .from(env_1.env.supabaseProfileTable)
-            .select('apple_refresh_token')
-            .eq('id', userId)
-            .maybeSingle();
-        if (error) {
-            throw new Error(`[getAppleRefreshToken] select failed: ${error.message}`);
-        }
-        return data?.apple_refresh_token ?? null;
+        const pool = await (0, pool_1.getPool)();
+        const result = await pool.query(`SELECT apple_refresh_token FROM ${env_1.env.supabaseProfileTable} WHERE id = $1 LIMIT 1`, [userId]);
+        return result.rows[0]?.apple_refresh_token ?? null;
     }
     async saveGoogleRefreshToken(userId, refreshToken) {
-        const client = this.getClient();
-        const { error } = await client
-            .from(env_1.env.supabaseProfileTable)
-            .update({
-            google_refresh_token: refreshToken,
-            updated_at: new Date().toISOString(),
-        })
-            .eq('id', userId);
-        if (error) {
-            throw new Error(`[saveGoogleRefreshToken] update failed: ${error.message}`);
-        }
+        const pool = await (0, pool_1.getPool)();
+        await pool.query(`UPDATE ${env_1.env.supabaseProfileTable}
+         SET google_refresh_token = $1,
+             updated_at = NOW()
+       WHERE id = $2`, [refreshToken, userId]);
     }
     async getGoogleRefreshToken(userId) {
-        const client = this.getClient();
-        const { data, error } = await client
-            .from(env_1.env.supabaseProfileTable)
-            .select('google_refresh_token')
-            .eq('id', userId)
-            .maybeSingle();
-        if (error) {
-            throw new Error(`[getGoogleRefreshToken] select failed: ${error.message}`);
-        }
-        return data?.google_refresh_token ?? null;
+        const pool = await (0, pool_1.getPool)();
+        const result = await pool.query(`SELECT google_refresh_token FROM ${env_1.env.supabaseProfileTable} WHERE id = $1 LIMIT 1`, [userId]);
+        return result.rows[0]?.google_refresh_token ?? null;
     }
     parseAvatarStoragePath(avatarUrl) {
         if (!avatarUrl)
@@ -476,10 +410,11 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
                 throw new Error(`upload failed: ${error.message}`);
             }
             const publicUrl = `${env_1.env.supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${objectPath}`;
-            await client
-                .from(env_1.env.supabaseProfileTable)
-                .update({ avatar_url: publicUrl, updated_at: new Date().toISOString() })
-                .eq('id', userId);
+            const pool = await (0, pool_1.getPool)();
+            await pool.query(`UPDATE ${env_1.env.supabaseProfileTable}
+           SET avatar_url = $1,
+               updated_at = NOW()
+         WHERE id = $2`, [publicUrl, userId]);
             return publicUrl;
         }
         catch (error) {
@@ -522,19 +457,11 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
         }
     }
     async deleteUser(id) {
+        // DB 레코드 정리
+        const pool = await (0, pool_1.getPool)();
+        await pool.query(`DELETE FROM ${env_1.env.supabaseProfileTable} WHERE id = $1`, [id]);
+        // Supabase auth 사용자 삭제(스토리지/인증만 사용)
         const client = this.getClient();
-        const { data: userLookup, error: lookupError } = await client.auth.admin.getUserById(id);
-        if (lookupError) {
-            throw new Error(`[deleteUser] admin.getUserById failed: ${lookupError.message}`);
-        }
-        if (!userLookup?.user) {
-            await client.from(env_1.env.supabaseProfileTable).delete().eq('id', id);
-            return;
-        }
-        const { error: profileError } = await client.from(env_1.env.supabaseProfileTable).delete().eq('id', id);
-        if (profileError) {
-            throw new Error(`[deleteUser] profile delete failed: ${profileError.message}`);
-        }
         const { error: userError } = await client.auth.admin.deleteUser(id);
         if (userError) {
             throw new Error(`[deleteUser] admin.deleteUser failed: ${userError.message}`);
@@ -553,21 +480,13 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
         await this.deleteUser(userId);
     }
     async checkProfilesHealth() {
-        if (!this.client) {
-            return 'not_configured';
-        }
         try {
-            const { error } = await this.client
-                .from(env_1.env.supabaseProfileTable)
-                .select('id', { head: true, count: 'exact' });
-            if (error) {
-                console.error('[health] Supabase health check error', error);
-                return 'unavailable';
-            }
+            const pool = await (0, pool_1.getPool)();
+            await pool.query(`SELECT 1 FROM ${env_1.env.supabaseProfileTable} LIMIT 1`);
             return 'ok';
         }
         catch (error) {
-            console.error('[health] Supabase health check exception', error);
+            console.error('[health] Profile table health check failed', error);
             return 'unavailable';
         }
     }

@@ -45,8 +45,8 @@ const buildPoolConfig = async () => {
         query_timeout: 30000,
         application_name: 'SseudamBackend-Railway-Optimized',
         keepAlive: false, // Railway Sleep 모드를 위해 Keep-Alive 비활성화
-        // Railway Sleep 친화적 최적화 설정
-        options: '--default_transaction_isolation=read_committed --statement_timeout=30s --lock_timeout=10s',
+        // Railway Sleep 친화적 최적화 설정 (Postgres 옵션 전달 형식 수정)
+        options: '-c default_transaction_isolation=read committed -c statement_timeout=30s -c lock_timeout=10s',
     };
     config.acquireTimeoutMillis = 2000; // 커넥션 획득 타임아웃
     if ((0, network_1.shouldUseTLS)(base.host)) {

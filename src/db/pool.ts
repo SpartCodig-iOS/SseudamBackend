@@ -47,8 +47,8 @@ const buildPoolConfig = async (): Promise<PoolConfig> => {
     query_timeout: 30_000,
     application_name: 'SseudamBackend-Railway-Optimized',
     keepAlive: false, // Railway Sleep 모드를 위해 Keep-Alive 비활성화
-    // Railway Sleep 친화적 최적화 설정
-    options: '--default_transaction_isolation=read_committed --statement_timeout=30s --lock_timeout=10s',
+    // Railway Sleep 친화적 최적화 설정 (GUC 전달 시 공백 이슈 방지를 위해 isolation 설정 제거)
+    options: '-c statement_timeout=30s -c lock_timeout=10s',
   };
 
   (config as PoolConfig & { acquireTimeoutMillis?: number }).acquireTimeoutMillis = 2_000; // 커넥션 획득 타임아웃
@@ -86,16 +86,19 @@ export const getPool = async (): Promise<Pool> => {
 
     // 풀 워밍업: 최소 연결 수만큼 미리 연결 생성
     const minConnections = config.min || 3;
-    try {
-      const warmupPromises = Array(minConnections).fill(null).map(async () => {
-        const client = await pool!.connect();
-        client.release();
-      });
-      await Promise.all(warmupPromises);
-      console.log(`DB pool warmed up with ${minConnections} connections`);
-    } catch (err) {
-      console.warn('Pool warmup failed:', err);
-    }
+    // 비동기 워밍업으로 헬스체크 초기 응답 지연 방지
+    void (async () => {
+      try {
+        const warmupPromises = Array(minConnections).fill(null).map(async () => {
+          const client = await pool!.connect();
+          client.release();
+        });
+        await Promise.all(warmupPromises);
+        console.log(`DB pool warmed up with ${minConnections} connections`);
+      } catch (err) {
+        console.warn('Pool warmup failed:', err);
+      }
+    })();
   }
   return pool;
 };

@@ -13,7 +13,8 @@ const optionalNumber = (value, fallback) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
 };
-const databaseUrl = process.env.SUPERBASE_DB_URL ||
+const databaseUrl = process.env.RAILWAY_DATABASE_URL ||
+    process.env.SUPERBASE_DB_URL ||
     process.env.SUPABASE_DB_URL ||
     process.env.DATABASE_URL ||
     process.env.DATABASE_URL?.trim();
@@ -68,7 +69,7 @@ if (exports.env.corsOrigins.length === 0) {
 }
 const missingVars = [];
 const requiredEnv = [
-    ['databaseUrl', 'DATABASE_URL / SUPABASE_DB_URL'],
+    ['databaseUrl', 'RAILWAY_DATABASE_URL / DATABASE_URL / SUPABASE_DB_URL'],
     ['jwtSecret', 'JWT_SECRET'],
     ['supabaseUrl', 'SUPABASE_URL'],
     ['supabaseServiceRoleKey', 'SUPABASE_SERVICE_ROLE_KEY'],
