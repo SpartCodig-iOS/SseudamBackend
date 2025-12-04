@@ -14,13 +14,46 @@ exports.OptimizedTravelService = void 0;
 const common_1 = require("@nestjs/common");
 const pool_1 = require("../../db/pool");
 const cacheService_1 = require("../../services/cacheService");
+const meta_service_1 = require("../meta/meta.service");
 let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelService {
-    constructor(cacheService) {
+    constructor(cacheService, metaService) {
         this.cacheService = cacheService;
+        this.metaService = metaService;
         this.logger = new common_1.Logger(OptimizedTravelService_1.name);
         this.CACHE_TTL = 120; // 2분 캐시 (빠른 응답 최적화)
         this.TRAVEL_LIST_CACHE_PREFIX = 'user_travels';
         this.TRAVEL_DETAIL_CACHE_PREFIX = 'travel_detail';
+        this.countryCurrencyCache = new Map();
+        this.countryCurrencyLoaded = false;
+        this.countryCurrencyLoadPromise = null;
+        this.transformTravelRow = (row) => {
+            const destinationCurrency = this.resolveDestinationCurrency(row.country_code, row.base_currency);
+            const result = {
+                id: row.id,
+                title: row.title,
+                startDate: row.start_date,
+                endDate: row.end_date,
+                countryCode: row.country_code,
+                countryNameKr: row.country_name_kr ?? undefined,
+                baseCurrency: row.base_currency,
+                baseExchangeRate: parseFloat(row.base_exchange_rate),
+                destinationCurrency,
+                inviteCode: row.invite_code,
+                status: row.status,
+                role: row.role,
+                createdAt: row.created_at,
+                ownerName: row.owner_name,
+            };
+            // 멤버 정보가 있으면 members 배열로, 없으면 memberCount로
+            if (row.members) {
+                const members = typeof row.members === 'string' ? JSON.parse(row.members) : row.members;
+                result.members = members || [];
+            }
+            else if (row.member_count !== undefined) {
+                result.memberCount = row.member_count;
+            }
+            return result;
+        };
     }
     // 캐시 키 생성
     getTravelListCacheKey(userId, page, limit) {
@@ -34,6 +67,8 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
         const page = Math.max(1, pagination.page ?? 1);
         const limit = Math.min(100, Math.max(1, pagination.limit ?? 20));
         const offset = (page - 1) * limit;
+        // 국가-통화 매핑 확인 (백그라운드로 실행)
+        this.ensureCountryCurrencyLoaded().catch(error => this.logger.warn(`Failed to load country currency mapping: ${error.message}`));
         // 캐시 확인
         const cacheKey = this.getTravelListCacheKey(userId, page, limit);
         const cached = await this.cacheService.get(cacheKey);
@@ -145,32 +180,6 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
          ORDER BY t.created_at DESC
          LIMIT $2 OFFSET $3`, [userId, limit, offset]);
         }
-    }
-    transformTravelRow(row) {
-        const result = {
-            id: row.id,
-            title: row.title,
-            startDate: row.start_date,
-            endDate: row.end_date,
-            countryCode: row.country_code,
-            countryNameKr: row.country_name_kr ?? undefined,
-            baseCurrency: row.base_currency,
-            baseExchangeRate: parseFloat(row.base_exchange_rate),
-            inviteCode: row.invite_code,
-            status: row.status,
-            role: row.role,
-            createdAt: row.created_at,
-            ownerName: row.owner_name,
-        };
-        // 멤버 정보가 있으면 members 배열로, 없으면 memberCount로
-        if (row.members) {
-            const members = typeof row.members === 'string' ? JSON.parse(row.members) : row.members;
-            result.members = members || [];
-        }
-        else if (row.member_count !== undefined) {
-            result.memberCount = row.member_count;
-        }
-        return result;
     }
     // 여행 상세 정보 캐시드 조회
     async getTravelDetailCached(travelId, userId) {
@@ -298,9 +307,43 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
         }
         return cachedTravels;
     }
+    // 국가-통화 매핑 캐시 로딩
+    async ensureCountryCurrencyLoaded() {
+        if (this.countryCurrencyLoaded) {
+            return;
+        }
+        if (this.countryCurrencyLoadPromise) {
+            return this.countryCurrencyLoadPromise;
+        }
+        this.countryCurrencyLoadPromise = this.loadCountryCurrencyMapping();
+        await this.countryCurrencyLoadPromise;
+        this.countryCurrencyLoaded = true;
+        this.countryCurrencyLoadPromise = null;
+    }
+    async loadCountryCurrencyMapping() {
+        try {
+            const countries = await this.metaService.getCountries();
+            for (const country of countries) {
+                const code = (country.code ?? '').toUpperCase();
+                const currency = country.currencies?.[0];
+                if (code && currency) {
+                    this.countryCurrencyCache.set(code, currency.toUpperCase());
+                }
+            }
+            this.logger.debug(`Loaded ${this.countryCurrencyCache.size} country-currency mappings`);
+        }
+        catch (error) {
+            this.logger.error('Failed to load country-currency mapping:', error);
+        }
+    }
+    resolveDestinationCurrency(countryCode, baseCurrency) {
+        const code = (countryCode ?? '').toUpperCase();
+        return this.countryCurrencyCache.get(code) ?? (baseCurrency ?? 'USD');
+    }
 };
 exports.OptimizedTravelService = OptimizedTravelService;
 exports.OptimizedTravelService = OptimizedTravelService = OptimizedTravelService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [cacheService_1.CacheService])
+    __metadata("design:paramtypes", [cacheService_1.CacheService,
+        meta_service_1.MetaService])
 ], OptimizedTravelService);

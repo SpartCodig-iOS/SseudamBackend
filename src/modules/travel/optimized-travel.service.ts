@@ -5,6 +5,7 @@ import {
 import { Pool } from 'pg';
 import { getPool } from '../../db/pool';
 import { CacheService } from '../../services/cacheService';
+import { MetaService } from '../meta/meta.service';
 
 interface TravelMember {
   userId: string;
@@ -21,6 +22,7 @@ interface OptimizedTravelSummary {
   countryNameKr?: string;
   baseCurrency: string;
   baseExchangeRate: number;
+  destinationCurrency: string;
   inviteCode?: string;
   status: string;
   role: string;
@@ -36,8 +38,14 @@ export class OptimizedTravelService {
   private readonly CACHE_TTL = 120; // 2분 캐시 (빠른 응답 최적화)
   private readonly TRAVEL_LIST_CACHE_PREFIX = 'user_travels';
   private readonly TRAVEL_DETAIL_CACHE_PREFIX = 'travel_detail';
+  private readonly countryCurrencyCache = new Map<string, string>();
+  private countryCurrencyLoaded = false;
+  private countryCurrencyLoadPromise: Promise<void> | null = null;
 
-  constructor(private readonly cacheService: CacheService) {}
+  constructor(
+    private readonly cacheService: CacheService,
+    private readonly metaService: MetaService,
+  ) {}
 
   // 캐시 키 생성
   private getTravelListCacheKey(userId: string, page: number, limit: number): string {
@@ -57,6 +65,11 @@ export class OptimizedTravelService {
     const page = Math.max(1, pagination.page ?? 1);
     const limit = Math.min(100, Math.max(1, pagination.limit ?? 20));
     const offset = (page - 1) * limit;
+
+    // 국가-통화 매핑 확인 (백그라운드로 실행)
+    this.ensureCountryCurrencyLoaded().catch(error =>
+      this.logger.warn(`Failed to load country currency mapping: ${error.message}`)
+    );
 
     // 캐시 확인
     const cacheKey = this.getTravelListCacheKey(userId, page, limit);
@@ -192,7 +205,8 @@ export class OptimizedTravelService {
     }
   }
 
-  private transformTravelRow(row: any): OptimizedTravelSummary {
+  private transformTravelRow = (row: any): OptimizedTravelSummary => {
+    const destinationCurrency = this.resolveDestinationCurrency(row.country_code, row.base_currency);
     const result: OptimizedTravelSummary = {
       id: row.id,
       title: row.title,
@@ -202,6 +216,7 @@ export class OptimizedTravelService {
       countryNameKr: row.country_name_kr ?? undefined,
       baseCurrency: row.base_currency,
       baseExchangeRate: parseFloat(row.base_exchange_rate),
+      destinationCurrency,
       inviteCode: row.invite_code,
       status: row.status,
       role: row.role,
@@ -218,7 +233,7 @@ export class OptimizedTravelService {
     }
 
     return result;
-  }
+  };
 
   // 여행 상세 정보 캐시드 조회
   async getTravelDetailCached(travelId: string, userId: string): Promise<any> {
@@ -369,5 +384,42 @@ export class OptimizedTravelService {
     }
 
     return cachedTravels;
+  }
+
+  // 국가-통화 매핑 캐시 로딩
+  private async ensureCountryCurrencyLoaded(): Promise<void> {
+    if (this.countryCurrencyLoaded) {
+      return;
+    }
+
+    if (this.countryCurrencyLoadPromise) {
+      return this.countryCurrencyLoadPromise;
+    }
+
+    this.countryCurrencyLoadPromise = this.loadCountryCurrencyMapping();
+    await this.countryCurrencyLoadPromise;
+    this.countryCurrencyLoaded = true;
+    this.countryCurrencyLoadPromise = null;
+  }
+
+  private async loadCountryCurrencyMapping(): Promise<void> {
+    try {
+      const countries = await this.metaService.getCountries();
+      for (const country of countries) {
+        const code = (country.code ?? '').toUpperCase();
+        const currency = country.currencies?.[0];
+        if (code && currency) {
+          this.countryCurrencyCache.set(code, currency.toUpperCase());
+        }
+      }
+      this.logger.debug(`Loaded ${this.countryCurrencyCache.size} country-currency mappings`);
+    } catch (error) {
+      this.logger.error('Failed to load country-currency mapping:', error);
+    }
+  }
+
+  private resolveDestinationCurrency(countryCode: string, baseCurrency?: string | null): string {
+    const code = (countryCode ?? '').toUpperCase();
+    return this.countryCurrencyCache.get(code) ?? (baseCurrency ?? 'USD');
   }
 }
