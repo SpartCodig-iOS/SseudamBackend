@@ -46,7 +46,7 @@ export class CacheService {
         enableOfflineQueue: false,
         lazyConnect: true,            // 필요시에만 연결
         keepAlive: 30000,             // 30초마다 keep-alive
-        maxLoadingTimeout: 5000,      // 로딩 타임아웃
+        maxLoadingRetryTime: 5000,    // 로딩 타임아웃
       });
 
       this.redis.on('connect', () => {
