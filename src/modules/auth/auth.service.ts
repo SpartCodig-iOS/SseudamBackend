@@ -375,15 +375,13 @@ export class AuthService {
       role: 'user',
     };
 
-    // 세션 생성과 캐시 업데이트를 병렬로 처리
-    const [result] = await Promise.all([
-      this.createAuthSession(newUser, 'signup'),
-      this.markLastLogin(newUser.id),
-      // 캐시 업데이트는 동기적으로 빠르므로 Promise로 감쌀 필요 없음
-      Promise.resolve().then(() => {
-        this.warmAuthCaches(newUser);
-      })
-    ]);
+    const result = await this.createAuthSession(newUser, 'signup');
+
+    // 부가 작업은 응답과 분리해 지연 최소화
+    setImmediate(() => {
+      void this.markLastLogin(newUser.id);
+      void this.warmAuthCaches(newUser);
+    });
 
     const duration = Date.now() - startTime;
     this.logger.debug(`Fast signup completed in ${duration}ms for ${lowerEmail}`);

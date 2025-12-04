@@ -364,9 +364,11 @@ export class TravelExpenseService {
     const total = combinedResult.rows[0]?.total_count ?? 0;
 
     const items = await Promise.all(combinedResult.rows.map(async (row) => {
-      const convertedAmount = row.converted_amount !== null && row.converted_amount !== undefined
-        ? Number(row.converted_amount)
-        : await this.convertAmount(Number(row.amount), row.currency, context.baseCurrency);
+      const convertedAmount = await this.convertAmount(
+        Number(row.amount),
+        row.currency,
+        context.baseCurrency
+      );
 
       return {
         id: row.id,

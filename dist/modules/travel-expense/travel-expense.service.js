@@ -297,9 +297,7 @@ let TravelExpenseService = class TravelExpenseService {
        ORDER BY pe.row_num`, [travelId, limit, (page - 1) * limit]);
         const total = combinedResult.rows[0]?.total_count ?? 0;
         const items = await Promise.all(combinedResult.rows.map(async (row) => {
-            const convertedAmount = row.converted_amount !== null && row.converted_amount !== undefined
-                ? Number(row.converted_amount)
-                : await this.convertAmount(Number(row.amount), row.currency, context.baseCurrency);
+            const convertedAmount = await this.convertAmount(Number(row.amount), row.currency, context.baseCurrency);
             return {
                 id: row.id,
                 title: row.title,

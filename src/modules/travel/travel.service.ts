@@ -410,6 +410,8 @@ export class TravelService {
     const destinationCurrency = this.resolveDestinationCurrency(row.country_code, row.base_currency);
     const inviteCode = row.invite_code ?? undefined;
     const deepLink = inviteCode ? this.generateDeepLink(inviteCode) : undefined;
+    const createdAtIso = row.created_at ? new Date(row.created_at).toISOString() : null;
+
     return {
       id: row.id,
       title: row.title,
@@ -418,12 +420,12 @@ export class TravelService {
       countryCode: row.country_code,
       countryNameKr: row.country_name_kr ?? undefined,
       baseCurrency: row.base_currency,
-      baseExchangeRate: Number(row.base_exchange_rate),
+      baseExchangeRate: row.base_exchange_rate ? Number(row.base_exchange_rate) : 0,
       destinationCurrency,
       inviteCode,
       deepLink,
       status: row.status,
-      createdAt: row.created_at,
+      createdAt: createdAtIso ?? (row.created_at ?? ''),
       ownerName: row.owner_name ?? null,
       members: members ?? row.members ?? undefined,
     };
