@@ -17,6 +17,7 @@ import { ApiOptimizationInterceptor } from './common/interceptors/api-optimizati
 import { HomeModule } from './home/home.module';
 import { DevModule } from './modules/dev/dev.module';
 import { VersionModule } from './modules/version/version.module';
+import { UniversalLinksModule } from './modules/universal-links/universal-links.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { VersionModule } from './modules/version/version.module';
     HomeModule,
     DevModule,
     VersionModule,
+    UniversalLinksModule,
   ],
   providers: [
     {

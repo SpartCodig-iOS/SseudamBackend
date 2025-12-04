@@ -129,13 +129,10 @@ async function bootstrap() {
   });
 
   app.useGlobalFilters(new AllExceptionsFilter());
-  app.useStaticAssets(path.join(process.cwd(), 'public'));
 
-  // Apple Universal Links 지원 (apple-app-site-association)
-  app.use('/.well-known/apple-app-site-association', (req, res) => {
-    res.setHeader('Content-Type', 'application/json');
-    res.sendFile(path.join(process.cwd(), 'public/.well-known/apple-app-site-association'));
-  });
+  // Apple Universal Links는 이제 컨트롤러로 처리됨
+
+  app.useStaticAssets(path.join(process.cwd(), 'public'));
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Sseduam App Server API')

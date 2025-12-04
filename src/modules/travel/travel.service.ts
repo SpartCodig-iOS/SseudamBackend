@@ -1084,6 +1084,13 @@ export class TravelService {
     // 여행에 참여한 모든 멤버의 목록 캐시도 무효화 (최적화된 패턴 삭제)
     await this.invalidateTravelCachesForMembers(travelId);
 
+    // 🔥 임시: 강제 전체 캐시 클리어 (디버깅용)
+    this.logger.warn(`[CACHE-DEBUG] updateTravel: Forcing cache clear for travel ${travelId}, user ${userId}`);
+    this.travelListCache.clear();
+    this.travelDetailCache.clear();
+    await this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:*`).catch(() => undefined);
+    await this.cacheService.delPattern(`${this.TRAVEL_DETAIL_REDIS_PREFIX}:*`).catch(() => undefined);
+
     // 업데이트 응답에는 멤버 정보 불필요 - 성능 개선
     const summary = await this.fetchSummaryForMember(travelId, userId, false);
 
