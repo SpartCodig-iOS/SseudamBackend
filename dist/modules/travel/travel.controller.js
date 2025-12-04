@@ -18,11 +18,13 @@ const swagger_1 = require("@nestjs/swagger");
 const api_1 = require("../../types/api");
 const auth_guard_1 = require("../../common/guards/auth.guard");
 const travel_service_1 = require("./travel.service");
+const optimized_travel_service_1 = require("./optimized-travel.service");
 const travelSchemas_1 = require("../../validators/travelSchemas");
 const travel_response_dto_1 = require("./dto/travel-response.dto");
 let TravelController = class TravelController {
-    constructor(travelService) {
+    constructor(travelService, optimizedTravelService) {
         this.travelService = travelService;
+        this.optimizedTravelService = optimizedTravelService;
     }
     async list(req, request) {
         if (!req.currentUser) {
@@ -30,15 +32,9 @@ let TravelController = class TravelController {
         }
         const page = Number(request.query?.page ?? '1') || 1;
         const limit = Number(request.query?.limit ?? '20') || 20;
-        const requestedStatus = request.query?.status?.toLowerCase();
-        let status;
-        if (requestedStatus) {
-            if (requestedStatus !== 'active' && requestedStatus !== 'archived') {
-                throw new common_1.BadRequestException("status는 'active' 혹은 'archived' 값만 허용됩니다.");
-            }
-            status = requestedStatus;
-        }
-        const result = await this.travelService.listTravels(req.currentUser.id, { page, limit, status });
+        // 최적화된 여행 서비스 사용 (200-400ms 목표) - 항상 멤버 정보 포함
+        const result = await this.optimizedTravelService.listTravelsOptimized(req.currentUser.id, { page, limit }, true // 항상 멤버 정보 포함
+        );
         return (0, api_1.success)(result);
     }
     async create(body, req) {
@@ -135,16 +131,10 @@ exports.TravelController = TravelController;
 __decorate([
     (0, common_1.Get)(),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    (0, swagger_1.ApiOperation)({ summary: '참여 중인 여행 목록 조회' }),
+    (0, swagger_1.ApiOperation)({ summary: '참여 중인 여행 목록 조회 (최적화됨)' }),
     (0, swagger_1.ApiOkResponse)({ type: travel_response_dto_1.TravelSummaryDto, isArray: true }),
     (0, swagger_1.ApiQuery)({ name: 'page', required: false, type: Number, example: 1 }),
     (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number, example: 20 }),
-    (0, swagger_1.ApiQuery)({
-        name: 'status',
-        required: false,
-        enum: ['active', 'archived'],
-        description: '여행 상태에 따라 목록을 필터링합니다.',
-    }),
     (0, swagger_1.ApiOkResponse)({ type: travel_response_dto_1.TravelListResponseDto }),
     __param(0, (0, common_1.Req)()),
     __param(1, (0, common_1.Req)()),
@@ -343,5 +333,6 @@ exports.TravelController = TravelController = __decorate([
     (0, swagger_1.ApiBearerAuth)(),
     (0, common_1.UseGuards)(auth_guard_1.AuthGuard),
     (0, common_1.Controller)('api/v1/travels'),
-    __metadata("design:paramtypes", [travel_service_1.TravelService])
+    __metadata("design:paramtypes", [travel_service_1.TravelService,
+        optimized_travel_service_1.OptimizedTravelService])
 ], TravelController);

@@ -19,6 +19,7 @@ import { success } from '../../types/api';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RequestWithUser } from '../../types/request';
 import { TravelService } from './travel.service';
+import { OptimizedTravelService } from './optimized-travel.service';
 import { createTravelSchema, travelInviteCodeSchema, transferOwnershipSchema } from '../../validators/travelSchemas';
 import { TravelInviteResponseDto, TravelListResponseDto, TravelSummaryDto } from './dto/travel-response.dto';
 
@@ -27,20 +28,17 @@ import { TravelInviteResponseDto, TravelListResponseDto, TravelSummaryDto } from
 @UseGuards(AuthGuard)
 @Controller('api/v1/travels')
 export class TravelController {
-  constructor(private readonly travelService: TravelService) {}
+  constructor(
+    private readonly travelService: TravelService,
+    private readonly optimizedTravelService: OptimizedTravelService,
+  ) {}
 
   @Get()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '참여 중인 여행 목록 조회' })
+  @ApiOperation({ summary: '참여 중인 여행 목록 조회 (최적화됨)' })
   @ApiOkResponse({ type: TravelSummaryDto, isArray: true })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
-  @ApiQuery({
-    name: 'status',
-    required: false,
-    enum: ['active', 'archived'],
-    description: '여행 상태에 따라 목록을 필터링합니다.',
-  })
   @ApiOkResponse({ type: TravelListResponseDto })
   async list(@Req() req: RequestWithUser, @Req() request: RequestWithUser) {
     if (!req.currentUser) {
@@ -48,15 +46,13 @@ export class TravelController {
     }
     const page = Number((request.query?.page as string) ?? '1') || 1;
     const limit = Number((request.query?.limit as string) ?? '20') || 20;
-    const requestedStatus = (request.query?.status as string | undefined)?.toLowerCase();
-    let status: 'active' | 'archived' | undefined;
-    if (requestedStatus) {
-      if (requestedStatus !== 'active' && requestedStatus !== 'archived') {
-        throw new BadRequestException("status는 'active' 혹은 'archived' 값만 허용됩니다.");
-      }
-      status = requestedStatus as 'active' | 'archived';
-    }
-    const result = await this.travelService.listTravels(req.currentUser.id, { page, limit, status });
+
+    // 최적화된 여행 서비스 사용 (200-400ms 목표) - 항상 멤버 정보 포함
+    const result = await this.optimizedTravelService.listTravelsOptimized(
+      req.currentUser.id,
+      { page, limit },
+      true // 항상 멤버 정보 포함
+    );
     return success(result);
   }
 

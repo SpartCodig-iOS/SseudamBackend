@@ -6,6 +6,12 @@ import { Pool } from 'pg';
 import { getPool } from '../../db/pool';
 import { CacheService } from '../../services/cacheService';
 
+interface TravelMember {
+  userId: string;
+  name: string | null;
+  role: string;
+}
+
 interface OptimizedTravelSummary {
   id: string;
   title: string;
@@ -19,13 +25,14 @@ interface OptimizedTravelSummary {
   role: string;
   createdAt: string;
   ownerName: string | null;
-  memberCount?: number; // 멤버 수만 반환 (성능 최적화)
+  members?: TravelMember[]; // 멤버 정보 (includeMembers=true 시)
+  memberCount?: number; // 멤버 수만 반환 (includeMembers=false 시)
 }
 
 @Injectable()
 export class OptimizedTravelService {
   private readonly logger = new Logger(OptimizedTravelService.name);
-  private readonly CACHE_TTL = 300; // 5분 캐시
+  private readonly CACHE_TTL = 120; // 2분 캐시 (빠른 응답 최적화)
   private readonly TRAVEL_LIST_CACHE_PREFIX = 'user_travels';
   private readonly TRAVEL_DETAIL_CACHE_PREFIX = 'travel_detail';
 
@@ -112,28 +119,26 @@ export class OptimizedTravelService {
 
   private async getTravelsList(pool: Pool, userId: string, limit: number, offset: number, includeMembers: boolean) {
     if (includeMembers) {
-      // 멤버 정보 포함 (무거운 쿼리)
+      // 멤버 정보 포함 (최적화된 쿼리)
       return pool.query(
         `SELECT
-           ut.id::text AS id,
-           ut.title,
-           ut.start_date::text,
-           ut.end_date::text,
-           ut.country_code,
-           ut.base_currency,
-           ut.base_exchange_rate,
-           ut.invite_code,
-           ut.status,
-           ut.role,
-           ut.created_at::text,
+           t.id::text AS id,
+           t.title,
+           t.start_date::text AS start_date,
+           t.end_date::text AS end_date,
+           t.country_code,
+           t.base_currency,
+           t.base_exchange_rate,
+           ti.invite_code,
+           CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS status,
+           tm.role,
+           t.created_at::text,
            owner_profile.name AS owner_name,
            COALESCE(members.members, '[]'::json) AS members
-         FROM (
-           SELECT t.*, tm.role
-           FROM travels t
-           INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
-         ) AS ut
-         INNER JOIN profiles owner_profile ON owner_profile.id = ut.owner_id
+         FROM travels t
+         INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
+         INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
+         LEFT JOIN travel_invites ti ON ti.travel_id = t.id AND ti.status = 'active'
          LEFT JOIN LATERAL (
            SELECT json_agg(
                     json_build_object(
@@ -145,41 +150,39 @@ export class OptimizedTravelService {
                   ) AS members
            FROM travel_members tm2
            LEFT JOIN profiles p ON p.id = tm2.user_id
-           WHERE tm2.travel_id = ut.id
+           WHERE tm2.travel_id = t.id
          ) AS members ON TRUE
-         ORDER BY ut.created_at DESC
+         ORDER BY t.created_at DESC
          LIMIT $2 OFFSET $3`,
         [userId, limit, offset],
       );
     } else {
-      // 멤버 정보 없이 빠른 조회
+      // 멤버 정보 없이 빠른 조회 (성능 최적화: DB에서 status 계산)
       return pool.query(
         `SELECT
-           ut.id::text AS id,
-           ut.title,
-           ut.start_date::text,
-           ut.end_date::text,
-           ut.country_code,
-           ut.base_currency,
-           ut.base_exchange_rate,
-           ut.invite_code,
-           ut.status,
-           ut.role,
-           ut.created_at::text,
+           t.id::text AS id,
+           t.title,
+           t.start_date::text AS start_date,
+           t.end_date::text AS end_date,
+           t.country_code,
+           t.base_currency,
+           t.base_exchange_rate,
+           ti.invite_code,
+           CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS status,
+           tm.role,
+           t.created_at::text,
            owner_profile.name AS owner_name,
            member_counts.member_count
-         FROM (
-           SELECT t.*, tm.role
-           FROM travels t
-           INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
-         ) AS ut
-         INNER JOIN profiles owner_profile ON owner_profile.id = ut.owner_id
+         FROM travels t
+         INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
+         INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
+         LEFT JOIN travel_invites ti ON ti.travel_id = t.id AND ti.status = 'active'
          LEFT JOIN (
            SELECT travel_id, COUNT(*)::int AS member_count
            FROM travel_members
            GROUP BY travel_id
-         ) AS member_counts ON member_counts.travel_id = ut.id
-         ORDER BY ut.created_at DESC
+         ) AS member_counts ON member_counts.travel_id = t.id
+         ORDER BY t.created_at DESC
          LIMIT $2 OFFSET $3`,
         [userId, limit, offset],
       );
@@ -187,7 +190,7 @@ export class OptimizedTravelService {
   }
 
   private transformTravelRow(row: any): OptimizedTravelSummary {
-    return {
+    const result: OptimizedTravelSummary = {
       id: row.id,
       title: row.title,
       startDate: row.start_date,
@@ -200,8 +203,17 @@ export class OptimizedTravelService {
       role: row.role,
       createdAt: row.created_at,
       ownerName: row.owner_name,
-      memberCount: row.member_count || (row.members ? JSON.parse(row.members).length : 0),
     };
+
+    // 멤버 정보가 있으면 members 배열로, 없으면 memberCount로
+    if (row.members) {
+      const members = typeof row.members === 'string' ? JSON.parse(row.members) : row.members;
+      result.members = members || [];
+    } else if (row.member_count !== undefined) {
+      result.memberCount = row.member_count;
+    }
+
+    return result;
   }
 
   // 여행 상세 정보 캐시드 조회
