@@ -3,6 +3,7 @@ import { UserRecord } from '../../types/user';
 import { LoginType } from '../../types/auth';
 import { getPool } from '../../db/pool';
 import { SupabaseService } from '../../services/supabaseService';
+import { OAuthTokenService } from '../../services/oauth-token.service';
 import { SocialAuthService } from '../oauth/social-auth.service';
 import { CacheService } from '../../services/cacheService';
 
@@ -12,6 +13,7 @@ export class OptimizedDeleteService {
 
   constructor(
     private readonly supabaseService: SupabaseService,
+    private readonly oauthTokenService: OAuthTokenService,
     private readonly socialAuthService: SocialAuthService,
     private readonly cacheService: CacheService,
   ) {}
@@ -35,8 +37,10 @@ export class OptimizedDeleteService {
 
       const avatarUrl = profileData?.avatar_url || user.avatar_url || null;
       const loginType = profileData?.login_type || loginTypeHint || 'email';
-      const appleRefreshToken = profileData?.apple_refresh_token || cachedTokens?.appleToken;
-      const googleRefreshToken = profileData?.google_refresh_token || cachedTokens?.googleToken;
+      const [appleRefreshToken, googleRefreshToken] = await Promise.all([
+        this.oauthTokenService.getToken(user.id, 'apple'),
+        this.oauthTokenService.getToken(user.id, 'google'),
+      ]);
 
       // 2. 소셜 토큰 해제를 백그라운드에서 처리 (블로킹하지 않음)
       const socialRevokePromise = this.revokeSocialTokensInBackground(

@@ -13,6 +13,7 @@ const rate_limit_guard_1 = require("../../common/guards/rate-limit.guard");
 const jwtService_1 = require("../../services/jwtService");
 const optimized_jwt_service_1 = require("../../services/optimized-jwt.service");
 const supabaseService_1 = require("../../services/supabaseService");
+const oauth_token_service_1 = require("../../services/oauth-token.service");
 const sessionService_1 = require("../../services/sessionService");
 const rateLimitService_1 = require("../../services/rateLimitService");
 const smart_cache_service_1 = require("../../services/smart-cache.service");
@@ -32,6 +33,7 @@ exports.SharedModule = SharedModule = __decorate([
         providers: [
             cacheService_1.CacheService,
             supabaseService_1.SupabaseService,
+            oauth_token_service_1.OAuthTokenService,
             jwtService_1.JwtTokenService,
             optimized_jwt_service_1.OptimizedJwtTokenService,
             smart_cache_service_1.SmartCacheService,
@@ -49,6 +51,7 @@ exports.SharedModule = SharedModule = __decorate([
         exports: [
             cacheService_1.CacheService,
             supabaseService_1.SupabaseService,
+            oauth_token_service_1.OAuthTokenService,
             jwtService_1.JwtTokenService,
             optimized_jwt_service_1.OptimizedJwtTokenService,
             smart_cache_service_1.SmartCacheService,

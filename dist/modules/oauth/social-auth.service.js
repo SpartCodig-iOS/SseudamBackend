@@ -54,6 +54,7 @@ const node_crypto_1 = require("node:crypto");
 const common_1 = require("@nestjs/common");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const supabaseService_1 = require("../../services/supabaseService");
+const oauth_token_service_1 = require("../../services/oauth-token.service");
 const cacheService_1 = require("../../services/cacheService");
 const auth_service_1 = require("../auth/auth.service");
 const mappers_1 = require("../../utils/mappers");
@@ -61,8 +62,9 @@ const env_1 = require("../../config/env");
 const pool_1 = require("../../db/pool");
 const background_job_service_1 = require("../../services/background-job.service");
 let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
-    constructor(supabaseService, cacheService, authService, backgroundJobService) {
+    constructor(supabaseService, oauthTokenService, cacheService, authService, backgroundJobService) {
         this.supabaseService = supabaseService;
+        this.oauthTokenService = oauthTokenService;
         this.cacheService = cacheService;
         this.authService = authService;
         this.backgroundJobService = backgroundJobService;
@@ -396,10 +398,10 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                             : Promise.resolve(options.googleRefreshToken ?? null),
                     ]);
                     if (detectedLoginType === 'apple' && finalAppleRefreshToken) {
-                        await this.supabaseService.saveAppleRefreshToken(userForSession.id, finalAppleRefreshToken);
+                        await this.oauthTokenService.saveToken(userForSession.id, 'apple', finalAppleRefreshToken);
                     }
                     if (detectedLoginType === 'google' && finalGoogleRefreshToken) {
-                        await this.supabaseService.saveGoogleRefreshToken(userForSession.id, finalGoogleRefreshToken);
+                        await this.oauthTokenService.saveToken(userForSession.id, 'google', finalGoogleRefreshToken);
                     }
                 }
                 catch (error) {
@@ -417,9 +419,9 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                 exchangePromise
                     .then((refreshToken) => {
                     if (resolvedLoginType === 'apple') {
-                        return this.supabaseService.saveAppleRefreshToken(userForSession.id, refreshToken);
+                        return this.oauthTokenService.saveToken(userForSession.id, 'apple', refreshToken);
                     }
-                    return this.supabaseService.saveGoogleRefreshToken(userForSession.id, refreshToken);
+                    return this.oauthTokenService.saveToken(userForSession.id, 'google', refreshToken);
                 })
                     .catch((error) => {
                     this.logger.warn(`Background social token exchange failed for cached user ${userForSession.id}: ${error instanceof Error ? error.message : error}`);
@@ -484,7 +486,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                                         ? await this.exchangeAppleAuthorizationCode(options.authorizationCode)
                                         : null);
                                 if (token) {
-                                    await this.supabaseService.saveAppleRefreshToken(userRecord.id, token);
+                                    await this.oauthTokenService.saveToken(userRecord.id, 'apple', token);
                                 }
                             }
                             else if (detectedLoginType === 'google') {
@@ -497,7 +499,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                                         })
                                         : null);
                                 if (token) {
-                                    await this.supabaseService.saveGoogleRefreshToken(userRecord.id, token);
+                                    await this.oauthTokenService.saveToken(userRecord.id, 'google', token);
                                 }
                             }
                         }
@@ -558,10 +560,10 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         void this.invalidateUserCaches(userRecord.id).catch(error => this.logger.warn(`Failed to invalidate caches for ${userRecord.id}:`, error));
         // 7단계: 리프레시 토큰 저장 (이미 병렬로 받아온 결과 사용)
         if (resolvedLoginType === 'apple' && appleTokenPromise) {
-            await this.supabaseService.saveAppleRefreshToken(userRecord.id, appleTokenPromise);
+            await this.oauthTokenService.saveToken(userRecord.id, 'apple', appleTokenPromise);
         }
         if (resolvedLoginType === 'google' && googleTokenPromise) {
-            await this.supabaseService.saveGoogleRefreshToken(userRecord.id, googleTokenPromise);
+            await this.oauthTokenService.saveToken(userRecord.id, 'google', googleTokenPromise);
         }
         // 나머지 부가 작업은 백그라운드로 실행
         const backgroundTasks = [];
@@ -744,7 +746,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
     async revokeAppleConnection(userId, refreshToken) {
         try {
             const tokenToUse = refreshToken ??
-                (await this.supabaseService.getAppleRefreshToken(userId)) ??
+                (await this.oauthTokenService.getToken(userId, 'apple')) ??
                 null;
             if (!tokenToUse) {
                 this.logger.warn(`[revokeAppleConnection] No Apple refresh token found for user ${userId}, skipping revoke`);
@@ -777,7 +779,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                 return;
             }
             // 성공 시에만 토큰 삭제
-            await this.supabaseService.saveAppleRefreshToken(userId, null);
+            await this.oauthTokenService.saveToken(userId, 'apple', null);
             await this.invalidateOAuthCacheByUser(userId);
             this.logger.debug(`[revokeAppleConnection] Successfully revoked Apple connection for user ${userId}`);
         }
@@ -790,7 +792,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
     async revokeGoogleConnection(userId, refreshToken) {
         try {
             const tokenToUse = refreshToken ??
-                (await this.supabaseService.getGoogleRefreshToken(userId)) ??
+                (await this.oauthTokenService.getToken(userId, 'google')) ??
                 null;
             if (!tokenToUse) {
                 this.logger.warn(`[revokeGoogleConnection] No Google refresh token found for user ${userId}, skipping revoke`);
@@ -821,7 +823,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                 return;
             }
             // 성공 시에만 토큰 삭제
-            await this.supabaseService.saveGoogleRefreshToken(userId, null);
+            await this.oauthTokenService.saveToken(userId, 'google', null);
             await this.invalidateOAuthCacheByUser(userId);
             this.logger.debug(`[revokeGoogleConnection] Successfully revoked Google connection for user ${userId}`);
         }
@@ -978,8 +980,9 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
 exports.SocialAuthService = SocialAuthService;
 exports.SocialAuthService = SocialAuthService = SocialAuthService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __param(2, (0, common_1.Inject)((0, common_1.forwardRef)(() => auth_service_1.AuthService))),
+    __param(3, (0, common_1.Inject)((0, common_1.forwardRef)(() => auth_service_1.AuthService))),
     __metadata("design:paramtypes", [supabaseService_1.SupabaseService,
+        oauth_token_service_1.OAuthTokenService,
         cacheService_1.CacheService,
         auth_service_1.AuthService,
         background_job_service_1.BackgroundJobService])

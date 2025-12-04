@@ -4,6 +4,7 @@ import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
 import { LoginType } from '../types/auth';
 import { env } from '../config/env';
 import { getPool } from '../db/pool';
+import { OAuthTokenService } from './oauth-token.service';
 
 @Injectable()
 export class SupabaseService {
@@ -13,7 +14,9 @@ export class SupabaseService {
   private avatarBucketEnsured = false;
   private readonly avatarMirrorPromises = new Map<string, Promise<string | null>>();
 
-  constructor() {
+  constructor(
+    private readonly oauthTokenService: OAuthTokenService,
+  ) {
     if (!env.supabaseUrl || !env.supabaseServiceRoleKey) {
       console.warn(
         '[SupabaseService] SUPABASE_URL 또는 SUPABASE_SERVICE_ROLE_KEY가 설정되어 있지 않습니다.',
@@ -349,43 +352,19 @@ export class SupabaseService {
   }
 
   async saveAppleRefreshToken(userId: string, refreshToken: string | null) {
-    const pool = await getPool();
-    await pool.query(
-      `UPDATE ${env.supabaseProfileTable}
-         SET apple_refresh_token = $1,
-             updated_at = NOW()
-       WHERE id = $2`,
-      [refreshToken, userId],
-    );
+    await this.oauthTokenService.saveToken(userId, 'apple', refreshToken);
   }
 
   async getAppleRefreshToken(userId: string): Promise<string | null> {
-    const pool = await getPool();
-    const result = await pool.query(
-      `SELECT apple_refresh_token FROM ${env.supabaseProfileTable} WHERE id = $1 LIMIT 1`,
-      [userId],
-    );
-    return (result.rows[0]?.apple_refresh_token as string | null) ?? null;
+    return this.oauthTokenService.getToken(userId, 'apple');
   }
 
   async saveGoogleRefreshToken(userId: string, refreshToken: string | null) {
-    const pool = await getPool();
-    await pool.query(
-      `UPDATE ${env.supabaseProfileTable}
-         SET google_refresh_token = $1,
-             updated_at = NOW()
-       WHERE id = $2`,
-      [refreshToken, userId],
-    );
+    await this.oauthTokenService.saveToken(userId, 'google', refreshToken);
   }
 
   async getGoogleRefreshToken(userId: string): Promise<string | null> {
-    const pool = await getPool();
-    const result = await pool.query(
-      `SELECT google_refresh_token FROM ${env.supabaseProfileTable} WHERE id = $1 LIMIT 1`,
-      [userId],
-    );
-    return (result.rows[0]?.google_refresh_token as string | null) ?? null;
+    return this.oauthTokenService.getToken(userId, 'google');
   }
 
   private parseAvatarStoragePath(avatarUrl?: string | null): { bucket: string; path: string } | null {

@@ -6,6 +6,7 @@ import { LoginInput, SignupInput } from '../../validators/authSchemas';
 import { JwtTokenService, TokenPair } from '../../services/jwtService';
 import { SessionRecord, SessionService } from '../../services/sessionService';
 import { SupabaseService } from '../../services/supabaseService';
+import { OAuthTokenService } from '../../services/oauth-token.service';
 import { CacheService } from '../../services/cacheService';
 import { fromSupabaseUser } from '../../utils/mappers';
 import { SocialAuthService } from '../oauth/social-auth.service';
@@ -42,6 +43,7 @@ export class AuthService {
 
   constructor(
     private readonly supabaseService: SupabaseService,
+    private readonly oauthTokenService: OAuthTokenService,
     private readonly jwtTokenService: JwtTokenService,
     private readonly sessionService: SessionService,
     private readonly cacheService: CacheService,
@@ -518,8 +520,6 @@ export class AuthService {
       const profileRow = directProfile.rows[0];
       if (profileRow) {
         profileLoginType = (profileRow.login_type as LoginType | null) ?? null;
-        appleRefreshToken = (profileRow.apple_refresh_token as string | null) ?? null;
-        googleRefreshToken = (profileRow.google_refresh_token as string | null) ?? null;
         avatarUrl = avatarUrl ?? (profileRow.avatar_url as string | null);
       }
     } catch (error) {
@@ -545,18 +545,16 @@ export class AuthService {
       profileLoginType = loginTypeHint;
     }
 
-    if (profileLoginType === 'apple' && !appleRefreshToken) {
-      try {
-        appleRefreshToken = await this.supabaseService.getAppleRefreshToken(user.id);
-      } catch (error) {
-        this.logger.warn('[deleteAccount] Failed to load Apple refresh token', error as Error);
-      }
-    } else if (profileLoginType === 'google' && !googleRefreshToken) {
-      try {
-        googleRefreshToken = await this.supabaseService.getGoogleRefreshToken(user.id);
-      } catch (error) {
-        this.logger.warn('[deleteAccount] Failed to load Google refresh token', error as Error);
-      }
+    // 통합 토큰 테이블에서 조회
+    try {
+      const [appleToken, googleToken] = await Promise.all([
+        this.oauthTokenService.getToken(user.id, 'apple'),
+        this.oauthTokenService.getToken(user.id, 'google'),
+      ]);
+      appleRefreshToken = appleRefreshToken ?? appleToken;
+      googleRefreshToken = googleRefreshToken ?? googleToken;
+    } catch (error) {
+      this.logger.warn('[deleteAccount] Failed to load refresh tokens', error as Error);
     }
 
     await (async () => {

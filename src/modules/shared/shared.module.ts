@@ -4,6 +4,7 @@ import { RateLimitGuard } from '../../common/guards/rate-limit.guard';
 import { JwtTokenService } from '../../services/jwtService';
 import { OptimizedJwtTokenService } from '../../services/optimized-jwt.service';
 import { SupabaseService } from '../../services/supabaseService';
+import { OAuthTokenService } from '../../services/oauth-token.service';
 import { SessionService } from '../../services/sessionService';
 import { RateLimitService } from '../../services/rateLimitService';
 import { SmartCacheService } from '../../services/smart-cache.service';
@@ -20,6 +21,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
   providers: [
     CacheService,
     SupabaseService,
+    OAuthTokenService,
     JwtTokenService,
     OptimizedJwtTokenService,
     SmartCacheService,
@@ -37,6 +39,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
   exports: [
     CacheService,
     SupabaseService,
+    OAuthTokenService,
     JwtTokenService,
     OptimizedJwtTokenService,
     SmartCacheService,

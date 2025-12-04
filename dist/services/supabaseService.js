@@ -16,8 +16,10 @@ const crypto_1 = require("crypto");
 const supabase_js_1 = require("@supabase/supabase-js");
 const env_1 = require("../config/env");
 const pool_1 = require("../db/pool");
+const oauth_token_service_1 = require("./oauth-token.service");
 let SupabaseService = SupabaseService_1 = class SupabaseService {
-    constructor() {
+    constructor(oauthTokenService) {
+        this.oauthTokenService = oauthTokenService;
         this.client = null;
         this.logger = new common_1.Logger(SupabaseService_1.name);
         this.avatarBucket = 'profileimages';
@@ -284,28 +286,16 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
         });
     }
     async saveAppleRefreshToken(userId, refreshToken) {
-        const pool = await (0, pool_1.getPool)();
-        await pool.query(`UPDATE ${env_1.env.supabaseProfileTable}
-         SET apple_refresh_token = $1,
-             updated_at = NOW()
-       WHERE id = $2`, [refreshToken, userId]);
+        await this.oauthTokenService.saveToken(userId, 'apple', refreshToken);
     }
     async getAppleRefreshToken(userId) {
-        const pool = await (0, pool_1.getPool)();
-        const result = await pool.query(`SELECT apple_refresh_token FROM ${env_1.env.supabaseProfileTable} WHERE id = $1 LIMIT 1`, [userId]);
-        return result.rows[0]?.apple_refresh_token ?? null;
+        return this.oauthTokenService.getToken(userId, 'apple');
     }
     async saveGoogleRefreshToken(userId, refreshToken) {
-        const pool = await (0, pool_1.getPool)();
-        await pool.query(`UPDATE ${env_1.env.supabaseProfileTable}
-         SET google_refresh_token = $1,
-             updated_at = NOW()
-       WHERE id = $2`, [refreshToken, userId]);
+        await this.oauthTokenService.saveToken(userId, 'google', refreshToken);
     }
     async getGoogleRefreshToken(userId) {
-        const pool = await (0, pool_1.getPool)();
-        const result = await pool.query(`SELECT google_refresh_token FROM ${env_1.env.supabaseProfileTable} WHERE id = $1 LIMIT 1`, [userId]);
-        return result.rows[0]?.google_refresh_token ?? null;
+        return this.oauthTokenService.getToken(userId, 'google');
     }
     parseAvatarStoragePath(avatarUrl) {
         if (!avatarUrl)
@@ -494,5 +484,5 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
 exports.SupabaseService = SupabaseService;
 exports.SupabaseService = SupabaseService = SupabaseService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [])
+    __metadata("design:paramtypes", [oauth_token_service_1.OAuthTokenService])
 ], SupabaseService);

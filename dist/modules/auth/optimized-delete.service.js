@@ -14,11 +14,13 @@ exports.OptimizedDeleteService = void 0;
 const common_1 = require("@nestjs/common");
 const pool_1 = require("../../db/pool");
 const supabaseService_1 = require("../../services/supabaseService");
+const oauth_token_service_1 = require("../../services/oauth-token.service");
 const social_auth_service_1 = require("../oauth/social-auth.service");
 const cacheService_1 = require("../../services/cacheService");
 let OptimizedDeleteService = OptimizedDeleteService_1 = class OptimizedDeleteService {
-    constructor(supabaseService, socialAuthService, cacheService) {
+    constructor(supabaseService, oauthTokenService, socialAuthService, cacheService) {
         this.supabaseService = supabaseService;
+        this.oauthTokenService = oauthTokenService;
         this.socialAuthService = socialAuthService;
         this.cacheService = cacheService;
         this.logger = new common_1.Logger(OptimizedDeleteService_1.name);
@@ -37,8 +39,10 @@ let OptimizedDeleteService = OptimizedDeleteService_1 = class OptimizedDeleteSer
             ]);
             const avatarUrl = profileData?.avatar_url || user.avatar_url || null;
             const loginType = profileData?.login_type || loginTypeHint || 'email';
-            const appleRefreshToken = profileData?.apple_refresh_token || cachedTokens?.appleToken;
-            const googleRefreshToken = profileData?.google_refresh_token || cachedTokens?.googleToken;
+            const [appleRefreshToken, googleRefreshToken] = await Promise.all([
+                this.oauthTokenService.getToken(user.id, 'apple'),
+                this.oauthTokenService.getToken(user.id, 'google'),
+            ]);
             // 2. 소셜 토큰 해제를 백그라운드에서 처리 (블로킹하지 않음)
             const socialRevokePromise = this.revokeSocialTokensInBackground(user.id, loginType, appleRefreshToken, googleRefreshToken);
             // 3. 로컬 데이터 삭제를 트랜잭션으로 빠르게 처리
@@ -219,6 +223,7 @@ exports.OptimizedDeleteService = OptimizedDeleteService;
 exports.OptimizedDeleteService = OptimizedDeleteService = OptimizedDeleteService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [supabaseService_1.SupabaseService,
+        oauth_token_service_1.OAuthTokenService,
         social_auth_service_1.SocialAuthService,
         cacheService_1.CacheService])
 ], OptimizedDeleteService);

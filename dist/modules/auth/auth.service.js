@@ -22,13 +22,15 @@ const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jwtService_1 = require("../../services/jwtService");
 const sessionService_1 = require("../../services/sessionService");
 const supabaseService_1 = require("../../services/supabaseService");
+const oauth_token_service_1 = require("../../services/oauth-token.service");
 const cacheService_1 = require("../../services/cacheService");
 const mappers_1 = require("../../utils/mappers");
 const social_auth_service_1 = require("../oauth/social-auth.service");
 const pool_1 = require("../../db/pool");
 let AuthService = AuthService_1 = class AuthService {
-    constructor(supabaseService, jwtTokenService, sessionService, cacheService, socialAuthService) {
+    constructor(supabaseService, oauthTokenService, jwtTokenService, sessionService, cacheService, socialAuthService) {
         this.supabaseService = supabaseService;
+        this.oauthTokenService = oauthTokenService;
         this.jwtTokenService = jwtTokenService;
         this.sessionService = sessionService;
         this.cacheService = cacheService;
@@ -460,8 +462,6 @@ let AuthService = AuthService_1 = class AuthService {
             const profileRow = directProfile.rows[0];
             if (profileRow) {
                 profileLoginType = profileRow.login_type ?? null;
-                appleRefreshToken = profileRow.apple_refresh_token ?? null;
-                googleRefreshToken = profileRow.google_refresh_token ?? null;
                 avatarUrl = avatarUrl ?? profileRow.avatar_url;
             }
         }
@@ -489,21 +489,17 @@ let AuthService = AuthService_1 = class AuthService {
         if (!profileLoginType && loginTypeHint) {
             profileLoginType = loginTypeHint;
         }
-        if (profileLoginType === 'apple' && !appleRefreshToken) {
-            try {
-                appleRefreshToken = await this.supabaseService.getAppleRefreshToken(user.id);
-            }
-            catch (error) {
-                this.logger.warn('[deleteAccount] Failed to load Apple refresh token', error);
-            }
+        // 통합 토큰 테이블에서 조회
+        try {
+            const [appleToken, googleToken] = await Promise.all([
+                this.oauthTokenService.getToken(user.id, 'apple'),
+                this.oauthTokenService.getToken(user.id, 'google'),
+            ]);
+            appleRefreshToken = appleRefreshToken ?? appleToken;
+            googleRefreshToken = googleRefreshToken ?? googleToken;
         }
-        else if (profileLoginType === 'google' && !googleRefreshToken) {
-            try {
-                googleRefreshToken = await this.supabaseService.getGoogleRefreshToken(user.id);
-            }
-            catch (error) {
-                this.logger.warn('[deleteAccount] Failed to load Google refresh token', error);
-            }
+        catch (error) {
+            this.logger.warn('[deleteAccount] Failed to load refresh tokens', error);
         }
         await (async () => {
             if (profileLoginType === 'apple') {
@@ -617,8 +613,9 @@ let AuthService = AuthService_1 = class AuthService {
 exports.AuthService = AuthService;
 exports.AuthService = AuthService = AuthService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __param(4, (0, common_1.Inject)((0, common_1.forwardRef)(() => social_auth_service_1.SocialAuthService))),
+    __param(5, (0, common_1.Inject)((0, common_1.forwardRef)(() => social_auth_service_1.SocialAuthService))),
     __metadata("design:paramtypes", [supabaseService_1.SupabaseService,
+        oauth_token_service_1.OAuthTokenService,
         jwtService_1.JwtTokenService,
         sessionService_1.SessionService,
         cacheService_1.CacheService,
