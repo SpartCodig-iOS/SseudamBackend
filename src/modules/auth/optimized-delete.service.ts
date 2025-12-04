@@ -56,12 +56,13 @@ export class OptimizedDeleteService {
       const profileImageDeletePromise = this.supabaseService.deleteProfileImage(avatarUrl)
         .catch(error => this.logger.warn(`Profile image deletion failed: ${error instanceof Error ? error.message : 'Unknown error'}`));
 
-      // 5. 캐시 무효화를 백그라운드에서 처리
-      const cacheCleanupPromise = this.invalidateUserCaches(user.id);
+      // 5. 캐시 무효화: 로컬 삭제 완료 후 해당 여행/사용자 캐시 제거
+      const cacheCleanupPromise = localDeletePromise.then(travelIds =>
+        this.invalidateUserCaches(user.id, travelIds)
+      );
 
       // 6. 중요한 작업들만 대기 (소셜 해제는 백그라운드)
-      const [, supabaseResult] = await Promise.all([
-        localDeletePromise,
+      const [supabaseResult] = await Promise.all([
         supabaseDeletePromise,
         cacheCleanupPromise,
         profileImageDeletePromise
@@ -151,56 +152,78 @@ export class OptimizedDeleteService {
   /**
    * 최적화된 로컬 데이터 삭제 (단일 트랜잭션)
    */
-  private async performFastLocalDeletion(userId: string) {
+  private async performFastLocalDeletion(userId: string): Promise<string[]> {
     const pool = await getPool();
     const client = await pool.connect();
 
     try {
       await client.query('BEGIN');
 
+      // 소유한 여행 ID를 먼저 수집 (캐시 무효화용)
+      const targetTravelsResult = await client.query<{ id: string }>(
+        'SELECT id::text FROM travels WHERE owner_id = $1',
+        [userId],
+      );
+      const targetTravelIds = targetTravelsResult.rows.map((r) => r.id);
+
+      const travelIdArray = targetTravelIds.length > 0 ? targetTravelIds : [];
+
       // 단일 쿼리로 모든 관련 데이터 삭제 (사용자가 소유한 여행까지 함께 정리)
       await client.query(`
-        WITH target_travels AS (
-          SELECT id FROM travels WHERE owner_id = $1
-        ),
-        deleted_expenses AS (
+        WITH deleted_expenses AS (
           DELETE FROM travel_expenses
-          WHERE payer_id = $1 OR travel_id IN (SELECT id FROM target_travels)
-          RETURNING id, travel_id
+          WHERE payer_id = $1 OR travel_id = ANY($2::uuid[])
+          RETURNING id
         ),
         deleted_participants AS (
           DELETE FROM travel_expense_participants
           WHERE member_id = $1
              OR expense_id IN (SELECT id FROM deleted_expenses)
-             OR travel_id IN (SELECT id FROM target_travels)
           RETURNING 1
         ),
         deleted_settlements AS (
           DELETE FROM travel_settlements
-          WHERE from_member = $1 OR to_member = $1 OR travel_id IN (SELECT id FROM target_travels)
+          WHERE from_member = $1 OR to_member = $1 OR travel_id = ANY($2::uuid[])
           RETURNING 1
         ),
         deleted_invites AS (
           DELETE FROM travel_invites
-          WHERE created_by = $1 OR travel_id IN (SELECT id FROM target_travels)
+          WHERE created_by = $1 OR travel_id = ANY($2::uuid[])
           RETURNING 1
         ),
         deleted_members AS (
           DELETE FROM travel_members
-          WHERE user_id = $1 OR travel_id IN (SELECT id FROM target_travels)
+          WHERE user_id = $1 OR travel_id = ANY($2::uuid[])
           RETURNING 1
-        ),
-        deleted_sessions AS (
-          DELETE FROM user_sessions WHERE user_id = $1 RETURNING 1
-        ),
-        deleted_travels AS (
-          DELETE FROM travels WHERE id IN (SELECT id FROM target_travels) RETURNING 1
         )
-        DELETE FROM profiles WHERE id = $1
-      `, [userId]);
+        DELETE FROM travels WHERE id = ANY($2::uuid[]);
+
+      -- 여행 없는 경우에도 사용자 관련 잔여 데이터 제거 후 프로필 삭제
+      WITH deleted_sessions AS (
+        DELETE FROM user_sessions WHERE user_id = $1 RETURNING 1
+      ),
+      deleted_invites AS (
+        DELETE FROM travel_invites WHERE created_by = $1 RETURNING 1
+      ),
+      deleted_members AS (
+        DELETE FROM travel_members WHERE user_id = $1 RETURNING 1
+      ),
+      deleted_settlements AS (
+        DELETE FROM travel_settlements WHERE from_member = $1 OR to_member = $1 RETURNING 1
+      ),
+      deleted_expenses AS (
+        DELETE FROM travel_expenses WHERE payer_id = $1 RETURNING id
+      ),
+      deleted_participants AS (
+        DELETE FROM travel_expense_participants WHERE member_id = $1 RETURNING 1
+      )
+      DELETE FROM profiles WHERE id = $1
+      `, [userId, travelIdArray]);
 
       await client.query('COMMIT');
       this.logger.debug(`Local data deletion completed for user ${userId}`);
+
+      return travelIdArray;
     } catch (error) {
       await client.query('ROLLBACK');
       this.logger.error(`Local deletion failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -226,17 +249,40 @@ export class OptimizedDeleteService {
   /**
    * 사용자 관련 모든 캐시 무효화
    */
-  private async invalidateUserCaches(userId: string): Promise<void> {
+  private async invalidateUserCaches(userId: string, travelIds: string[] = []): Promise<void> {
     try {
+      const travelIdsUnique = Array.from(new Set(travelIds)).filter(Boolean);
+
       // 사용자 관련 캐시 패턴들을 병렬로 삭제
-      await Promise.all([
+      const baseTasks = [
         this.cacheService.delPattern(`profile:${userId}`),
         this.cacheService.delPattern(`auth:${userId}:*`),
         this.cacheService.delPattern(`oauth:*:${userId}`),
         this.cacheService.delPattern(`session:${userId}:*`),
         this.cacheService.delPattern(`travel:user:${userId}:*`),
-        this.cacheService.delPattern(`fast_oauth:*:${userId}`)
+        this.cacheService.delPattern(`fast_oauth:*:${userId}`),
+        // 여행 목록 캐시 (user 별)
+        this.cacheService.delPattern(`travel:list:${userId}:*`),
+        // 멤버십 캐시 (travelId:userId 형태)
+        this.cacheService.delPattern(`travel:member:*:${userId}`),
+      ];
+
+      const travelTasks = travelIdsUnique.flatMap((travelId) => [
+        // 여행 상세 캐시
+        this.cacheService.del(travelId, { prefix: 'travel:detail' }).catch(() => undefined),
+        // 멤버 목록 캐시
+        this.cacheService.del(travelId, { prefix: 'travel:members' }).catch(() => undefined),
+        // 멤버십 캐시 (travelId:userId 형태) 전부 제거
+        this.cacheService.delPattern(`travel:member:${travelId}:*`).catch(() => undefined),
+        // 초대 캐시 (invite는 코드 기반이라 travelId별 패턴은 없지만, 안전하게 전체 삭제)
+        this.cacheService.delPattern(`travel:invite:*`).catch(() => undefined),
+        // 정산/지출 관련 캐시
+        this.cacheService.del(travelId, { prefix: 'settlement:summary' }).catch(() => undefined),
+        this.cacheService.delPattern(`expense:list:${travelId}:*`).catch(() => undefined),
+        this.cacheService.delPattern(`expense:detail:${travelId}:*`).catch(() => undefined),
       ]);
+
+      await Promise.all([...baseTasks, ...travelTasks]);
       this.logger.debug(`Cache invalidation completed for user ${userId}`);
     } catch (error) {
       this.logger.warn(`Cache invalidation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
