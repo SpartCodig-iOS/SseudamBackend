@@ -128,59 +128,26 @@ let OptimizedDeleteService = OptimizedDeleteService_1 = class OptimizedDeleteSer
             await client.query('BEGIN');
             // 소유한 여행 ID를 먼저 수집 (캐시 무효화용)
             const targetTravelsResult = await client.query('SELECT id::text FROM travels WHERE owner_id = $1', [userId]);
-            const targetTravelIds = targetTravelsResult.rows.map((r) => r.id);
-            const travelIdArray = targetTravelIds.length > 0 ? targetTravelIds : [];
-            // 단일 쿼리로 모든 관련 데이터 삭제 (사용자가 소유한 여행까지 함께 정리)
-            await client.query(`
-        WITH deleted_expenses AS (
-          DELETE FROM travel_expenses
-          WHERE payer_id = $1 OR travel_id = ANY($2::uuid[])
-          RETURNING id
-        ),
-        deleted_participants AS (
-          DELETE FROM travel_expense_participants
-          WHERE member_id = $1
-             OR expense_id IN (SELECT id FROM deleted_expenses)
-          RETURNING 1
-        ),
-        deleted_settlements AS (
-          DELETE FROM travel_settlements
-          WHERE from_member = $1 OR to_member = $1 OR travel_id = ANY($2::uuid[])
-          RETURNING 1
-        ),
-        deleted_invites AS (
-          DELETE FROM travel_invites
-          WHERE created_by = $1 OR travel_id = ANY($2::uuid[])
-          RETURNING 1
-        ),
-        deleted_members AS (
-          DELETE FROM travel_members
-          WHERE user_id = $1 OR travel_id = ANY($2::uuid[])
-          RETURNING 1
-        )
-        DELETE FROM travels WHERE id = ANY($2::uuid[]);
-
-      -- 여행 없는 경우에도 사용자 관련 잔여 데이터 제거 후 프로필 삭제
-      WITH deleted_sessions AS (
-        DELETE FROM user_sessions WHERE user_id = $1 RETURNING 1
-      ),
-      deleted_invites AS (
-        DELETE FROM travel_invites WHERE created_by = $1 RETURNING 1
-      ),
-      deleted_members AS (
-        DELETE FROM travel_members WHERE user_id = $1 RETURNING 1
-      ),
-      deleted_settlements AS (
-        DELETE FROM travel_settlements WHERE from_member = $1 OR to_member = $1 RETURNING 1
-      ),
-      deleted_expenses AS (
-        DELETE FROM travel_expenses WHERE payer_id = $1 RETURNING id
-      ),
-      deleted_participants AS (
-        DELETE FROM travel_expense_participants WHERE member_id = $1 RETURNING 1
-      )
-      DELETE FROM profiles WHERE id = $1
-      `, [userId, travelIdArray]);
+            const travelIdArray = targetTravelsResult.rows.map((r) => r.id);
+            // 1) 사용자가 소유한 여행과 그 하위 데이터 제거
+            if (travelIdArray.length > 0) {
+                await client.query(`DELETE FROM travel_expense_participants
+             WHERE expense_id IN (SELECT id FROM travel_expenses WHERE travel_id = ANY($1::uuid[]))`, [travelIdArray]);
+                await client.query(`DELETE FROM travel_expenses WHERE travel_id = ANY($1::uuid[])`, [travelIdArray]);
+                await client.query(`DELETE FROM travel_settlements WHERE travel_id = ANY($1::uuid[])`, [travelIdArray]);
+                await client.query(`DELETE FROM travel_invites WHERE travel_id = ANY($1::uuid[])`, [travelIdArray]);
+                await client.query(`DELETE FROM travel_members WHERE travel_id = ANY($1::uuid[])`, [travelIdArray]);
+                await client.query(`DELETE FROM travels WHERE id = ANY($1::uuid[])`, [travelIdArray]);
+            }
+            // 2) 사용자 자신이 만든/참여한 잔여 데이터 제거
+            await client.query(`DELETE FROM travel_expense_participants WHERE member_id = $1`, [userId]);
+            await client.query(`DELETE FROM travel_expenses WHERE payer_id = $1`, [userId]);
+            await client.query(`DELETE FROM travel_settlements WHERE from_member = $1 OR to_member = $1`, [userId]);
+            await client.query(`DELETE FROM travel_invites WHERE created_by = $1`, [userId]);
+            await client.query(`DELETE FROM travel_members WHERE user_id = $1`, [userId]);
+            await client.query(`DELETE FROM user_sessions WHERE user_id = $1`, [userId]);
+            // 3) 프로필 삭제
+            await client.query(`DELETE FROM profiles WHERE id = $1`, [userId]);
             await client.query('COMMIT');
             this.logger.debug(`Local data deletion completed for user ${userId}`);
             return travelIdArray;
