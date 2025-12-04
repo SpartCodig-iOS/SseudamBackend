@@ -309,59 +309,56 @@ export class TravelExpenseService {
       return { total: cached.total, page, limit, items: cached.items };
     }
 
-    // 최적화: COUNT와 LIST를 병렬로 실행하되, LIST에서 total 정보도 함께 조회
-    const listPromise = pool.query(
-      `SELECT
-         e.id::text,
-         e.title,
-         e.note,
-         e.amount,
-         e.currency,
-         e.converted_amount,
-         e.expense_date::text,
-         e.category,
-         e.author_id::text,
-         e.payer_id::text,
-         payer.name AS payer_name,
-         COUNT(*) OVER() AS total_count
-       FROM travel_expenses e
-       LEFT JOIN profiles payer ON payer.id = e.payer_id
-       WHERE e.travel_id = $1
-       ORDER BY e.expense_date DESC, e.created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [travelId, limit, offset],
+    // 최적화: 모든 데이터를 한 번에 조회 (JOIN + JSON 집계)
+    const combinedResult = await pool.query(
+      `WITH expense_list AS (
+         SELECT
+           e.id::text,
+           e.title,
+           e.note,
+           e.amount,
+           e.currency,
+           e.converted_amount,
+           e.expense_date::text,
+           e.category,
+           e.author_id::text,
+           e.payer_id::text,
+           payer.name AS payer_name,
+           COUNT(*) OVER() AS total_count,
+           ROW_NUMBER() OVER (ORDER BY e.expense_date DESC, e.created_at DESC) as row_num
+         FROM travel_expenses e
+         LEFT JOIN profiles payer ON payer.id = e.payer_id
+         WHERE e.travel_id = $1
+       ),
+       paginated_expenses AS (
+         SELECT * FROM expense_list
+         WHERE row_num > $3 AND row_num <= $3 + $2
+       )
+       SELECT
+         pe.*,
+         COALESCE(
+           json_agg(
+             json_build_object(
+               'memberId', tep.member_id::text,
+               'name', p.name
+             )
+             ORDER BY p.name
+           ) FILTER (WHERE tep.member_id IS NOT NULL),
+           '[]'::json
+         ) as participants
+       FROM paginated_expenses pe
+       LEFT JOIN travel_expense_participants tep ON tep.expense_id = pe.id::uuid
+       LEFT JOIN profiles p ON p.id = tep.member_id
+       GROUP BY pe.id, pe.title, pe.note, pe.amount, pe.currency, pe.converted_amount,
+                pe.expense_date, pe.category, pe.author_id, pe.payer_id, pe.payer_name,
+                pe.total_count, pe.row_num
+       ORDER BY pe.row_num`,
+      [travelId, limit, (page - 1) * limit],
     );
 
-    const listResult = await listPromise;
-    const total = listResult.rows[0]?.total_count ?? 0;
+    const total = combinedResult.rows[0]?.total_count ?? 0;
 
-    const expenseIds = listResult.rows.map((row) => row.id);
-    let participantsMap = new Map<string, Array<{ memberId: string; name: string | null }>>();
-
-    if (expenseIds.length > 0) {
-      const participantsResult = await pool.query(
-        `SELECT
-           tep.expense_id::text AS expense_id,
-           tep.member_id::text AS member_id,
-           p.name AS name
-         FROM travel_expense_participants tep
-         LEFT JOIN profiles p ON p.id = tep.member_id
-         WHERE tep.expense_id = ANY($1::uuid[])`,
-        [expenseIds],
-      );
-
-      participantsMap = participantsResult.rows.reduce((acc, row) => {
-        const list = acc.get(row.expense_id) ?? [];
-        list.push({
-          memberId: row.member_id,
-          name: row.name ?? null,
-        });
-        acc.set(row.expense_id, list);
-        return acc;
-      }, new Map<string, Array<{ memberId: string; name: string | null }>>());
-    }
-
-    const items = listResult.rows.map((row) => ({
+    const items = combinedResult.rows.map((row) => ({
       id: row.id,
       title: row.title,
       note: row.note,
@@ -373,7 +370,7 @@ export class TravelExpenseService {
       payerId: row.payer_id,
       payerName: row.payer_name ?? null,
       authorId: row.author_id,
-      participants: participantsMap.get(row.id) ?? [],
+      participants: Array.isArray(row.participants) ? row.participants : [],
     }));
 
     // 캐시에 저장
