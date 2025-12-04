@@ -131,6 +131,12 @@ async function bootstrap() {
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useStaticAssets(path.join(process.cwd(), 'public'));
 
+  // Apple Universal Links 지원 (apple-app-site-association)
+  app.use('/.well-known/apple-app-site-association', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.sendFile(path.join(process.cwd(), 'public/.well-known/apple-app-site-association'));
+  });
+
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Sseduam App Server API')
     .setDescription('Sseduam 연동 인증/프로필 API')
