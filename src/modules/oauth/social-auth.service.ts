@@ -470,23 +470,23 @@ export class SocialAuthService {
     if (decoded?.sub) {
       try {
         const userId = decoded.sub as string;
-        const email = decoded.email ?? '';
-        const cachedProfile = await this.cacheService.get<UserRecord>(`profile:${userId}`).catch(() => null);
+        const profile = await this.supabaseService.findProfileById(userId);
+        const email = profile?.email ?? decoded.email ?? '';
 
         // 이메일이 없으면 정상 세션 생성이 어려우므로 네트워크 경로로 폴백
         if (email) {
           const detectedLoginType = this.resolveLoginType(loginType);
 
           const userRecord: UserRecord = {
-            id: userId,
+            id: profile?.id ?? userId,
             email,
-            name: cachedProfile?.name ?? decoded.name ?? null,
-            avatar_url: cachedProfile?.avatar_url ?? null,
-            username: cachedProfile?.username ?? email.split('@')[0] ?? userId,
+            name: (profile?.name as string | null) ?? decoded.name ?? null,
+            avatar_url: (profile?.avatar_url as string | null) ?? null,
+            username: profile?.username ?? email.split('@')[0] ?? userId,
             password_hash: '',
-            role: cachedProfile?.role ?? 'user',
-            created_at: cachedProfile?.created_at ?? null,
-            updated_at: cachedProfile?.updated_at ?? null,
+            role: (profile?.role as UserRecord['role']) ?? 'user',
+            created_at: profile?.created_at ? new Date(profile.created_at) : null,
+            updated_at: profile?.updated_at ? new Date(profile.updated_at) : null,
           };
 
           // 세션 즉시 생성
