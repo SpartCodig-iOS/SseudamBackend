@@ -327,7 +327,6 @@ let TravelService = TravelService_1 = class TravelService {
         const destinationCurrency = this.resolveDestinationCurrency(row.country_code, row.base_currency);
         const inviteCode = row.invite_code ?? undefined;
         const deepLink = inviteCode ? this.generateDeepLink(inviteCode) : undefined;
-        const createdAtIso = row.created_at ? new Date(row.created_at).toISOString() : null;
         return {
             id: row.id,
             title: row.title,
@@ -341,7 +340,7 @@ let TravelService = TravelService_1 = class TravelService {
             inviteCode,
             deepLink,
             status: row.status,
-            createdAt: createdAtIso ?? (row.created_at ?? ''),
+            createdAt: row.created_at,
             ownerName: row.owner_name ?? null,
             members: members ?? row.members ?? undefined,
         };
