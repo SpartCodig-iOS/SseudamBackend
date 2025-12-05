@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Post, Query, UseGuards, Req, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Post, Query, UseGuards, Req, UnauthorizedException, Res } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -221,6 +221,7 @@ export class OAuthController {
     @Query('code') code?: string,
     @Query('state') state?: string,
     @Query('redirect_uri') redirectUriQuery?: string,
+    @Res() res?: any,
   ) {
     const deepLinkBase = 'sseudam://oauth/kakao';
     try {
@@ -253,6 +254,9 @@ export class OAuthController {
       await this.cacheService.set(ticket, buildAuthSessionResponse(result), { ttl: ticketTtl, prefix: 'kakao:ticket' });
 
       const redirectUrl = `${deepLinkBase}?ticket=${ticket}`;
+      if (res) {
+        return res.redirect(HttpStatus.FOUND, redirectUrl);
+      }
       return {
         statusCode: HttpStatus.FOUND,
         headers: { Location: redirectUrl },
@@ -261,6 +265,9 @@ export class OAuthController {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'unknown_error';
       const redirectUrl = `${deepLinkBase}?error=${encodeURIComponent(message)}`;
+      if (res) {
+        return res.redirect(HttpStatus.FOUND, redirectUrl);
+      }
       return {
         statusCode: HttpStatus.FOUND,
         headers: { Location: redirectUrl },

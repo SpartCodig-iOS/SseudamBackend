@@ -79,7 +79,7 @@ let OAuthController = class OAuthController {
         await this.socialAuthService.revokeAppleConnection(req.currentUser.id, payload.refreshToken);
         return (0, api_1.success)({}, 'Apple connection revoked');
     }
-    async kakaoCallback(code, state, redirectUriQuery) {
+    async kakaoCallback(code, state, redirectUriQuery, res) {
         const deepLinkBase = 'sseudam://oauth/kakao';
         try {
             if (!code) {
@@ -108,6 +108,9 @@ let OAuthController = class OAuthController {
             const ticketTtl = 180; // 3분
             await this.cacheService.set(ticket, (0, auth_response_util_1.buildAuthSessionResponse)(result), { ttl: ticketTtl, prefix: 'kakao:ticket' });
             const redirectUrl = `${deepLinkBase}?ticket=${ticket}`;
+            if (res) {
+                return res.redirect(common_1.HttpStatus.FOUND, redirectUrl);
+            }
             return {
                 statusCode: common_1.HttpStatus.FOUND,
                 headers: { Location: redirectUrl },
@@ -117,6 +120,9 @@ let OAuthController = class OAuthController {
         catch (error) {
             const message = error instanceof Error ? error.message : 'unknown_error';
             const redirectUrl = `${deepLinkBase}?error=${encodeURIComponent(message)}`;
+            if (res) {
+                return res.redirect(common_1.HttpStatus.FOUND, redirectUrl);
+            }
             return {
                 statusCode: common_1.HttpStatus.FOUND,
                 headers: { Location: redirectUrl },
@@ -295,8 +301,9 @@ __decorate([
     __param(0, (0, common_1.Query)('code')),
     __param(1, (0, common_1.Query)('state')),
     __param(2, (0, common_1.Query)('redirect_uri')),
+    __param(3, (0, common_1.Res)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:paramtypes", [String, String, String, Object]),
     __metadata("design:returntype", Promise)
 ], OAuthController.prototype, "kakaoCallback", null);
 __decorate([
