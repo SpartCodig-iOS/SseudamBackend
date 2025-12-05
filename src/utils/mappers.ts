@@ -11,7 +11,7 @@ export const toUserResponse = (user: UserRecord): UserResponseDto => ({
   id: user.id,
   email: user.email,
   name: user.name ?? null,
-  avatarURL: user.avatar_url ?? null,
+  avatarURL: null,
   role: user.role,
   createdAt: formatDate(user.created_at) ?? null,
   userId: user.username,

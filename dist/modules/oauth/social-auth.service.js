@@ -743,20 +743,14 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         if (resolvedLoginType === 'google' && googleTokenPromise) {
             await this.oauthTokenService.saveToken(userRecord.id, 'google', googleTokenPromise);
         }
-        // 나머지 부가 작업은 백그라운드로 실행
-        const backgroundTasks = [];
-        if (userRecord.avatar_url) {
-            backgroundTasks.push(this.backgroundJobService.enqueue(`[social-avatar] ${userRecord.id}`, async () => {
-                const mirrored = await this.supabaseService.mirrorProfileAvatar(userRecord.id, userRecord.avatar_url);
-                if (mirrored) {
-                    userRecord.avatar_url = mirrored;
-                }
-            }));
+        // 신규 가입이면 avatar_url이 있으면 스토리지에 복사
+        if (!profileExists && userRecord.avatar_url) {
+            void this.backgroundJobService.enqueue(`[social-avatar] ${userRecord.id}`, async () => {
+                await this.supabaseService.mirrorProfileAvatar(userRecord.id, userRecord.avatar_url);
+            });
         }
-        backgroundTasks.push(this.backgroundJobService.enqueue(`[markLastLogin] ${userRecord.id}`, async () => {
-            await this.authService.markLastLogin(userRecord.id);
-        }));
-        Promise.allSettled(backgroundTasks);
+        // 나머지 부가 작업은 백그라운드로 실행
+        void this.authService.markLastLogin(userRecord.id);
         const duration = Date.now() - startTime;
         if (duration > 1200) {
             this.logger.warn(`[OAuthPerf][miss] ${duration}ms steps=${marks.join(' | ')}`);

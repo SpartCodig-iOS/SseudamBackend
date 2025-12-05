@@ -389,6 +389,41 @@ export class SupabaseService {
     return null;
   }
 
+  private buildAvatarPublicUrl(pathInfo: { bucket: string; path: string }): string {
+    const base = env.supabaseUrl.replace(/\/$/, '');
+    return `${base}/storage/v1/object/public/${pathInfo.bucket}/${pathInfo.path}`;
+  }
+
+  async storageAvatarExists(avatarUrl?: string | null): Promise<boolean> {
+    const pathInfo = this.parseAvatarStoragePath(avatarUrl);
+    if (!pathInfo) return false;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 2000);
+    try {
+      const response = await fetch(this.buildAvatarPublicUrl(pathInfo), {
+        method: 'HEAD',
+        signal: controller.signal,
+      });
+      return response.ok;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async clearAvatarUrl(userId: string): Promise<void> {
+    const pool = await getPool();
+    await pool.query(
+      `UPDATE ${env.supabaseProfileTable}
+         SET avatar_url = NULL,
+             updated_at = NOW()
+       WHERE id = $1`,
+      [userId],
+    );
+  }
+
   private detectImageKind(url: string, contentType?: string | null): 'png' | 'jpeg' | null {
     const type = (contentType ?? '').toLowerCase();
     if (type.includes('png')) return 'png';

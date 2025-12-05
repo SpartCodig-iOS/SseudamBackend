@@ -316,6 +316,37 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
         }
         return null;
     }
+    buildAvatarPublicUrl(pathInfo) {
+        const base = env_1.env.supabaseUrl.replace(/\/$/, '');
+        return `${base}/storage/v1/object/public/${pathInfo.bucket}/${pathInfo.path}`;
+    }
+    async storageAvatarExists(avatarUrl) {
+        const pathInfo = this.parseAvatarStoragePath(avatarUrl);
+        if (!pathInfo)
+            return false;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 2000);
+        try {
+            const response = await fetch(this.buildAvatarPublicUrl(pathInfo), {
+                method: 'HEAD',
+                signal: controller.signal,
+            });
+            return response.ok;
+        }
+        catch {
+            return false;
+        }
+        finally {
+            clearTimeout(timeout);
+        }
+    }
+    async clearAvatarUrl(userId) {
+        const pool = await (0, pool_1.getPool)();
+        await pool.query(`UPDATE ${env_1.env.supabaseProfileTable}
+         SET avatar_url = NULL,
+             updated_at = NOW()
+       WHERE id = $1`, [userId]);
+    }
     detectImageKind(url, contentType) {
         const type = (contentType ?? '').toLowerCase();
         if (type.includes('png'))

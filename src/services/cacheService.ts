@@ -19,7 +19,7 @@ export class CacheService {
   private redisNextRetryAt = 0;
   private readonly redisCooldownMs = 30_000;
   private redisKeepAliveTimer: NodeJS.Timeout | null = null;
-  private readonly redisKeepAliveMs = 240_000; // 4분 간격 ping으로 sleep 방지
+  private readonly redisKeepAliveMs = 20_000; // 20초 간격 ping으로 sleep 방지
 
   async getRedisClient(): Promise<Redis | null> {
     if (!this.redisUrl) {
