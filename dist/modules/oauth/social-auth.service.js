@@ -131,8 +131,8 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
     // Kakao 토큰 교환 (authorization_code -> access/refresh)
     async exchangeKakaoAuthorizationCode(authorizationCode, options) {
         this.ensureKakaoEnv();
-        const redirectUri = options?.redirectUri ?? env_1.env.kakaoRedirectUri;
-        const finalRedirect = redirectUri || this.DEFAULT_KAKAO_REDIRECT;
+        // redirect URI는 고정 값 사용 (env 없이 하드코딩)
+        const finalRedirect = this.DEFAULT_KAKAO_REDIRECT;
         const body = new URLSearchParams({
             grant_type: 'authorization_code',
             client_id: env_1.env.kakaoClientId ?? '',
@@ -489,7 +489,6 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             }
             const code = options.authorizationCode;
             const exchanged = await this.exchangeKakaoAuthorizationCode(code, {
-                redirectUri: options.redirectUri ?? env_1.env.kakaoRedirectUri ?? this.DEFAULT_KAKAO_REDIRECT,
                 codeVerifier: options.codeVerifier ?? undefined,
             });
             const kakaoAccessToken = exchanged.accessToken;
