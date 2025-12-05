@@ -48,6 +48,7 @@ export class AuthService {
     private readonly jwtTokenService: JwtTokenService,
     private readonly sessionService: SessionService,
     private readonly cacheService: CacheService,
+    @Inject(forwardRef(() => OptimizedOAuthService))
     private readonly optimizedOAuthService: OptimizedOAuthService,
     @Inject(forwardRef(() => SocialAuthService))
     private readonly socialAuthService: SocialAuthService,

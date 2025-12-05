@@ -657,6 +657,7 @@ let AuthService = AuthService_1 = class AuthService {
 exports.AuthService = AuthService;
 exports.AuthService = AuthService = AuthService_1 = __decorate([
     (0, common_1.Injectable)(),
+    __param(5, (0, common_1.Inject)((0, common_1.forwardRef)(() => optimized_oauth_service_1.OptimizedOAuthService))),
     __param(6, (0, common_1.Inject)((0, common_1.forwardRef)(() => social_auth_service_1.SocialAuthService))),
     __metadata("design:paramtypes", [supabaseService_1.SupabaseService,
         oauth_token_service_1.OAuthTokenService,
