@@ -66,6 +66,17 @@ export class SocialAuthService {
     private readonly backgroundJobService: BackgroundJobService,
   ) {}
 
+  private uuidFromProvider(provider: string, externalId: string): string {
+    const hash = createHash('sha1').update(`${provider}:${externalId}`).digest('hex');
+    return [
+      hash.substring(0, 8),
+      hash.substring(8, 12),
+      hash.substring(12, 16),
+      hash.substring(16, 20),
+      hash.substring(20, 32),
+    ].join('-');
+  }
+
   private ensureAppleEnv() {
     if (!env.appleClientId || !env.appleTeamId || !env.appleKeyId || !env.applePrivateKey) {
       throw new ServiceUnavailableException('Apple credentials are not configured');
@@ -553,12 +564,13 @@ export class SocialAuthService {
       if (!kakaoId) {
         throw new UnauthorizedException('Kakao profile id not found');
       }
+      const userId = this.uuidFromProvider('kakao', kakaoId);
       const email = profile?.kakao_account?.email ?? null;
       const nickname = profile?.kakao_account?.profile?.nickname ?? null;
       const avatarUrl = profile?.kakao_account?.profile?.profile_image_url ?? null;
 
       const userRecord: UserRecord = {
-        id: kakaoId,
+        id: userId,
         email: email ?? '',
         name: nickname ?? null,
         avatar_url: avatarUrl ?? null,

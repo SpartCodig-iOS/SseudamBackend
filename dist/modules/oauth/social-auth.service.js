@@ -94,6 +94,16 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         // 네트워크 타임아웃 설정 (빠른 실패)
         this.NETWORK_TIMEOUT = 8000; // 8초
     }
+    uuidFromProvider(provider, externalId) {
+        const hash = (0, node_crypto_1.createHash)('sha1').update(`${provider}:${externalId}`).digest('hex');
+        return [
+            hash.substring(0, 8),
+            hash.substring(8, 12),
+            hash.substring(12, 16),
+            hash.substring(16, 20),
+            hash.substring(20, 32),
+        ].join('-');
+    }
     ensureAppleEnv() {
         if (!env_1.env.appleClientId || !env_1.env.appleTeamId || !env_1.env.appleKeyId || !env_1.env.applePrivateKey) {
             throw new common_1.ServiceUnavailableException('Apple credentials are not configured');
@@ -498,11 +508,12 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             if (!kakaoId) {
                 throw new common_1.UnauthorizedException('Kakao profile id not found');
             }
+            const userId = this.uuidFromProvider('kakao', kakaoId);
             const email = profile?.kakao_account?.email ?? null;
             const nickname = profile?.kakao_account?.profile?.nickname ?? null;
             const avatarUrl = profile?.kakao_account?.profile?.profile_image_url ?? null;
             const userRecord = {
-                id: kakaoId,
+                id: userId,
                 email: email ?? '',
                 name: nickname ?? null,
                 avatar_url: avatarUrl ?? null,
