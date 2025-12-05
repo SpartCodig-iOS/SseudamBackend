@@ -232,13 +232,11 @@ export class OAuthController {
         res.end();
         return;
       }
-      return res
-        ? res.redirect(HttpStatus.FOUND, url)
-        : {
-            statusCode: HttpStatus.FOUND,
-            headers: { Location: url },
-            body: '',
-          };
+      return {
+        statusCode: HttpStatus.FOUND,
+        headers: { Location: url, 'Content-Length': '0' },
+        body: '',
+      };
     };
 
     if (!code) {

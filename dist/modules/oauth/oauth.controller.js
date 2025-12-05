@@ -89,13 +89,11 @@ let OAuthController = class OAuthController {
                 res.end();
                 return;
             }
-            return res
-                ? res.redirect(common_1.HttpStatus.FOUND, url)
-                : {
-                    statusCode: common_1.HttpStatus.FOUND,
-                    headers: { Location: url },
-                    body: '',
-                };
+            return {
+                statusCode: common_1.HttpStatus.FOUND,
+                headers: { Location: url, 'Content-Length': '0' },
+                body: '',
+            };
         };
         if (!code) {
             return redirect(`${deepLinkBase}?error=${encodeURIComponent('missing_code')}`);
