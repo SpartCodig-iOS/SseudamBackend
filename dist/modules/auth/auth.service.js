@@ -23,17 +23,19 @@ const jwtService_1 = require("../../services/jwtService");
 const sessionService_1 = require("../../services/sessionService");
 const supabaseService_1 = require("../../services/supabaseService");
 const oauth_token_service_1 = require("../../services/oauth-token.service");
+const optimized_oauth_service_1 = require("../oauth/optimized-oauth.service");
 const cacheService_1 = require("../../services/cacheService");
 const mappers_1 = require("../../utils/mappers");
 const social_auth_service_1 = require("../oauth/social-auth.service");
 const pool_1 = require("../../db/pool");
 let AuthService = AuthService_1 = class AuthService {
-    constructor(supabaseService, oauthTokenService, jwtTokenService, sessionService, cacheService, socialAuthService) {
+    constructor(supabaseService, oauthTokenService, jwtTokenService, sessionService, cacheService, optimizedOAuthService, socialAuthService) {
         this.supabaseService = supabaseService;
         this.oauthTokenService = oauthTokenService;
         this.jwtTokenService = jwtTokenService;
         this.sessionService = sessionService;
         this.cacheService = cacheService;
+        this.optimizedOAuthService = optimizedOAuthService;
         this.socialAuthService = socialAuthService;
         this.logger = new common_1.Logger(AuthService_1.name);
         this.identifierCache = new Map();
@@ -315,6 +317,21 @@ let AuthService = AuthService_1 = class AuthService {
         this.logger.debug(`Auth session created in ${duration}ms for user ${user.id}`);
         return { user, tokenPair, loginType, session };
     }
+    // 소셜 로그인 (인가코드/토큰 전달) 공통 처리
+    async socialLoginWithCode(codeOrToken, provider, options = {}) {
+        const oauthOptions = {};
+        if (options.authorizationCode) {
+            oauthOptions.authorizationCode = options.authorizationCode;
+        }
+        if (options.redirectUri) {
+            oauthOptions.redirectUri = options.redirectUri;
+        }
+        if (options.codeVerifier) {
+            oauthOptions.codeVerifier = options.codeVerifier;
+        }
+        // Kakao는 authorizationCode를 넘기면 내부에서 교환하여 진행, 그 외는 Supabase access token 사용
+        return this.optimizedOAuthService.fastOAuthLogin(codeOrToken, provider, oauthOptions);
+    }
     async signup(input) {
         const startTime = Date.now();
         const lowerEmail = input.email.toLowerCase();
@@ -358,6 +375,9 @@ let AuthService = AuthService_1 = class AuthService {
         const identifier = input.identifier.trim().toLowerCase();
         if (!identifier) {
             throw new common_1.UnauthorizedException('identifier is required');
+        }
+        if (!input.password) {
+            throw new common_1.UnauthorizedException('Password is required for email/username login');
         }
         let loginType = identifier.includes('@') ? 'email' : 'username';
         let lookupValue = identifier;
@@ -491,12 +511,25 @@ let AuthService = AuthService_1 = class AuthService {
         }
         // 통합 토큰 테이블에서 조회
         try {
-            const [appleToken, googleToken] = await Promise.all([
+            const [appleToken, googleToken, kakaoToken] = await Promise.all([
                 this.oauthTokenService.getToken(user.id, 'apple'),
                 this.oauthTokenService.getToken(user.id, 'google'),
+                this.oauthTokenService.getToken(user.id, 'kakao'),
             ]);
             appleRefreshToken = appleRefreshToken ?? appleToken;
             googleRefreshToken = googleRefreshToken ?? googleToken;
+            if (!profileLoginType && kakaoToken) {
+                profileLoginType = 'kakao';
+            }
+            const kakaoRefreshToken = kakaoToken ?? null;
+            if (profileLoginType === 'kakao' && kakaoRefreshToken) {
+                try {
+                    await this.socialAuthService.revokeKakaoConnection(user.id, kakaoRefreshToken);
+                }
+                catch (error) {
+                    this.logger.warn('[deleteAccount] Kakao revoke failed', error);
+                }
+            }
         }
         catch (error) {
             this.logger.warn('[deleteAccount] Failed to load refresh tokens', error);
@@ -526,6 +559,20 @@ let AuthService = AuthService_1 = class AuthService {
                 }
                 else {
                     this.logger.warn('[deleteAccount] Google refresh token missing, skipping revoke');
+                }
+            }
+            else if (profileLoginType === 'kakao') {
+                const kakaoToken = await this.oauthTokenService.getToken(user.id, 'kakao');
+                if (kakaoToken) {
+                    try {
+                        await this.socialAuthService.revokeKakaoConnection(user.id, kakaoToken);
+                    }
+                    catch (error) {
+                        this.logger.warn('[deleteAccount] Kakao revoke failed', error);
+                    }
+                }
+                else {
+                    this.logger.warn('[deleteAccount] Kakao refresh token missing, skipping revoke');
                 }
             }
         })();
@@ -613,11 +660,12 @@ let AuthService = AuthService_1 = class AuthService {
 exports.AuthService = AuthService;
 exports.AuthService = AuthService = AuthService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __param(5, (0, common_1.Inject)((0, common_1.forwardRef)(() => social_auth_service_1.SocialAuthService))),
+    __param(6, (0, common_1.Inject)((0, common_1.forwardRef)(() => social_auth_service_1.SocialAuthService))),
     __metadata("design:paramtypes", [supabaseService_1.SupabaseService,
         oauth_token_service_1.OAuthTokenService,
         jwtService_1.JwtTokenService,
         sessionService_1.SessionService,
         cacheService_1.CacheService,
+        optimized_oauth_service_1.OptimizedOAuthService,
         social_auth_service_1.SocialAuthService])
 ], AuthService);

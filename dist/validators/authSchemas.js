@@ -13,15 +13,26 @@ exports.loginSchema = zod_1.z
     .object({
     identifier: zod_1.z.string().min(1).optional(),
     email: zod_1.z.string().email().optional(),
-    password: zod_1.z.string().min(1),
+    password: zod_1.z.string().min(1).optional(),
+    provider: loginTypeEnum.optional(),
+    accessToken: zod_1.z.string().min(1).optional(),
+    authorizationCode: zod_1.z.string().min(1).optional(),
 })
-    .refine((data) => Boolean(data.identifier ?? data.email), {
-    message: 'identifier or email is required',
+    .refine((data) => {
+    const hasProvider = Boolean(data.provider && data.provider !== 'email');
+    const hasSocialToken = Boolean(data.accessToken || data.authorizationCode);
+    const hasPasswordLogin = Boolean(data.password && (data.identifier || data.email));
+    return (hasProvider && hasSocialToken) || hasPasswordLogin;
+}, {
+    message: 'For social login provide provider and accessToken/authorizationCode, or provide email/identifier and password',
     path: ['identifier'],
 })
     .transform((data) => ({
     identifier: (data.identifier ?? data.email ?? '').trim(),
     password: data.password,
+    provider: data.provider,
+    accessToken: data.accessToken?.trim(),
+    authorizationCode: data.authorizationCode?.trim(),
 }));
 exports.oauthTokenSchema = zod_1.z
     .object({

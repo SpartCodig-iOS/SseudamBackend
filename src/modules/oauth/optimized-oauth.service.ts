@@ -49,7 +49,6 @@ export class OptimizedOAuthService {
       });
       if (cachedResult) {
         const duration = Date.now() - startTime;
-        // this.logger.debug(`Ultra-fast OAuth (cached): ${duration}ms`);
         return cachedResult;
       }
 
@@ -64,9 +63,6 @@ export class OptimizedOAuthService {
         ttl: this.FAST_OAUTH_CACHE_TTL,
         prefix: this.FAST_OAUTH_REDIS_PREFIX,
       }).catch(err => this.logger.warn(`Failed to cache OAuth result: ${err.message}`));
-
-      const duration = Date.now() - startTime;
-      // this.logger.debug(`Fast OAuth login completed: ${duration}ms`);
 
       return result;
     } catch (error) {

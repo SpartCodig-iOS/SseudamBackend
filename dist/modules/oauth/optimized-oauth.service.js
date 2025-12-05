@@ -49,7 +49,6 @@ let OptimizedOAuthService = OptimizedOAuthService_1 = class OptimizedOAuthServic
             });
             if (cachedResult) {
                 const duration = Date.now() - startTime;
-                // this.logger.debug(`Ultra-fast OAuth (cached): ${duration}ms`);
                 return cachedResult;
             }
             // 2. 백그라운드 캐시 설정과 함께 OAuth 처리
@@ -61,8 +60,6 @@ let OptimizedOAuthService = OptimizedOAuthService_1 = class OptimizedOAuthServic
                 ttl: this.FAST_OAUTH_CACHE_TTL,
                 prefix: this.FAST_OAUTH_REDIS_PREFIX,
             }).catch(err => this.logger.warn(`Failed to cache OAuth result: ${err.message}`));
-            const duration = Date.now() - startTime;
-            // this.logger.debug(`Fast OAuth login completed: ${duration}ms`);
             return result;
         }
         catch (error) {

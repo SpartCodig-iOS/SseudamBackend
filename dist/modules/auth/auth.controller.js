@@ -36,6 +36,17 @@ let AuthController = class AuthController {
     }
     async login(body) {
         const payload = authSchemas_1.loginSchema.parse(body);
+        // 소셜 로그인 분기: provider=kakao/apple/google && accessToken/authorizationCode 제공
+        if (payload.provider && payload.provider !== 'email' && (payload.accessToken || payload.authorizationCode)) {
+            if (!payload.accessToken && payload.provider !== 'kakao') {
+                throw new common_1.UnauthorizedException('accessToken is required for social login');
+            }
+            const token = (payload.accessToken ?? payload.authorizationCode);
+            const result = await this.authService.socialLoginWithCode(token, payload.provider, {
+                authorizationCode: payload.authorizationCode,
+            });
+            return (0, api_1.success)((0, auth_response_util_1.buildAuthSessionResponse)(result), 'Login successful');
+        }
         const result = await this.authService.login(payload);
         return (0, api_1.success)((0, auth_response_util_1.buildAuthSessionResponse)(result), 'Login successful');
     }
@@ -109,16 +120,28 @@ __decorate([
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     (0, common_1.UseGuards)(rate_limit_guard_1.RateLimitGuard),
     (0, rate_limit_decorator_1.RateLimit)({ limit: 5, windowMs: 15 * 60 * 1000, keyPrefix: 'auth:login' }),
-    (0, swagger_1.ApiOperation)({ summary: '로그인 (이메일 또는 아이디)' }),
+    (0, swagger_1.ApiOperation)({ summary: '로그인 (이메일/아이디 또는 소셜 accessToken/code)' }),
     (0, swagger_1.ApiBody)({
         schema: {
             type: 'object',
-            required: ['password'],
             properties: {
                 identifier: {
                     type: 'string',
                     description: '이메일 전체 또는 아이디',
                     example: 'user 또는 user@example.com',
+                },
+                provider: {
+                    type: 'string',
+                    enum: ['email', 'google', 'apple', 'kakao'],
+                    description: '소셜 로그인 시 provider 지정',
+                },
+                accessToken: {
+                    type: 'string',
+                    description: '소셜 accessToken (카카오는 authorizationCode도 가능)',
+                },
+                authorizationCode: {
+                    type: 'string',
+                    description: '소셜 authorizationCode (선택, accessToken 대신 전달 가능)',
                 },
                 email: {
                     type: 'string',

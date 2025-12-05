@@ -19,6 +19,7 @@ export interface SocialLookupResult {
 export interface OAuthTokenOptions {
   appleRefreshToken?: string | null;
   googleRefreshToken?: string | null;
+  kakaoRefreshToken?: string | null;
   authorizationCode?: string | null;
   codeVerifier?: string | null;
   redirectUri?: string | null;
@@ -49,6 +50,8 @@ export class SocialAuthService {
   private readonly PROFILE_EXISTS_REDIS_PREFIX = 'profile_exists';
   private readonly localTokenCache = new Map<string, { user: UserRecord; expiresAt: number }>();
   private readonly LOCAL_TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5분
+  private readonly KAKAO_TIMEOUT = 8000; // 8초
+  private readonly DEFAULT_KAKAO_REDIRECT = 'https://sseudam.up.railway.app/api/v1/auth/kakao/callback';
   private dbWarmupPromise: Promise<boolean> | null = null;
 
   // 네트워크 타임아웃 설정 (빠른 실패)
@@ -75,6 +78,12 @@ export class SocialAuthService {
     }
   }
 
+  private ensureKakaoEnv() {
+    if (!env.kakaoClientId && !env.kakaoRedirectUri) {
+      throw new ServiceUnavailableException('Kakao credentials are not configured');
+    }
+  }
+
   private getTokenCacheKey(accessToken: string): string {
     return createHash('sha256').update(accessToken).digest('hex');
   }
@@ -94,6 +103,148 @@ export class SocialAuthService {
       user,
       expiresAt: Date.now() + this.LOCAL_TOKEN_CACHE_TTL,
     });
+  }
+
+  // Kakao 토큰 교환 (authorization_code -> access/refresh)
+  async exchangeKakaoAuthorizationCode(
+    authorizationCode: string,
+    options?: { redirectUri?: string },
+  ): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
+    this.ensureKakaoEnv();
+
+    const redirectUri = options?.redirectUri ?? env.kakaoRedirectUri!;
+    const finalRedirect = redirectUri || this.DEFAULT_KAKAO_REDIRECT;
+    const body = new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: env.kakaoClientId ?? '',
+      redirect_uri: finalRedirect,
+      code: authorizationCode,
+    });
+    if (env.kakaoClientSecret) {
+      body.append('client_secret', env.kakaoClientSecret);
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.KAKAO_TIMEOUT);
+
+    const response = await fetch('https://kauth.kakao.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeoutId));
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new ServiceUnavailableException(`Kakao token exchange failed: ${response.status} ${text}`);
+    }
+
+    const payload = await response.json() as {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+    };
+
+    if (!payload.access_token || !payload.refresh_token) {
+      throw new ServiceUnavailableException('Kakao did not return access/refresh token');
+    }
+
+    return {
+      accessToken: payload.access_token,
+      refreshToken: payload.refresh_token,
+      expiresIn: payload.expires_in ?? 0,
+    };
+  }
+
+  // Kakao refresh_token -> access_token
+  async refreshKakaoAccessToken(refreshToken: string): Promise<string | null> {
+    this.ensureKakaoEnv();
+
+    const body = new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: env.kakaoClientId!,
+      refresh_token: refreshToken,
+    });
+    if (env.kakaoClientSecret) {
+      body.append('client_secret', env.kakaoClientSecret);
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.KAKAO_TIMEOUT);
+
+    const response = await fetch('https://kauth.kakao.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeoutId));
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = await response.json() as { access_token?: string };
+    return payload.access_token ?? null;
+  }
+
+  async revokeKakaoConnection(userId: string, refreshToken?: string): Promise<void> {
+    try {
+      const tokenToUse = refreshToken ?? (await this.oauthTokenService.getToken(userId, 'kakao')) ?? null;
+      if (!tokenToUse) {
+        this.logger.warn(`[revokeKakaoConnection] No Kakao refresh token for user ${userId}, skipping`);
+        return;
+      }
+
+      const accessToken = await this.refreshKakaoAccessToken(tokenToUse);
+      if (!accessToken) {
+        this.logger.warn(`[revokeKakaoConnection] Failed to refresh Kakao access token for user ${userId}, skipping unlink`);
+        return;
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), this.KAKAO_TIMEOUT);
+
+      const response = await fetch('https://kapi.kakao.com/v1/user/unlink', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timeoutId));
+
+      if (!response.ok) {
+        const text = await response.text();
+        this.logger.warn(`[revokeKakaoConnection] Kakao unlink failed: ${response.status} ${text}`);
+      }
+
+      // 성공/실패와 무관하게 토큰은 삭제
+      await this.oauthTokenService.saveToken(userId, 'kakao', null);
+      await this.invalidateOAuthCacheByUser(userId);
+    } catch (error) {
+      this.logger.warn(`[revokeKakaoConnection] Failed to revoke Kakao connection for user ${userId}:`, error);
+    }
+  }
+
+  private async getKakaoProfile(accessToken: string): Promise<any> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.KAKAO_TIMEOUT);
+
+    const response = await fetch('https://kapi.kakao.com/v2/user/me', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timeoutId));
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new UnauthorizedException(`Failed to fetch Kakao profile: ${response.status} ${text}`);
+    }
+
+    return response.json();
   }
 
   private async profileExists(userId: string): Promise<boolean> {
@@ -381,6 +532,48 @@ export class SocialAuthService {
     loginType: LoginType = 'email',
     options: OAuthTokenOptions = {},
   ): Promise<AuthSessionPayload> {
+    // Kakao는 Supabase accessToken을 사용할 수도 있고, authorizationCode가 들어오면 직접 교환
+    if (loginType === 'kakao' && options.authorizationCode) {
+      const code = options.authorizationCode;
+      const { accessToken: kakaoAccessToken, refreshToken: kakaoRefreshToken } = await this.exchangeKakaoAuthorizationCode(code, {
+        redirectUri: options.redirectUri ?? env.kakaoRedirectUri ?? this.DEFAULT_KAKAO_REDIRECT,
+      });
+      const profile = await this.getKakaoProfile(kakaoAccessToken);
+      const kakaoId = profile?.id?.toString();
+      if (!kakaoId) {
+        throw new UnauthorizedException('Kakao profile id not found');
+      }
+      const email = profile?.kakao_account?.email ?? null;
+      const nickname = profile?.kakao_account?.profile?.nickname ?? null;
+      const avatarUrl = profile?.kakao_account?.profile?.profile_image_url ?? null;
+
+      const userRecord: UserRecord = {
+        id: kakaoId,
+        email: email ?? '',
+        name: nickname ?? null,
+        avatar_url: avatarUrl ?? null,
+        username: email ?? kakaoId,
+        created_at: new Date(),
+        updated_at: new Date(),
+        password_hash: '',
+        role: 'user',
+      };
+
+      await this.supabaseService.upsertProfile({
+        id: userRecord.id,
+        email: userRecord.email,
+        name: userRecord.name ?? userRecord.email ?? userRecord.id,
+        username: userRecord.username,
+        loginType: 'kakao',
+        avatarUrl: userRecord.avatar_url,
+      });
+
+      await this.oauthTokenService.saveToken(userRecord.id, 'kakao', kakaoRefreshToken);
+
+      const session = await this.authService.createAuthSession(userRecord, 'kakao');
+      return session;
+    }
+
     const startTime = Date.now();
     const marks: string[] = [];
     const mark = (label: string) => {
@@ -401,11 +594,11 @@ export class SocialAuthService {
 
       // 캐시에 충분한 프로필이 있으면 Supabase 네트워크 호출을 생략해 응답 지연을 줄임
       if (needsProfileHydration) {
-        try {
-          const supabaseUser = await this.supabaseService.getUserFromToken(accessToken);
-          const detectedLoginType = this.resolveLoginType(resolvedLoginType, supabaseUser);
-          await this.supabaseService.ensureProfileFromSupabaseUser(supabaseUser, detectedLoginType);
-          userForSession = fromSupabaseUser(supabaseUser, {
+    try {
+      const supabaseUser = await this.supabaseService.getUserFromToken(accessToken);
+      const detectedLoginType = this.resolveLoginType(resolvedLoginType, supabaseUser);
+      await this.supabaseService.ensureProfileFromSupabaseUser(supabaseUser, detectedLoginType);
+      userForSession = fromSupabaseUser(supabaseUser, {
             preferDisplayName: detectedLoginType !== 'email' && detectedLoginType !== 'username',
           });
           await this.setCachedOAuthUser(accessToken, userForSession);

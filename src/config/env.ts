@@ -52,6 +52,10 @@ export const env = {
   appForceUpdate: truthy(process.env.APP_FORCE_UPDATE) ?? true,
   googleClientId: process.env.GOOGLE_CLIENT_ID ?? null,
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? null,
+  // Kakao OAuth
+  kakaoClientId: process.env.KAKAO_CLIENT_ID ?? null,
+  kakaoClientSecret: process.env.KAKAO_CLIENT_SECRET ?? null,
+  kakaoRedirectUri: process.env.KAKAO_REDIRECT_URI ?? null,
   // Redis 설정 (선택적)
   redisUrl: process.env.REDIS_URL ?? process.env.REDIS_URI ?? null,
   googleRedirectUri: process.env.GOOGLE_REDIRECT_URI ?? null,

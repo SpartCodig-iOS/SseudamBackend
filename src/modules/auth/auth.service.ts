@@ -7,9 +7,10 @@ import { JwtTokenService, TokenPair } from '../../services/jwtService';
 import { SessionRecord, SessionService } from '../../services/sessionService';
 import { SupabaseService } from '../../services/supabaseService';
 import { OAuthTokenService } from '../../services/oauth-token.service';
+import { OptimizedOAuthService } from '../oauth/optimized-oauth.service';
 import { CacheService } from '../../services/cacheService';
 import { fromSupabaseUser } from '../../utils/mappers';
-import { SocialAuthService } from '../oauth/social-auth.service';
+import { OAuthTokenOptions, SocialAuthService } from '../oauth/social-auth.service';
 import { getPool } from '../../db/pool';
 
 export interface AuthSessionPayload {
@@ -47,6 +48,7 @@ export class AuthService {
     private readonly jwtTokenService: JwtTokenService,
     private readonly sessionService: SessionService,
     private readonly cacheService: CacheService,
+    private readonly optimizedOAuthService: OptimizedOAuthService,
     @Inject(forwardRef(() => SocialAuthService))
     private readonly socialAuthService: SocialAuthService,
   ) {}
@@ -344,6 +346,27 @@ export class AuthService {
     return { user, tokenPair, loginType, session };
   }
 
+  // 소셜 로그인 (인가코드/토큰 전달) 공통 처리
+  async socialLoginWithCode(
+    codeOrToken: string,
+    provider: LoginType,
+    options: Partial<{ authorizationCode: string; redirectUri: string; codeVerifier: string }> = {},
+  ): Promise<AuthSessionPayload> {
+    const oauthOptions: OAuthTokenOptions = {};
+    if (options.authorizationCode) {
+      oauthOptions.authorizationCode = options.authorizationCode;
+    }
+    if (options.redirectUri) {
+      oauthOptions.redirectUri = options.redirectUri;
+    }
+    if (options.codeVerifier) {
+      oauthOptions.codeVerifier = options.codeVerifier;
+    }
+
+    // Kakao는 authorizationCode를 넘기면 내부에서 교환하여 진행, 그 외는 Supabase access token 사용
+    return this.optimizedOAuthService.fastOAuthLogin(codeOrToken, provider, oauthOptions);
+  }
+
   async signup(input: SignupInput): Promise<AuthSessionPayload> {
     const startTime = Date.now();
     const lowerEmail = input.email.toLowerCase();
@@ -396,6 +419,10 @@ export class AuthService {
     const identifier = input.identifier.trim().toLowerCase();
     if (!identifier) {
       throw new UnauthorizedException('identifier is required');
+    }
+
+    if (!input.password) {
+      throw new UnauthorizedException('Password is required for email/username login');
     }
 
     let loginType: LoginType = identifier.includes('@') ? 'email' : 'username';
@@ -547,12 +574,25 @@ export class AuthService {
 
     // 통합 토큰 테이블에서 조회
     try {
-      const [appleToken, googleToken] = await Promise.all([
+      const [appleToken, googleToken, kakaoToken] = await Promise.all([
         this.oauthTokenService.getToken(user.id, 'apple'),
         this.oauthTokenService.getToken(user.id, 'google'),
+        this.oauthTokenService.getToken(user.id, 'kakao'),
       ]);
       appleRefreshToken = appleRefreshToken ?? appleToken;
       googleRefreshToken = googleRefreshToken ?? googleToken;
+      if (!profileLoginType && kakaoToken) {
+        profileLoginType = 'kakao';
+      }
+      const kakaoRefreshToken = kakaoToken ?? null;
+
+      if (profileLoginType === 'kakao' && kakaoRefreshToken) {
+        try {
+          await this.socialAuthService.revokeKakaoConnection(user.id, kakaoRefreshToken);
+        } catch (error) {
+          this.logger.warn('[deleteAccount] Kakao revoke failed', error);
+        }
+      }
     } catch (error) {
       this.logger.warn('[deleteAccount] Failed to load refresh tokens', error as Error);
     }
@@ -577,6 +617,17 @@ export class AuthService {
           }
         } else {
           this.logger.warn('[deleteAccount] Google refresh token missing, skipping revoke');
+        }
+      } else if (profileLoginType === 'kakao') {
+        const kakaoToken = await this.oauthTokenService.getToken(user.id, 'kakao');
+        if (kakaoToken) {
+          try {
+            await this.socialAuthService.revokeKakaoConnection(user.id, kakaoToken);
+          } catch (error) {
+            this.logger.warn('[deleteAccount] Kakao revoke failed', error);
+          }
+        } else {
+          this.logger.warn('[deleteAccount] Kakao refresh token missing, skipping revoke');
         }
       }
     })();

@@ -23,6 +23,7 @@ import {
 } from './dto/auth-response.dto';
 import { buildAuthSessionResponse } from './auth-response.util';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator';
+import { LoginType } from '../../types/auth';
 
 @ApiTags('Auth')
 @Controller('api/v1/auth')
@@ -70,16 +71,28 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitGuard)
   @RateLimit({ limit: 5, windowMs: 15 * 60 * 1000, keyPrefix: 'auth:login' })
-  @ApiOperation({ summary: '로그인 (이메일 또는 아이디)' })
+  @ApiOperation({ summary: '로그인 (이메일/아이디 또는 소셜 accessToken/code)' })
   @ApiBody({
     schema: {
       type: 'object',
-      required: ['password'],
       properties: {
         identifier: {
           type: 'string',
           description: '이메일 전체 또는 아이디',
           example: 'user 또는 user@example.com',
+        },
+        provider: {
+          type: 'string',
+          enum: ['email', 'google', 'apple', 'kakao'],
+          description: '소셜 로그인 시 provider 지정',
+        },
+        accessToken: {
+          type: 'string',
+          description: '소셜 accessToken (카카오는 authorizationCode도 가능)',
+        },
+        authorizationCode: {
+          type: 'string',
+          description: '소셜 authorizationCode (선택, accessToken 대신 전달 가능)',
         },
         email: {
           type: 'string',
@@ -113,7 +126,20 @@ export class AuthController {
     },
   })
   async login(@Body() body: unknown) {
-    const payload = loginSchema.parse(body);
+    const payload = loginSchema.parse(body) as any;
+
+    // 소셜 로그인 분기: provider=kakao/apple/google && accessToken/authorizationCode 제공
+    if (payload.provider && payload.provider !== 'email' && (payload.accessToken || payload.authorizationCode)) {
+      if (!payload.accessToken && payload.provider !== 'kakao') {
+        throw new UnauthorizedException('accessToken is required for social login');
+      }
+      const token = (payload.accessToken ?? payload.authorizationCode) as string;
+      const result = await this.authService.socialLoginWithCode(token, payload.provider as LoginType, {
+        authorizationCode: payload.authorizationCode,
+      });
+      return success(buildAuthSessionResponse(result), 'Login successful');
+    }
+
     const result = await this.authService.login(payload);
 
     return success(buildAuthSessionResponse(result), 'Login successful');

@@ -39,12 +39,13 @@ let OptimizedDeleteService = OptimizedDeleteService_1 = class OptimizedDeleteSer
             ]);
             const avatarUrl = profileData?.avatar_url || user.avatar_url || null;
             const loginType = profileData?.login_type || loginTypeHint || 'email';
-            const [appleRefreshToken, googleRefreshToken] = await Promise.all([
+            const [appleRefreshToken, googleRefreshToken, kakaoRefreshToken] = await Promise.all([
                 this.oauthTokenService.getToken(user.id, 'apple'),
                 this.oauthTokenService.getToken(user.id, 'google'),
+                this.oauthTokenService.getToken(user.id, 'kakao'),
             ]);
             // 2. 소셜 토큰 해제를 백그라운드에서 처리 (블로킹하지 않음)
-            const socialRevokePromise = this.revokeSocialTokensInBackground(user.id, loginType, appleRefreshToken, googleRefreshToken);
+            const socialRevokePromise = this.revokeSocialTokensInBackground(user.id, loginType, appleRefreshToken, googleRefreshToken, kakaoRefreshToken);
             // 3. 로컬 데이터 삭제를 트랜잭션으로 빠르게 처리
             const localDeletePromise = this.performFastLocalDeletion(user.id);
             // 4. Supabase 사용자 삭제 (auth only)
@@ -108,7 +109,7 @@ let OptimizedDeleteService = OptimizedDeleteService_1 = class OptimizedDeleteSer
     /**
      * 백그라운드 소셜 토큰 해제 (비블로킹)
      */
-    async revokeSocialTokensInBackground(userId, loginType, appleRefreshToken, googleRefreshToken) {
+    async revokeSocialTokensInBackground(userId, loginType, appleRefreshToken, googleRefreshToken, kakaoRefreshToken) {
         const revokeTasks = [];
         if (loginType === 'apple' && appleRefreshToken) {
             revokeTasks.push(this.socialAuthService.revokeAppleConnection(userId, appleRefreshToken)
@@ -117,6 +118,10 @@ let OptimizedDeleteService = OptimizedDeleteService_1 = class OptimizedDeleteSer
         if (loginType === 'google' && googleRefreshToken) {
             revokeTasks.push(this.socialAuthService.revokeGoogleConnection(userId, googleRefreshToken)
                 .catch(error => this.logger.warn(`Google token revocation failed: ${error.message}`)));
+        }
+        if (loginType === 'kakao' && kakaoRefreshToken) {
+            revokeTasks.push(this.socialAuthService.revokeKakaoConnection(userId, kakaoRefreshToken)
+                .catch(error => this.logger.warn(`Kakao token revocation failed: ${error.message}`)));
         }
         if (revokeTasks.length > 0) {
             return Promise.all(revokeTasks);

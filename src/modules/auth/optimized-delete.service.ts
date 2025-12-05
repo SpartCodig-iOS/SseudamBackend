@@ -37,9 +37,10 @@ export class OptimizedDeleteService {
 
       const avatarUrl = profileData?.avatar_url || user.avatar_url || null;
       const loginType = profileData?.login_type || loginTypeHint || 'email';
-      const [appleRefreshToken, googleRefreshToken] = await Promise.all([
+      const [appleRefreshToken, googleRefreshToken, kakaoRefreshToken] = await Promise.all([
         this.oauthTokenService.getToken(user.id, 'apple'),
         this.oauthTokenService.getToken(user.id, 'google'),
+        this.oauthTokenService.getToken(user.id, 'kakao'),
       ]);
 
       // 2. 소셜 토큰 해제를 백그라운드에서 처리 (블로킹하지 않음)
@@ -47,7 +48,8 @@ export class OptimizedDeleteService {
         user.id,
         loginType,
         appleRefreshToken,
-        googleRefreshToken
+        googleRefreshToken,
+        kakaoRefreshToken
       );
 
       // 3. 로컬 데이터 삭제를 트랜잭션으로 빠르게 처리
@@ -130,7 +132,8 @@ export class OptimizedDeleteService {
     userId: string,
     loginType: LoginType,
     appleRefreshToken?: string | null,
-    googleRefreshToken?: string | null
+    googleRefreshToken?: string | null,
+    kakaoRefreshToken?: string | null,
   ) {
     const revokeTasks: Promise<any>[] = [];
 
@@ -145,6 +148,13 @@ export class OptimizedDeleteService {
       revokeTasks.push(
         this.socialAuthService.revokeGoogleConnection(userId, googleRefreshToken)
           .catch(error => this.logger.warn(`Google token revocation failed: ${error.message}`))
+      );
+    }
+
+    if (loginType === 'kakao' && kakaoRefreshToken) {
+      revokeTasks.push(
+        this.socialAuthService.revokeKakaoConnection(userId, kakaoRefreshToken)
+          .catch(error => this.logger.warn(`Kakao token revocation failed: ${error.message}`))
       );
     }
 
