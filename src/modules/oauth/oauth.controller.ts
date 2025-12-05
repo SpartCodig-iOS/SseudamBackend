@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Post, Query, UseGuards, Req, UnauthorizedException, Res } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Post, Query, UseGuards, Req, UnauthorizedException, Res, Header } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -255,7 +255,10 @@ export class OAuthController {
 
       const redirectUrl = `${deepLinkBase}?ticket=${ticket}`;
       if (res) {
-        return res.redirect(HttpStatus.FOUND, redirectUrl);
+        res.status(HttpStatus.FOUND);
+        res.setHeader('Location', redirectUrl);
+        res.setHeader('Content-Length', '0');
+        return res.send();
       }
       return {
         statusCode: HttpStatus.FOUND,
@@ -266,7 +269,10 @@ export class OAuthController {
       const message = error instanceof Error ? error.message : 'unknown_error';
       const redirectUrl = `${deepLinkBase}?error=${encodeURIComponent(message)}`;
       if (res) {
-        return res.redirect(HttpStatus.FOUND, redirectUrl);
+        res.status(HttpStatus.FOUND);
+        res.setHeader('Location', redirectUrl);
+        res.setHeader('Content-Length', '0');
+        return res.send();
       }
       return {
         statusCode: HttpStatus.FOUND,
@@ -289,15 +295,20 @@ export class OAuthController {
     },
   })
   async finalizeKakaoTicket(@Body('ticket') ticket?: string) {
-    if (!ticket) {
-      throw new BadRequestException('ticket is required');
-    }
+    try {
+      if (!ticket) {
+        throw new BadRequestException('ticket is required');
+      }
 
-    const payload = await this.cacheService.get<any>(ticket, { prefix: 'kakao:ticket' });
-    await this.cacheService.del(ticket, { prefix: 'kakao:ticket' }); // 재사용 방지
-    if (!payload) {
-      throw new BadRequestException('ticket is expired or invalid');
+      const payload = await this.cacheService.get<any>(ticket, { prefix: 'kakao:ticket' });
+      await this.cacheService.del(ticket, { prefix: 'kakao:ticket' }).catch(() => undefined); // 재사용 방지
+      if (!payload) {
+        throw new BadRequestException('ticket is expired or invalid');
+      }
+      return success(payload, 'Login successful');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'finalize_failed';
+      throw new BadRequestException(message);
     }
-    return success(payload, 'Login successful');
   }
 }

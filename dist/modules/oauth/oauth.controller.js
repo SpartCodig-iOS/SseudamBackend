@@ -109,7 +109,10 @@ let OAuthController = class OAuthController {
             await this.cacheService.set(ticket, (0, auth_response_util_1.buildAuthSessionResponse)(result), { ttl: ticketTtl, prefix: 'kakao:ticket' });
             const redirectUrl = `${deepLinkBase}?ticket=${ticket}`;
             if (res) {
-                return res.redirect(common_1.HttpStatus.FOUND, redirectUrl);
+                res.status(common_1.HttpStatus.FOUND);
+                res.setHeader('Location', redirectUrl);
+                res.setHeader('Content-Length', '0');
+                return res.send();
             }
             return {
                 statusCode: common_1.HttpStatus.FOUND,
@@ -121,7 +124,10 @@ let OAuthController = class OAuthController {
             const message = error instanceof Error ? error.message : 'unknown_error';
             const redirectUrl = `${deepLinkBase}?error=${encodeURIComponent(message)}`;
             if (res) {
-                return res.redirect(common_1.HttpStatus.FOUND, redirectUrl);
+                res.status(common_1.HttpStatus.FOUND);
+                res.setHeader('Location', redirectUrl);
+                res.setHeader('Content-Length', '0');
+                return res.send();
             }
             return {
                 statusCode: common_1.HttpStatus.FOUND,
@@ -131,15 +137,21 @@ let OAuthController = class OAuthController {
         }
     }
     async finalizeKakaoTicket(ticket) {
-        if (!ticket) {
-            throw new common_1.BadRequestException('ticket is required');
+        try {
+            if (!ticket) {
+                throw new common_1.BadRequestException('ticket is required');
+            }
+            const payload = await this.cacheService.get(ticket, { prefix: 'kakao:ticket' });
+            await this.cacheService.del(ticket, { prefix: 'kakao:ticket' }).catch(() => undefined); // 재사용 방지
+            if (!payload) {
+                throw new common_1.BadRequestException('ticket is expired or invalid');
+            }
+            return (0, api_1.success)(payload, 'Login successful');
         }
-        const payload = await this.cacheService.get(ticket, { prefix: 'kakao:ticket' });
-        await this.cacheService.del(ticket, { prefix: 'kakao:ticket' }); // 재사용 방지
-        if (!payload) {
-            throw new common_1.BadRequestException('ticket is expired or invalid');
+        catch (error) {
+            const message = error instanceof Error ? error.message : 'finalize_failed';
+            throw new common_1.BadRequestException(message);
         }
-        return (0, api_1.success)(payload, 'Login successful');
     }
 };
 exports.OAuthController = OAuthController;
