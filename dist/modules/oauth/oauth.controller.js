@@ -81,23 +81,37 @@ let OAuthController = class OAuthController {
     }
     async kakaoCallback(code, state, redirectUriQuery, res) {
         const deepLinkBase = 'sseudam://oauth/kakao';
+        const redirect = (url) => {
+            if (res) {
+                res.status(common_1.HttpStatus.FOUND);
+                res.setHeader('Location', url);
+                res.setHeader('Content-Length', '0');
+                res.end();
+                return;
+            }
+            return {
+                statusCode: common_1.HttpStatus.FOUND,
+                headers: { Location: url },
+                body: '',
+            };
+        };
+        if (!code) {
+            return redirect(`${deepLinkBase}?error=${encodeURIComponent('missing_code')}`);
+        }
+        let codeVerifier;
+        let redirectUri = redirectUriQuery;
+        if (state) {
+            try {
+                const decoded = Buffer.from(state.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+                const parsed = JSON.parse(decoded);
+                codeVerifier = parsed.codeVerifier ?? parsed.code_verifier;
+                redirectUri = parsed.redirectUri ?? parsed.redirect_uri ?? redirectUri;
+            }
+            catch {
+                codeVerifier = state;
+            }
+        }
         try {
-            if (!code) {
-                throw new common_1.BadRequestException('Missing authorization code');
-            }
-            let codeVerifier;
-            let redirectUri = redirectUriQuery;
-            if (state) {
-                try {
-                    const decoded = Buffer.from(state.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
-                    const parsed = JSON.parse(decoded);
-                    codeVerifier = parsed.codeVerifier ?? parsed.code_verifier;
-                    redirectUri = parsed.redirectUri ?? parsed.redirect_uri ?? redirectUri;
-                }
-                catch {
-                    codeVerifier = state;
-                }
-            }
             const result = await this.optimizedOAuthService.fastOAuthLogin(code, 'kakao', {
                 authorizationCode: code,
                 codeVerifier,
@@ -107,33 +121,11 @@ let OAuthController = class OAuthController {
             const ticket = (0, crypto_1.randomBytes)(32).toString('hex');
             const ticketTtl = 180; // 3분
             await this.cacheService.set(ticket, (0, auth_response_util_1.buildAuthSessionResponse)(result), { ttl: ticketTtl, prefix: 'kakao:ticket' });
-            const redirectUrl = `${deepLinkBase}?ticket=${ticket}`;
-            if (res) {
-                res.status(common_1.HttpStatus.FOUND);
-                res.setHeader('Location', redirectUrl);
-                res.setHeader('Content-Length', '0');
-                return res.send();
-            }
-            return {
-                statusCode: common_1.HttpStatus.FOUND,
-                headers: { Location: redirectUrl },
-                body: '',
-            };
+            return redirect(`${deepLinkBase}?ticket=${ticket}`);
         }
         catch (error) {
             const message = error instanceof Error ? error.message : 'unknown_error';
-            const redirectUrl = `${deepLinkBase}?error=${encodeURIComponent(message)}`;
-            if (res) {
-                res.status(common_1.HttpStatus.FOUND);
-                res.setHeader('Location', redirectUrl);
-                res.setHeader('Content-Length', '0');
-                return res.send();
-            }
-            return {
-                statusCode: common_1.HttpStatus.FOUND,
-                headers: { Location: redirectUrl },
-                body: '',
-            };
+            return redirect(`${deepLinkBase}?error=${encodeURIComponent(message)}`);
         }
     }
     async finalizeKakaoTicket(ticket) {

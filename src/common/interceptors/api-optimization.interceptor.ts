@@ -42,6 +42,9 @@ export class ApiOptimizationInterceptor implements NestInterceptor {
 
     return next.handle().pipe(
       tap((data) => {
+        if (response.headersSent) {
+          return;
+        }
         const endTime = process.hrtime.bigint();
         const responseTime = Number(endTime - startTime) / 1000000; // ms
         const handlerTime = response.get('X-Handler-Time');
@@ -83,6 +86,9 @@ export class ApiOptimizationInterceptor implements NestInterceptor {
         // 아주 빠른 응답은 굳이 헤더 변형 안 함
       }),
       catchError((error) => {
+        if (!response.headersSent) {
+          // 정상적으로 응답을 아직 보내지 않았다면 로깅만 수행
+        }
         const endTime = process.hrtime.bigint();
         const responseTime = Number(endTime - startTime) / 1000000;
 

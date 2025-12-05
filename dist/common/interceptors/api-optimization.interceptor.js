@@ -28,6 +28,9 @@ let ApiOptimizationInterceptor = ApiOptimizationInterceptor_1 = class ApiOptimiz
         // 캐시 최적화 힌트
         this.addCacheOptimizationHints(request, response);
         return next.handle().pipe((0, operators_1.tap)((data) => {
+            if (response.headersSent) {
+                return;
+            }
             const endTime = process.hrtime.bigint();
             const responseTime = Number(endTime - startTime) / 1000000; // ms
             const handlerTime = response.get('X-Handler-Time');
@@ -63,6 +66,9 @@ let ApiOptimizationInterceptor = ApiOptimizationInterceptor_1 = class ApiOptimiz
             // 매우 빠른 응답은 캐시된 것일 가능성
             // 아주 빠른 응답은 굳이 헤더 변형 안 함
         }), (0, operators_1.catchError)((error) => {
+            if (!response.headersSent) {
+                // 정상적으로 응답을 아직 보내지 않았다면 로깅만 수행
+            }
             const endTime = process.hrtime.bigint();
             const responseTime = Number(endTime - startTime) / 1000000;
             this.logger.error(`API Error: ${method} ${endpoint} failed after ${responseTime.toFixed(2)}ms`, {

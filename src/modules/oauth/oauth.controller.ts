@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Post, Query, UseGuards, Req, UnauthorizedException, Res, Header } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Post, Query, UseGuards, Req, UnauthorizedException, Res } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -224,24 +224,39 @@ export class OAuthController {
     @Res() res?: any,
   ) {
     const deepLinkBase = 'sseudam://oauth/kakao';
+    const redirect = (url: string) => {
+      if (res) {
+        res.status(HttpStatus.FOUND);
+        res.setHeader('Location', url);
+        res.setHeader('Content-Length', '0');
+        res.end();
+        return;
+      }
+      return {
+        statusCode: HttpStatus.FOUND,
+        headers: { Location: url },
+        body: '',
+      };
+    };
+
+    if (!code) {
+      return redirect(`${deepLinkBase}?error=${encodeURIComponent('missing_code')}`);
+    }
+
+    let codeVerifier: string | undefined;
+    let redirectUri: string | undefined = redirectUriQuery;
+    if (state) {
+      try {
+        const decoded = Buffer.from(state.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+        const parsed = JSON.parse(decoded) as { codeVerifier?: string; code_verifier?: string; redirectUri?: string; redirect_uri?: string };
+        codeVerifier = parsed.codeVerifier ?? parsed.code_verifier;
+        redirectUri = parsed.redirectUri ?? parsed.redirect_uri ?? redirectUri;
+      } catch {
+        codeVerifier = state;
+      }
+    }
+
     try {
-      if (!code) {
-        throw new BadRequestException('Missing authorization code');
-      }
-
-      let codeVerifier: string | undefined;
-      let redirectUri: string | undefined = redirectUriQuery;
-      if (state) {
-        try {
-          const decoded = Buffer.from(state.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
-          const parsed = JSON.parse(decoded) as { codeVerifier?: string; code_verifier?: string; redirectUri?: string; redirect_uri?: string };
-          codeVerifier = parsed.codeVerifier ?? parsed.code_verifier;
-          redirectUri = parsed.redirectUri ?? parsed.redirect_uri ?? redirectUri;
-        } catch {
-          codeVerifier = state;
-        }
-      }
-
       const result = await this.optimizedOAuthService.fastOAuthLogin(code, 'kakao', {
         authorizationCode: code,
         codeVerifier,
@@ -253,32 +268,10 @@ export class OAuthController {
       const ticketTtl = 180; // 3분
       await this.cacheService.set(ticket, buildAuthSessionResponse(result), { ttl: ticketTtl, prefix: 'kakao:ticket' });
 
-      const redirectUrl = `${deepLinkBase}?ticket=${ticket}`;
-      if (res) {
-        res.status(HttpStatus.FOUND);
-        res.setHeader('Location', redirectUrl);
-        res.setHeader('Content-Length', '0');
-        return res.send();
-      }
-      return {
-        statusCode: HttpStatus.FOUND,
-        headers: { Location: redirectUrl },
-        body: '',
-      };
+      return redirect(`${deepLinkBase}?ticket=${ticket}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'unknown_error';
-      const redirectUrl = `${deepLinkBase}?error=${encodeURIComponent(message)}`;
-      if (res) {
-        res.status(HttpStatus.FOUND);
-        res.setHeader('Location', redirectUrl);
-        res.setHeader('Content-Length', '0');
-        return res.send();
-      }
-      return {
-        statusCode: HttpStatus.FOUND,
-        headers: { Location: redirectUrl },
-        body: '',
-      };
+      return redirect(`${deepLinkBase}?error=${encodeURIComponent(message)}`);
     }
   }
 
