@@ -38,26 +38,38 @@ exports.loginSchema = zod_1.z
 }));
 exports.oauthTokenSchema = zod_1.z
     .object({
-    accessToken: zod_1.z.string().min(10, 'accessToken is required'),
+    accessToken: zod_1.z.string().min(10, 'accessToken is required').optional(),
     loginType: loginTypeEnum.optional(),
     appleRefreshToken: zod_1.z.string().min(10).optional(),
     googleRefreshToken: zod_1.z.string().min(10).optional(),
     authorizationCode: zod_1.z.string().min(10).optional(),
     codeVerifier: zod_1.z.string().min(10).optional(),
 })
-    .transform((data) => ({
-    accessToken: data.accessToken.trim(),
-    loginType: (data.loginType ??
+    .refine((data) => {
+    const loginType = data.loginType ?? 'email';
+    const hasAccessToken = Boolean(data.accessToken);
+    const isKakaoWithCode = loginType === 'kakao' && Boolean(data.authorizationCode);
+    return hasAccessToken || isKakaoWithCode;
+}, {
+    message: 'accessToken is required (Kakao는 authorizationCode로 대체 가능)',
+    path: ['accessToken'],
+})
+    .transform((data) => {
+    const loginType = (data.loginType ??
         (data.appleRefreshToken
             ? 'apple'
             : data.googleRefreshToken
                 ? 'google'
-                : 'email')),
-    appleRefreshToken: data.appleRefreshToken?.trim(),
-    googleRefreshToken: data.googleRefreshToken?.trim(),
-    authorizationCode: data.authorizationCode?.trim(),
-    codeVerifier: data.codeVerifier?.trim(),
-}));
+                : 'email'));
+    return {
+        accessToken: data.accessToken?.trim() ?? '',
+        loginType,
+        appleRefreshToken: data.appleRefreshToken?.trim(),
+        googleRefreshToken: data.googleRefreshToken?.trim(),
+        authorizationCode: data.authorizationCode?.trim(),
+        codeVerifier: data.codeVerifier?.trim(),
+    };
+});
 exports.refreshSchema = zod_1.z.object({
     refreshToken: zod_1.z.string().min(10),
 });

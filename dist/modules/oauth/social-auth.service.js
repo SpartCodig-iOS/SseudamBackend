@@ -774,6 +774,18 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
             this.clearInFlightLookup(accessToken);
         }
     }
+    async checkKakaoAccountWithCode(authorizationCode, options = {}) {
+        const { accessToken: kakaoAccessToken } = await this.exchangeKakaoAuthorizationCode(authorizationCode, {
+            codeVerifier: options.codeVerifier,
+        });
+        const profile = await this.getKakaoProfile(kakaoAccessToken);
+        const kakaoId = profile?.id?.toString();
+        if (!kakaoId) {
+            throw new common_1.UnauthorizedException('Kakao profile id not found');
+        }
+        const registered = await this.fastProfileCheck(kakaoId);
+        return { registered };
+    }
     async performOAuthLookup(accessToken, _loginType, startTime) {
         // 🔥 CACHE WARMING: 토큰 해시 기반 빠른 캐시 키 생성
         const tokenHash = this.getTokenCacheKey(accessToken);

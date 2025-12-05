@@ -871,6 +871,23 @@ export class SocialAuthService {
     }
   }
 
+  async checkKakaoAccountWithCode(
+    authorizationCode: string,
+    options: { codeVerifier?: string } = {},
+  ): Promise<SocialLookupResult> {
+    const { accessToken: kakaoAccessToken } = await this.exchangeKakaoAuthorizationCode(authorizationCode, {
+      codeVerifier: options.codeVerifier,
+    });
+    const profile = await this.getKakaoProfile(kakaoAccessToken);
+    const kakaoId = profile?.id?.toString();
+    if (!kakaoId) {
+      throw new UnauthorizedException('Kakao profile id not found');
+    }
+
+    const registered = await this.fastProfileCheck(kakaoId);
+    return { registered };
+  }
+
   private async performOAuthLookup(
     accessToken: string,
     _loginType: LoginType,

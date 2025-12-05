@@ -47,6 +47,12 @@ let OAuthController = class OAuthController {
     }
     async lookupOAuthAccount(body) {
         const payload = authSchemas_1.oauthTokenSchema.parse(body);
+        if (payload.loginType === 'kakao' && payload.authorizationCode) {
+            const result = await this.socialAuthService.checkKakaoAccountWithCode(payload.authorizationCode, {
+                codeVerifier: payload.codeVerifier,
+            });
+            return (0, api_1.success)(result, 'Lookup successful');
+        }
         const result = await this.socialAuthService.checkOAuthAccount(payload.accessToken, payload.loginType);
         return (0, api_1.success)(result, 'Lookup successful');
     }

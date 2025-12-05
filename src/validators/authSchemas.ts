@@ -39,28 +39,41 @@ export const loginSchema = z
 
 export const oauthTokenSchema = z
   .object({
-    accessToken: z.string().min(10, 'accessToken is required'),
+    accessToken: z.string().min(10, 'accessToken is required').optional(),
     loginType: loginTypeEnum.optional(),
     appleRefreshToken: z.string().min(10).optional(),
     googleRefreshToken: z.string().min(10).optional(),
     authorizationCode: z.string().min(10).optional(),
     codeVerifier: z.string().min(10).optional(),
   })
-  .transform((data) => ({
-    accessToken: data.accessToken.trim(),
-    loginType: (
+  .refine((data) => {
+    const loginType = data.loginType ?? 'email';
+    const hasAccessToken = Boolean(data.accessToken);
+    const isKakaoWithCode = loginType === 'kakao' && Boolean(data.authorizationCode);
+    return hasAccessToken || isKakaoWithCode;
+  }, {
+    message: 'accessToken is required (Kakao는 authorizationCode로 대체 가능)',
+    path: ['accessToken'],
+  })
+  .transform((data) => {
+    const loginType = (
       data.loginType ??
       (data.appleRefreshToken
         ? 'apple'
         : data.googleRefreshToken
           ? 'google'
           : 'email')
-    ) as LoginType,
-    appleRefreshToken: data.appleRefreshToken?.trim(),
-    googleRefreshToken: data.googleRefreshToken?.trim(),
-    authorizationCode: data.authorizationCode?.trim(),
-    codeVerifier: data.codeVerifier?.trim(),
-  }));
+    ) as LoginType;
+
+    return {
+      accessToken: data.accessToken?.trim() ?? '',
+      loginType,
+      appleRefreshToken: data.appleRefreshToken?.trim(),
+      googleRefreshToken: data.googleRefreshToken?.trim(),
+      authorizationCode: data.authorizationCode?.trim(),
+      codeVerifier: data.codeVerifier?.trim(),
+    };
+  });
 
 export const refreshSchema = z.object({
   refreshToken: z.string().min(10),
