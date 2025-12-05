@@ -16,6 +16,8 @@ import { SocialLookupResponseDto } from './dto/oauth-response.dto';
 import { buildAuthSessionResponse, buildLightweightAuthResponse } from '../auth/auth-response.util';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RequestWithUser } from '../../types/request';
+import { CacheService } from '../../services/cacheService';
+import { randomBytes } from 'crypto';
 
 @ApiTags('OAuth')
 @Controller('api/v1/oauth')
@@ -23,6 +25,7 @@ export class OAuthController {
   constructor(
     private readonly socialAuthService: SocialAuthService,
     private readonly optimizedOAuthService: OptimizedOAuthService,
+    private readonly cacheService: CacheService,
   ) {}
 
   private async handleOAuthLogin(body: unknown, message: string) {
@@ -231,6 +234,41 @@ export class OAuthController {
       redirectUri,
     });
 
-    return success(buildAuthSessionResponse(result), 'Login successful');
+    // 1회용 티켓 생성 후 딥링크로 리다이렉트
+    const ticket = randomBytes(32).toString('hex');
+    const ticketTtl = 180; // 3분
+    await this.cacheService.set(ticket, buildAuthSessionResponse(result), { ttl: ticketTtl, prefix: 'kakao:ticket' });
+
+    const redirectUrl = `sseudam://oauth/kakao?ticket=${ticket}`;
+    return {
+      statusCode: HttpStatus.FOUND,
+      headers: { Location: redirectUrl },
+      body: '',
+    };
+  }
+
+  @Post('kakao/finalize')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Kakao OAuth 티켓 → 최종 토큰 교환' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['ticket'],
+      properties: {
+        ticket: { type: 'string', description: '콜백에서 받은 1회용 티켓' },
+      },
+    },
+  })
+  async finalizeKakaoTicket(@Body('ticket') ticket?: string) {
+    if (!ticket) {
+      throw new BadRequestException('ticket is required');
+    }
+
+    const payload = await this.cacheService.get<any>(ticket, { prefix: 'kakao:ticket' });
+    await this.cacheService.del(ticket, { prefix: 'kakao:ticket' }); // 재사용 방지
+    if (!payload) {
+      throw new BadRequestException('ticket is expired or invalid');
+    }
+    return success(payload, 'Login successful');
   }
 }

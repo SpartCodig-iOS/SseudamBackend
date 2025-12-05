@@ -23,10 +23,13 @@ const auth_response_dto_1 = require("../auth/dto/auth-response.dto");
 const oauth_response_dto_1 = require("./dto/oauth-response.dto");
 const auth_response_util_1 = require("../auth/auth-response.util");
 const auth_guard_1 = require("../../common/guards/auth.guard");
+const cacheService_1 = require("../../services/cacheService");
+const crypto_1 = require("crypto");
 let OAuthController = class OAuthController {
-    constructor(socialAuthService, optimizedOAuthService) {
+    constructor(socialAuthService, optimizedOAuthService, cacheService) {
         this.socialAuthService = socialAuthService;
         this.optimizedOAuthService = optimizedOAuthService;
+        this.cacheService = cacheService;
     }
     async handleOAuthLogin(body, message) {
         const payload = authSchemas_1.oauthTokenSchema.parse(body);
@@ -88,7 +91,27 @@ let OAuthController = class OAuthController {
             codeVerifier,
             redirectUri,
         });
-        return (0, api_1.success)((0, auth_response_util_1.buildAuthSessionResponse)(result), 'Login successful');
+        // 1회용 티켓 생성 후 딥링크로 리다이렉트
+        const ticket = (0, crypto_1.randomBytes)(32).toString('hex');
+        const ticketTtl = 180; // 3분
+        await this.cacheService.set(ticket, (0, auth_response_util_1.buildAuthSessionResponse)(result), { ttl: ticketTtl, prefix: 'kakao:ticket' });
+        const redirectUrl = `sseudam://oauth/kakao?ticket=${ticket}`;
+        return {
+            statusCode: common_1.HttpStatus.FOUND,
+            headers: { Location: redirectUrl },
+            body: '',
+        };
+    }
+    async finalizeKakaoTicket(ticket) {
+        if (!ticket) {
+            throw new common_1.BadRequestException('ticket is required');
+        }
+        const payload = await this.cacheService.get(ticket, { prefix: 'kakao:ticket' });
+        await this.cacheService.del(ticket, { prefix: 'kakao:ticket' }); // 재사용 방지
+        if (!payload) {
+            throw new common_1.BadRequestException('ticket is expired or invalid');
+        }
+        return (0, api_1.success)(payload, 'Login successful');
     }
 };
 exports.OAuthController = OAuthController;
@@ -254,9 +277,28 @@ __decorate([
     __metadata("design:paramtypes", [String, String, String]),
     __metadata("design:returntype", Promise)
 ], OAuthController.prototype, "kakaoCallback", null);
+__decorate([
+    (0, common_1.Post)('kakao/finalize'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: 'Kakao OAuth 티켓 → 최종 토큰 교환' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['ticket'],
+            properties: {
+                ticket: { type: 'string', description: '콜백에서 받은 1회용 티켓' },
+            },
+        },
+    }),
+    __param(0, (0, common_1.Body)('ticket')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], OAuthController.prototype, "finalizeKakaoTicket", null);
 exports.OAuthController = OAuthController = __decorate([
     (0, swagger_1.ApiTags)('OAuth'),
     (0, common_1.Controller)('api/v1/oauth'),
     __metadata("design:paramtypes", [social_auth_service_1.SocialAuthService,
-        optimized_oauth_service_1.OptimizedOAuthService])
+        optimized_oauth_service_1.OptimizedOAuthService,
+        cacheService_1.CacheService])
 ], OAuthController);
