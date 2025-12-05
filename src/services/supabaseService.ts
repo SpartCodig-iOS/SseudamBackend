@@ -442,7 +442,16 @@ export class SupabaseService {
       clearTimeout(timeout);
 
       if (!response.ok) {
-        throw new Error(`fetch failed with ${response.status}`);
+        // 원본 URL만 저장하고 종료 (기본 이미지 등 접근 불가)
+        const pool = await getPool();
+        await pool.query(
+          `UPDATE ${env.supabaseProfileTable}
+             SET avatar_url = $1,
+                 updated_at = NOW()
+           WHERE id = $2`,
+          [trimmedUrl, userId],
+        );
+        return trimmedUrl;
       }
 
       const arrayBuffer = await response.arrayBuffer();
@@ -453,7 +462,15 @@ export class SupabaseService {
       // png/jpeg 외 포맷은 건너뛰고 기존 URL 유지
       if (!kind) {
         this.logger.warn(`[mirrorProfileAvatar] Skip unsupported image type for user ${userId} (${contentType ?? 'unknown'})`);
-        return null;
+        const pool = await getPool();
+        await pool.query(
+          `UPDATE ${env.supabaseProfileTable}
+             SET avatar_url = $1,
+                 updated_at = NOW()
+           WHERE id = $2`,
+          [trimmedUrl, userId],
+        );
+        return trimmedUrl;
       }
 
       const ext = kind === 'png' ? 'png' : 'jpeg';
@@ -489,7 +506,19 @@ export class SupabaseService {
       return publicUrl;
     } catch (error) {
       this.logger.warn(`[mirrorProfileAvatar] Failed for user ${userId} from ${trimmedUrl}`, error as Error);
-      return null;
+      try {
+        const pool = await getPool();
+        await pool.query(
+          `UPDATE ${env.supabaseProfileTable}
+             SET avatar_url = $1,
+                 updated_at = NOW()
+           WHERE id = $2`,
+          [trimmedUrl, userId],
+        );
+      } catch {
+        // ignore
+      }
+      return trimmedUrl;
     }
   }
 

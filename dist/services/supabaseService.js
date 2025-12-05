@@ -370,7 +370,13 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
             const response = await fetch(trimmedUrl, { signal: controller.signal });
             clearTimeout(timeout);
             if (!response.ok) {
-                throw new Error(`fetch failed with ${response.status}`);
+                // 원본 URL만 저장하고 종료 (기본 이미지 등 접근 불가)
+                const pool = await (0, pool_1.getPool)();
+                await pool.query(`UPDATE ${env_1.env.supabaseProfileTable}
+             SET avatar_url = $1,
+                 updated_at = NOW()
+           WHERE id = $2`, [trimmedUrl, userId]);
+                return trimmedUrl;
             }
             const arrayBuffer = await response.arrayBuffer();
             const buffer = Buffer.from(arrayBuffer);
@@ -379,7 +385,12 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
             // png/jpeg 외 포맷은 건너뛰고 기존 URL 유지
             if (!kind) {
                 this.logger.warn(`[mirrorProfileAvatar] Skip unsupported image type for user ${userId} (${contentType ?? 'unknown'})`);
-                return null;
+                const pool = await (0, pool_1.getPool)();
+                await pool.query(`UPDATE ${env_1.env.supabaseProfileTable}
+             SET avatar_url = $1,
+                 updated_at = NOW()
+           WHERE id = $2`, [trimmedUrl, userId]);
+                return trimmedUrl;
             }
             const ext = kind === 'png' ? 'png' : 'jpeg';
             const resolvedContentType = kind === 'png' ? 'image/png' : 'image/jpeg';
@@ -409,7 +420,17 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
         }
         catch (error) {
             this.logger.warn(`[mirrorProfileAvatar] Failed for user ${userId} from ${trimmedUrl}`, error);
-            return null;
+            try {
+                const pool = await (0, pool_1.getPool)();
+                await pool.query(`UPDATE ${env_1.env.supabaseProfileTable}
+             SET avatar_url = $1,
+                 updated_at = NOW()
+           WHERE id = $2`, [trimmedUrl, userId]);
+            }
+            catch {
+                // ignore
+            }
+            return trimmedUrl;
         }
     }
     /**
