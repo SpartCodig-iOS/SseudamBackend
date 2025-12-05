@@ -300,7 +300,11 @@ export class OAuthController {
         throw new BadRequestException('ticket is required');
       }
 
-      const payload = await this.cacheService.get<any>(ticket, { prefix: 'kakao:ticket' });
+      // Redis가 지연되거나 장애 시 2초 내 빠르게 실패
+      const payload = await Promise.race([
+        this.cacheService.get<any>(ticket, { prefix: 'kakao:ticket' }),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000)),
+      ]);
       await this.cacheService.del(ticket, { prefix: 'kakao:ticket' }).catch(() => undefined); // 재사용 방지
       if (!payload) {
         throw new BadRequestException('ticket is expired or invalid');
