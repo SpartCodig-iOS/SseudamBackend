@@ -138,11 +138,16 @@ export class AuthController {
 
     // 소셜 로그인 분기: provider=kakao/apple/google && accessToken/authorizationCode 제공
     if (payload.provider && payload.provider !== 'email' && (payload.accessToken || payload.authorizationCode)) {
-      if (payload.provider === 'kakao' && !payload.authorizationCode) {
-        throw new UnauthorizedException('authorizationCode is required for Kakao login');
-      }
       if (payload.provider !== 'kakao' && !payload.accessToken) {
         throw new UnauthorizedException('accessToken is required for social login');
+      }
+      if (payload.provider === 'kakao') {
+        if (!payload.authorizationCode) {
+          throw new UnauthorizedException('authorizationCode is required for Kakao login');
+        }
+        if (!payload.codeVerifier) {
+          throw new UnauthorizedException('codeVerifier is required for Kakao PKCE login');
+        }
       }
 
       const token = (payload.accessToken ?? payload.authorizationCode) as string;

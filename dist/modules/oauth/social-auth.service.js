@@ -89,7 +89,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         this.localTokenCache = new Map();
         this.LOCAL_TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5분
         this.KAKAO_TIMEOUT = 8000; // 8초
-        this.DEFAULT_KAKAO_REDIRECT = 'https://sseudam.up.railway.app/api/v1/auth/kakao/callback';
+        this.DEFAULT_KAKAO_REDIRECT = 'https://sseudam.up.railway.app/api/v1/oauth/kakao/callback';
         this.dbWarmupPromise = null;
         // 네트워크 타임아웃 설정 (빠른 실패)
         this.NETWORK_TIMEOUT = 8000; // 8초
@@ -482,13 +482,18 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         }
     }
     async loginWithOAuthToken(accessToken, loginType = 'email', options = {}) {
-        // Kakao는 Supabase accessToken을 사용할 수도 있고, authorizationCode가 들어오면 직접 교환
-        if (loginType === 'kakao' && options.authorizationCode) {
+        // Kakao: authorizationCode + codeVerifier 필수 (refresh/unlink까지 확실히 처리)
+        if (loginType === 'kakao') {
+            if (!options.authorizationCode || !options.codeVerifier) {
+                throw new common_1.UnauthorizedException('Kakao login requires authorizationCode and codeVerifier');
+            }
             const code = options.authorizationCode;
-            const { accessToken: kakaoAccessToken, refreshToken: kakaoRefreshToken } = await this.exchangeKakaoAuthorizationCode(code, {
+            const exchanged = await this.exchangeKakaoAuthorizationCode(code, {
                 redirectUri: options.redirectUri ?? env_1.env.kakaoRedirectUri ?? this.DEFAULT_KAKAO_REDIRECT,
                 codeVerifier: options.codeVerifier ?? undefined,
             });
+            const kakaoAccessToken = exchanged.accessToken;
+            const kakaoRefreshToken = exchanged.refreshToken;
             const profile = await this.getKakaoProfile(kakaoAccessToken);
             const kakaoId = profile?.id?.toString();
             if (!kakaoId) {
@@ -516,7 +521,9 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                 loginType: 'kakao',
                 avatarUrl: userRecord.avatar_url,
             });
-            await this.oauthTokenService.saveToken(userRecord.id, 'kakao', kakaoRefreshToken);
+            if (kakaoRefreshToken) {
+                await this.oauthTokenService.saveToken(userRecord.id, 'kakao', kakaoRefreshToken);
+            }
             const session = await this.authService.createAuthSession(userRecord, 'kakao');
             return session;
         }

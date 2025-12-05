@@ -31,9 +31,17 @@ export class OAuthController {
   private async handleOAuthLogin(body: unknown, message: string) {
     const payload = oauthTokenSchema.parse(body);
 
+    // Kakao는 authorizationCode + codeVerifier 필수, accessToken 경로는 사용하지 않음
+    const tokenToUse = payload.loginType === 'kakao'
+      ? payload.authorizationCode
+      : payload.accessToken;
+    if (!tokenToUse) {
+      throw new BadRequestException('Missing token or authorizationCode');
+    }
+
     // 최적화된 OAuth 서비스 사용
     const result = await this.optimizedOAuthService.fastOAuthLogin(
-      payload.accessToken,
+      tokenToUse,
       payload.loginType,
       {
         appleRefreshToken: payload.appleRefreshToken,
@@ -68,7 +76,7 @@ export class OAuthController {
         },
         codeVerifier: {
           type: 'string',
-          description: 'PKCE code_verifier (카카오 인가 코드 교환 시 필요)',
+          description: 'PKCE code_verifier (카카오 인가 코드 교환 시 필요, Kakao 필수)',
           nullable: true,
         },
         redirectUri: {
@@ -159,6 +167,9 @@ export class OAuthController {
   async lookupOAuthAccount(@Body() body: unknown) {
     const payload = oauthTokenSchema.parse(body);
     if (payload.loginType === 'kakao' && payload.authorizationCode) {
+      if (!payload.codeVerifier) {
+        throw new BadRequestException('codeVerifier is required for Kakao PKCE lookup');
+      }
       const result = await this.socialAuthService.checkKakaoAccountWithCode(payload.authorizationCode, {
         codeVerifier: payload.codeVerifier,
         redirectUri: payload.redirectUri,

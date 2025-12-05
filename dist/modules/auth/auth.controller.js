@@ -38,11 +38,16 @@ let AuthController = class AuthController {
         const payload = authSchemas_1.loginSchema.parse(body);
         // 소셜 로그인 분기: provider=kakao/apple/google && accessToken/authorizationCode 제공
         if (payload.provider && payload.provider !== 'email' && (payload.accessToken || payload.authorizationCode)) {
-            if (payload.provider === 'kakao' && !payload.authorizationCode) {
-                throw new common_1.UnauthorizedException('authorizationCode is required for Kakao login');
-            }
             if (payload.provider !== 'kakao' && !payload.accessToken) {
                 throw new common_1.UnauthorizedException('accessToken is required for social login');
+            }
+            if (payload.provider === 'kakao') {
+                if (!payload.authorizationCode) {
+                    throw new common_1.UnauthorizedException('authorizationCode is required for Kakao login');
+                }
+                if (!payload.codeVerifier) {
+                    throw new common_1.UnauthorizedException('codeVerifier is required for Kakao PKCE login');
+                }
             }
             const token = (payload.accessToken ?? payload.authorizationCode);
             const result = await this.authService.socialLoginWithCode(token, payload.provider, {

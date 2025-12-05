@@ -22,9 +22,11 @@ exports.loginSchema = zod_1.z
 })
     .refine((data) => {
     const hasProvider = Boolean(data.provider && data.provider !== 'email');
+    const isKakao = data.provider === 'kakao';
     const hasSocialToken = Boolean(data.accessToken || data.authorizationCode);
+    const hasKakaoPkce = isKakao ? Boolean(data.authorizationCode && data.codeVerifier) : true;
     const hasPasswordLogin = Boolean(data.password && (data.identifier || data.email));
-    return (hasProvider && hasSocialToken) || hasPasswordLogin;
+    return ((hasProvider && hasSocialToken && hasKakaoPkce)) || hasPasswordLogin;
 }, {
     message: 'For social login provide provider and accessToken/authorizationCode, or provide email/identifier and password',
     path: ['identifier'],
@@ -51,11 +53,14 @@ exports.oauthTokenSchema = zod_1.z
     .refine((data) => {
     const loginType = data.loginType ?? 'email';
     const hasAccessToken = Boolean(data.accessToken);
-    const isKakaoWithCode = loginType === 'kakao' && Boolean(data.authorizationCode);
-    return hasAccessToken || isKakaoWithCode;
+    const isKakaoWithPkce = loginType === 'kakao' && Boolean(data.authorizationCode && data.codeVerifier);
+    if (loginType === 'kakao') {
+        return isKakaoWithPkce;
+    }
+    return hasAccessToken;
 }, {
-    message: 'accessToken is required (Kakao는 authorizationCode로 대체 가능)',
-    path: ['accessToken'],
+    message: 'Kakao는 authorizationCode+codeVerifier가 필요하고, 기타 프로바이더는 accessToken이 필요합니다.',
+    path: ['authorizationCode'],
 })
     .transform((data) => {
     const loginType = (data.loginType ??
