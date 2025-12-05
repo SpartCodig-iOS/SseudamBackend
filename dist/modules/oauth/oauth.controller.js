@@ -66,6 +66,30 @@ let OAuthController = class OAuthController {
         await this.socialAuthService.revokeAppleConnection(req.currentUser.id, payload.refreshToken);
         return (0, api_1.success)({}, 'Apple connection revoked');
     }
+    async kakaoCallback(code, state, redirectUriQuery) {
+        if (!code) {
+            throw new common_1.BadRequestException('Missing authorization code');
+        }
+        let codeVerifier;
+        let redirectUri = redirectUriQuery;
+        if (state) {
+            try {
+                const decoded = Buffer.from(state.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+                const parsed = JSON.parse(decoded);
+                codeVerifier = parsed.codeVerifier ?? parsed.code_verifier;
+                redirectUri = parsed.redirectUri ?? parsed.redirect_uri ?? redirectUri;
+            }
+            catch {
+                codeVerifier = state;
+            }
+        }
+        const result = await this.optimizedOAuthService.fastOAuthLogin(code, 'kakao', {
+            authorizationCode: code,
+            codeVerifier,
+            redirectUri,
+        });
+        return (0, api_1.success)((0, auth_response_util_1.buildAuthSessionResponse)(result), 'Login successful');
+    }
 };
 exports.OAuthController = OAuthController;
 __decorate([
@@ -219,6 +243,17 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], OAuthController.prototype, "revokeApple", null);
+__decorate([
+    (0, common_1.Get)('kakao/callback'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: 'Kakao OAuth callback (code/state → token exchange)' }),
+    __param(0, (0, common_1.Query)('code')),
+    __param(1, (0, common_1.Query)('state')),
+    __param(2, (0, common_1.Query)('redirect_uri')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:returntype", Promise)
+], OAuthController.prototype, "kakaoCallback", null);
 exports.OAuthController = OAuthController = __decorate([
     (0, swagger_1.ApiTags)('OAuth'),
     (0, common_1.Controller)('api/v1/oauth'),

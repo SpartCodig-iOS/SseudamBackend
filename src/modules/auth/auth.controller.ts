@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, HttpCode, HttpStatus, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -158,6 +158,7 @@ export class AuthController {
 
     return success(buildAuthSessionResponse(result), 'Login successful');
   }
+
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)

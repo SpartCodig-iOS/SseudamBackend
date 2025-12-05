@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards, Req, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Post, Query, UseGuards, Req, UnauthorizedException } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -13,7 +13,7 @@ import { appleRevokeSchema, oauthTokenSchema } from '../../validators/authSchema
 import { success } from '../../types/api';
 import { LoginResponseDto } from '../auth/dto/auth-response.dto';
 import { SocialLookupResponseDto } from './dto/oauth-response.dto';
-import { buildLightweightAuthResponse } from '../auth/auth-response.util';
+import { buildAuthSessionResponse, buildLightweightAuthResponse } from '../auth/auth-response.util';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RequestWithUser } from '../../types/request';
 
@@ -198,5 +198,39 @@ export class OAuthController {
     const payload = appleRevokeSchema.parse(body);
     await this.socialAuthService.revokeAppleConnection(req.currentUser.id, payload.refreshToken);
     return success({}, 'Apple connection revoked');
+  }
+
+  @Get('kakao/callback')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Kakao OAuth callback (code/state → token exchange)' })
+  async kakaoCallback(
+    @Query('code') code?: string,
+    @Query('state') state?: string,
+    @Query('redirect_uri') redirectUriQuery?: string,
+  ) {
+    if (!code) {
+      throw new BadRequestException('Missing authorization code');
+    }
+
+    let codeVerifier: string | undefined;
+    let redirectUri: string | undefined = redirectUriQuery;
+    if (state) {
+      try {
+        const decoded = Buffer.from(state.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+        const parsed = JSON.parse(decoded) as { codeVerifier?: string; code_verifier?: string; redirectUri?: string; redirect_uri?: string };
+        codeVerifier = parsed.codeVerifier ?? parsed.code_verifier;
+        redirectUri = parsed.redirectUri ?? parsed.redirect_uri ?? redirectUri;
+      } catch {
+        codeVerifier = state;
+      }
+    }
+
+    const result = await this.optimizedOAuthService.fastOAuthLogin(code, 'kakao', {
+      authorizationCode: code,
+      codeVerifier,
+      redirectUri,
+    });
+
+    return success(buildAuthSessionResponse(result), 'Login successful');
   }
 }
