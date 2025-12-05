@@ -37,6 +37,7 @@ export class OAuthController {
         googleRefreshToken: payload.googleRefreshToken,
         authorizationCode: payload.authorizationCode,
         codeVerifier: payload.codeVerifier,
+        redirectUri: payload.redirectUri,
       },
     );
     return success(buildLightweightAuthResponse(result), message);
@@ -65,6 +66,11 @@ export class OAuthController {
         codeVerifier: {
           type: 'string',
           description: 'PKCE code_verifier (카카오 인가 코드 교환 시 필요)',
+          nullable: true,
+        },
+        redirectUri: {
+          type: 'string',
+          description: '인가 요청에 사용한 redirectUri (카카오 커스텀 스킴 등)',
           nullable: true,
         },
       },
@@ -152,6 +158,7 @@ export class OAuthController {
     if (payload.loginType === 'kakao' && payload.authorizationCode) {
       const result = await this.socialAuthService.checkKakaoAccountWithCode(payload.authorizationCode, {
         codeVerifier: payload.codeVerifier,
+        redirectUri: payload.redirectUri,
       });
       return success(result, 'Lookup successful');
     }

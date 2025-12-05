@@ -98,6 +98,10 @@ export class AuthController {
           type: 'string',
           description: 'PKCE code_verifier (카카오 인가코드 교환 시 전달)',
         },
+        redirectUri: {
+          type: 'string',
+          description: '카카오 인가 요청에 사용한 redirectUri (기본값과 다를 때 전달)',
+        },
         email: {
           type: 'string',
           format: 'email',
@@ -145,6 +149,7 @@ export class AuthController {
       const result = await this.authService.socialLoginWithCode(token, payload.provider as LoginType, {
         authorizationCode: payload.authorizationCode,
         codeVerifier: payload.codeVerifier,
+        redirectUri: payload.redirectUri,
       });
       return success(buildAuthSessionResponse(result), 'Login successful');
     }

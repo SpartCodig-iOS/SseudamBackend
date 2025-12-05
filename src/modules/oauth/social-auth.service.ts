@@ -112,7 +112,7 @@ export class SocialAuthService {
   ): Promise<{ accessToken: string; refreshToken: string; expiresIn: number }> {
     this.ensureKakaoEnv();
 
-    const redirectUri = options?.redirectUri ?? env.kakaoRedirectUri!;
+    const redirectUri = options?.redirectUri ?? env.kakaoRedirectUri;
     const finalRedirect = redirectUri || this.DEFAULT_KAKAO_REDIRECT;
     const body = new URLSearchParams({
       grant_type: 'authorization_code',
@@ -539,7 +539,7 @@ export class SocialAuthService {
     if (loginType === 'kakao' && options.authorizationCode) {
       const code = options.authorizationCode;
       const { accessToken: kakaoAccessToken, refreshToken: kakaoRefreshToken } = await this.exchangeKakaoAuthorizationCode(code, {
-        redirectUri: env.kakaoRedirectUri ?? this.DEFAULT_KAKAO_REDIRECT,
+        redirectUri: options.redirectUri ?? env.kakaoRedirectUri ?? this.DEFAULT_KAKAO_REDIRECT,
         codeVerifier: options.codeVerifier ?? undefined,
       });
       const profile = await this.getKakaoProfile(kakaoAccessToken);
@@ -873,10 +873,11 @@ export class SocialAuthService {
 
   async checkKakaoAccountWithCode(
     authorizationCode: string,
-    options: { codeVerifier?: string } = {},
+    options: { codeVerifier?: string; redirectUri?: string } = {},
   ): Promise<SocialLookupResult> {
     const { accessToken: kakaoAccessToken } = await this.exchangeKakaoAuthorizationCode(authorizationCode, {
       codeVerifier: options.codeVerifier,
+      redirectUri: options.redirectUri,
     });
     const profile = await this.getKakaoProfile(kakaoAccessToken);
     const kakaoId = profile?.id?.toString();

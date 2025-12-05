@@ -18,6 +18,7 @@ exports.loginSchema = zod_1.z
     accessToken: zod_1.z.string().min(1).optional(),
     authorizationCode: zod_1.z.string().min(1).optional(),
     codeVerifier: zod_1.z.string().min(10).optional(),
+    redirectUri: zod_1.z.string().min(5).optional(),
 })
     .refine((data) => {
     const hasProvider = Boolean(data.provider && data.provider !== 'email');
@@ -35,6 +36,7 @@ exports.loginSchema = zod_1.z
     accessToken: data.accessToken?.trim(),
     authorizationCode: data.authorizationCode?.trim(),
     codeVerifier: data.codeVerifier?.trim(),
+    redirectUri: data.redirectUri?.trim(),
 }));
 exports.oauthTokenSchema = zod_1.z
     .object({
@@ -44,6 +46,7 @@ exports.oauthTokenSchema = zod_1.z
     googleRefreshToken: zod_1.z.string().min(10).optional(),
     authorizationCode: zod_1.z.string().min(10).optional(),
     codeVerifier: zod_1.z.string().min(10).optional(),
+    redirectUri: zod_1.z.string().min(5).optional(),
 })
     .refine((data) => {
     const loginType = data.loginType ?? 'email';
@@ -68,6 +71,7 @@ exports.oauthTokenSchema = zod_1.z
         googleRefreshToken: data.googleRefreshToken?.trim(),
         authorizationCode: data.authorizationCode?.trim(),
         codeVerifier: data.codeVerifier?.trim(),
+        redirectUri: data.redirectUri?.trim(),
     };
 });
 exports.refreshSchema = zod_1.z.object({

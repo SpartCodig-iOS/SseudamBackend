@@ -18,6 +18,7 @@ export const loginSchema = z
     accessToken: z.string().min(1).optional(),
     authorizationCode: z.string().min(1).optional(),
     codeVerifier: z.string().min(10).optional(),
+    redirectUri: z.string().min(5).optional(),
   })
   .refine((data) => {
     const hasProvider = Boolean(data.provider && data.provider !== 'email');
@@ -35,6 +36,7 @@ export const loginSchema = z
     accessToken: data.accessToken?.trim(),
     authorizationCode: data.authorizationCode?.trim(),
     codeVerifier: data.codeVerifier?.trim(),
+    redirectUri: data.redirectUri?.trim(),
   }));
 
 export const oauthTokenSchema = z
@@ -45,6 +47,7 @@ export const oauthTokenSchema = z
     googleRefreshToken: z.string().min(10).optional(),
     authorizationCode: z.string().min(10).optional(),
     codeVerifier: z.string().min(10).optional(),
+    redirectUri: z.string().min(5).optional(),
   })
   .refine((data) => {
     const loginType = data.loginType ?? 'email';
@@ -72,6 +75,7 @@ export const oauthTokenSchema = z
       googleRefreshToken: data.googleRefreshToken?.trim(),
       authorizationCode: data.authorizationCode?.trim(),
       codeVerifier: data.codeVerifier?.trim(),
+      redirectUri: data.redirectUri?.trim(),
     };
   });
 

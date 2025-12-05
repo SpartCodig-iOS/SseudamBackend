@@ -351,7 +351,7 @@ export class AuthService {
   async socialLoginWithCode(
     codeOrToken: string,
     provider: LoginType,
-    options: Partial<{ authorizationCode: string; codeVerifier: string }> = {},
+    options: Partial<{ authorizationCode: string; codeVerifier: string; redirectUri: string }> = {},
   ): Promise<AuthSessionPayload> {
     const oauthOptions: OAuthTokenOptions = {};
     if (options.authorizationCode) {
@@ -359,6 +359,9 @@ export class AuthService {
     }
     if (options.codeVerifier) {
       oauthOptions.codeVerifier = options.codeVerifier;
+    }
+    if (options.redirectUri) {
+      oauthOptions.redirectUri = options.redirectUri;
     }
 
     // Kakao는 authorizationCode를 넘기면 내부에서 교환하여 진행, 그 외는 Supabase access token 사용

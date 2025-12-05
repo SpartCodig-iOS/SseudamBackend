@@ -486,7 +486,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
         if (loginType === 'kakao' && options.authorizationCode) {
             const code = options.authorizationCode;
             const { accessToken: kakaoAccessToken, refreshToken: kakaoRefreshToken } = await this.exchangeKakaoAuthorizationCode(code, {
-                redirectUri: env_1.env.kakaoRedirectUri ?? this.DEFAULT_KAKAO_REDIRECT,
+                redirectUri: options.redirectUri ?? env_1.env.kakaoRedirectUri ?? this.DEFAULT_KAKAO_REDIRECT,
                 codeVerifier: options.codeVerifier ?? undefined,
             });
             const profile = await this.getKakaoProfile(kakaoAccessToken);
@@ -777,6 +777,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
     async checkKakaoAccountWithCode(authorizationCode, options = {}) {
         const { accessToken: kakaoAccessToken } = await this.exchangeKakaoAuthorizationCode(authorizationCode, {
             codeVerifier: options.codeVerifier,
+            redirectUri: options.redirectUri,
         });
         const profile = await this.getKakaoProfile(kakaoAccessToken);
         const kakaoId = profile?.id?.toString();

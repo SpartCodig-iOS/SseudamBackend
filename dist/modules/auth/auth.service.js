@@ -326,6 +326,9 @@ let AuthService = AuthService_1 = class AuthService {
         if (options.codeVerifier) {
             oauthOptions.codeVerifier = options.codeVerifier;
         }
+        if (options.redirectUri) {
+            oauthOptions.redirectUri = options.redirectUri;
+        }
         // Kakao는 authorizationCode를 넘기면 내부에서 교환하여 진행, 그 외는 Supabase access token 사용
         return this.optimizedOAuthService.fastOAuthLogin(codeOrToken, provider, oauthOptions);
     }
