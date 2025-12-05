@@ -30,17 +30,19 @@ export class PerformanceInterceptor implements NestInterceptor {
     const userAgent = request.get('user-agent') || '';
 
     // Keep-Alive 및 캐싱 헤더 설정
-    response.set({
-      'Connection': 'keep-alive',
-      'Keep-Alive': 'timeout=5, max=1000',
-      'X-Powered-By': 'Sseduam-API',
-      'X-Content-Type-Options': 'nosniff',
-      'X-Frame-Options': 'DENY',
-      'X-XSS-Protection': '1; mode=block',
-    });
+    if (!response.headersSent) {
+      response.set({
+        'Connection': 'keep-alive',
+        'Keep-Alive': 'timeout=5, max=1000',
+        'X-Powered-By': 'Sseduam-API',
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'X-XSS-Protection': '1; mode=block',
+      });
+    }
 
     // API 응답에 따른 캐싱 헤더 설정
-    if (method === 'GET') {
+    if (method === 'GET' && !response.headersSent) {
       const cacheableEndpoints = [
         '/api/v1/meta/countries',
         '/api/v1/meta/exchange-rate',
@@ -71,10 +73,12 @@ export class PerformanceInterceptor implements NestInterceptor {
         const endTime = process.hrtime.bigint();
         const duration = Number(endTime - startTime) / 1000000; // ms
 
-        response.set({
-          'X-Response-Time': `${duration.toFixed(2)}ms`,
-          'X-Request-ID': `req_${startTime}`,
-        });
+        if (!response.headersSent) {
+          response.set({
+            'X-Response-Time': `${duration.toFixed(2)}ms`,
+            'X-Request-ID': `req_${startTime}`,
+          });
+        }
 
         const shouldLog = Math.random() <= this.logSampleRate;
 
