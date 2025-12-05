@@ -37,7 +37,6 @@ export class OAuthController {
         googleRefreshToken: payload.googleRefreshToken,
         authorizationCode: payload.authorizationCode,
         codeVerifier: payload.codeVerifier,
-        redirectUri: payload.redirectUri,
       },
     );
     return success(buildLightweightAuthResponse(result), message);
@@ -63,6 +62,11 @@ export class OAuthController {
           description: '애플/구글 authorization_code (refresh token 교환용)',
           nullable: true,
         },
+        codeVerifier: {
+          type: 'string',
+          description: 'PKCE code_verifier (카카오 인가 코드 교환 시 필요)',
+          nullable: true,
+        },
       },
     },
   })
@@ -78,7 +82,7 @@ export class OAuthController {
     },
   })
   async issueToken(@Body() body: unknown) {
-    return this.handleOAuthLogin(body, 'Login successful');
+    return this.handleOAuthLogin(body, 'Signup successful');
   }
 
   @Post('login')

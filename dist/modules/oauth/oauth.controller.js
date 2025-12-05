@@ -36,12 +36,11 @@ let OAuthController = class OAuthController {
             googleRefreshToken: payload.googleRefreshToken,
             authorizationCode: payload.authorizationCode,
             codeVerifier: payload.codeVerifier,
-            redirectUri: payload.redirectUri,
         });
         return (0, api_1.success)((0, auth_response_util_1.buildLightweightAuthResponse)(result), message);
     }
     async issueToken(body) {
-        return this.handleOAuthLogin(body, 'Login successful');
+        return this.handleOAuthLogin(body, 'Signup successful');
     }
     async login(body) {
         return this.handleOAuthLogin(body, 'Login successful');
@@ -80,6 +79,11 @@ __decorate([
                 authorizationCode: {
                     type: 'string',
                     description: '애플/구글 authorization_code (refresh token 교환용)',
+                    nullable: true,
+                },
+                codeVerifier: {
+                    type: 'string',
+                    description: 'PKCE code_verifier (카카오 인가 코드 교환 시 필요)',
                     nullable: true,
                 },
             },

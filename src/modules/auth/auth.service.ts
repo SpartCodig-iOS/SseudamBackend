@@ -350,14 +350,11 @@ export class AuthService {
   async socialLoginWithCode(
     codeOrToken: string,
     provider: LoginType,
-    options: Partial<{ authorizationCode: string; redirectUri: string; codeVerifier: string }> = {},
+    options: Partial<{ authorizationCode: string; codeVerifier: string }> = {},
   ): Promise<AuthSessionPayload> {
     const oauthOptions: OAuthTokenOptions = {};
     if (options.authorizationCode) {
       oauthOptions.authorizationCode = options.authorizationCode;
-    }
-    if (options.redirectUri) {
-      oauthOptions.redirectUri = options.redirectUri;
     }
     if (options.codeVerifier) {
       oauthOptions.codeVerifier = options.codeVerifier;

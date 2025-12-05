@@ -323,9 +323,6 @@ let AuthService = AuthService_1 = class AuthService {
         if (options.authorizationCode) {
             oauthOptions.authorizationCode = options.authorizationCode;
         }
-        if (options.redirectUri) {
-            oauthOptions.redirectUri = options.redirectUri;
-        }
         if (options.codeVerifier) {
             oauthOptions.codeVerifier = options.codeVerifier;
         }

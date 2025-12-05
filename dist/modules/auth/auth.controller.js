@@ -38,12 +38,16 @@ let AuthController = class AuthController {
         const payload = authSchemas_1.loginSchema.parse(body);
         // 소셜 로그인 분기: provider=kakao/apple/google && accessToken/authorizationCode 제공
         if (payload.provider && payload.provider !== 'email' && (payload.accessToken || payload.authorizationCode)) {
-            if (!payload.accessToken && payload.provider !== 'kakao') {
+            if (payload.provider === 'kakao' && !payload.authorizationCode) {
+                throw new common_1.UnauthorizedException('authorizationCode is required for Kakao login');
+            }
+            if (payload.provider !== 'kakao' && !payload.accessToken) {
                 throw new common_1.UnauthorizedException('accessToken is required for social login');
             }
             const token = (payload.accessToken ?? payload.authorizationCode);
             const result = await this.authService.socialLoginWithCode(token, payload.provider, {
                 authorizationCode: payload.authorizationCode,
+                codeVerifier: payload.codeVerifier,
             });
             return (0, api_1.success)((0, auth_response_util_1.buildAuthSessionResponse)(result), 'Login successful');
         }
@@ -137,11 +141,15 @@ __decorate([
                 },
                 accessToken: {
                     type: 'string',
-                    description: '소셜 accessToken (카카오는 authorizationCode도 가능)',
+                    description: '소셜 accessToken (카카오는 authorizationCode+codeVerifier 권장)',
                 },
                 authorizationCode: {
                     type: 'string',
-                    description: '소셜 authorizationCode (선택, accessToken 대신 전달 가능)',
+                    description: '소셜 authorizationCode (카카오 필수, 애플/구글은 refresh 교환용)',
+                },
+                codeVerifier: {
+                    type: 'string',
+                    description: 'PKCE code_verifier (카카오 인가코드 교환 시 전달)',
                 },
                 email: {
                     type: 'string',
