@@ -80,37 +80,49 @@ let OAuthController = class OAuthController {
         return (0, api_1.success)({}, 'Apple connection revoked');
     }
     async kakaoCallback(code, state, redirectUriQuery) {
-        if (!code) {
-            throw new common_1.BadRequestException('Missing authorization code');
-        }
-        let codeVerifier;
-        let redirectUri = redirectUriQuery;
-        if (state) {
-            try {
-                const decoded = Buffer.from(state.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
-                const parsed = JSON.parse(decoded);
-                codeVerifier = parsed.codeVerifier ?? parsed.code_verifier;
-                redirectUri = parsed.redirectUri ?? parsed.redirect_uri ?? redirectUri;
+        const deepLinkBase = 'sseudam://oauth/kakao';
+        try {
+            if (!code) {
+                throw new common_1.BadRequestException('Missing authorization code');
             }
-            catch {
-                codeVerifier = state;
+            let codeVerifier;
+            let redirectUri = redirectUriQuery;
+            if (state) {
+                try {
+                    const decoded = Buffer.from(state.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+                    const parsed = JSON.parse(decoded);
+                    codeVerifier = parsed.codeVerifier ?? parsed.code_verifier;
+                    redirectUri = parsed.redirectUri ?? parsed.redirect_uri ?? redirectUri;
+                }
+                catch {
+                    codeVerifier = state;
+                }
             }
+            const result = await this.optimizedOAuthService.fastOAuthLogin(code, 'kakao', {
+                authorizationCode: code,
+                codeVerifier,
+                redirectUri,
+            });
+            // 1회용 티켓 생성 후 딥링크로 리다이렉트
+            const ticket = (0, crypto_1.randomBytes)(32).toString('hex');
+            const ticketTtl = 180; // 3분
+            await this.cacheService.set(ticket, (0, auth_response_util_1.buildAuthSessionResponse)(result), { ttl: ticketTtl, prefix: 'kakao:ticket' });
+            const redirectUrl = `${deepLinkBase}?ticket=${ticket}`;
+            return {
+                statusCode: common_1.HttpStatus.FOUND,
+                headers: { Location: redirectUrl },
+                body: '',
+            };
         }
-        const result = await this.optimizedOAuthService.fastOAuthLogin(code, 'kakao', {
-            authorizationCode: code,
-            codeVerifier,
-            redirectUri,
-        });
-        // 1회용 티켓 생성 후 딥링크로 리다이렉트
-        const ticket = (0, crypto_1.randomBytes)(32).toString('hex');
-        const ticketTtl = 180; // 3분
-        await this.cacheService.set(ticket, (0, auth_response_util_1.buildAuthSessionResponse)(result), { ttl: ticketTtl, prefix: 'kakao:ticket' });
-        const redirectUrl = `sseudam://oauth/kakao?ticket=${ticket}`;
-        return {
-            statusCode: common_1.HttpStatus.FOUND,
-            headers: { Location: redirectUrl },
-            body: '',
-        };
+        catch (error) {
+            const message = error instanceof Error ? error.message : 'unknown_error';
+            const redirectUrl = `${deepLinkBase}?error=${encodeURIComponent(message)}`;
+            return {
+                statusCode: common_1.HttpStatus.FOUND,
+                headers: { Location: redirectUrl },
+                body: '',
+            };
+        }
     }
     async finalizeKakaoTicket(ticket) {
         if (!ticket) {
