@@ -545,7 +545,7 @@ export class SocialAuthService {
     accessToken: string,
     loginType: LoginType = 'email',
     options: OAuthTokenOptions = {},
-  ): Promise<AuthSessionPayload> {
+  ): Promise<AuthSessionPayload & { registered?: boolean; loginFlow?: 'login' | 'signup' }> {
     // Kakao: authorizationCode + codeVerifier 필수 (refresh/unlink까지 확실히 처리)
     if (loginType === 'kakao') {
       if (!options.authorizationCode || !options.codeVerifier) {
@@ -581,6 +581,8 @@ export class SocialAuthService {
         role: 'user',
       };
 
+      const profileExists = await this.fastProfileCheck(userId);
+
       await this.supabaseService.upsertProfile({
         id: userRecord.id,
         email: userRecord.email,
@@ -595,7 +597,8 @@ export class SocialAuthService {
       }
 
       const session = await this.authService.createAuthSession(userRecord, 'kakao');
-      return session;
+      const loginFlow: 'login' | 'signup' = profileExists ? 'login' : 'signup';
+      return { ...session, registered: profileExists, loginFlow };
     }
 
     const startTime = Date.now();

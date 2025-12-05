@@ -89,11 +89,13 @@ let OAuthController = class OAuthController {
                 res.end();
                 return;
             }
-            return {
-                statusCode: common_1.HttpStatus.FOUND,
-                headers: { Location: url },
-                body: '',
-            };
+            return res
+                ? res.redirect(common_1.HttpStatus.FOUND, url)
+                : {
+                    statusCode: common_1.HttpStatus.FOUND,
+                    headers: { Location: url },
+                    body: '',
+                };
         };
         if (!code) {
             return redirect(`${deepLinkBase}?error=${encodeURIComponent('missing_code')}`);
@@ -120,7 +122,13 @@ let OAuthController = class OAuthController {
             // 1회용 티켓 생성 후 딥링크로 리다이렉트
             const ticket = (0, crypto_1.randomBytes)(32).toString('hex');
             const ticketTtl = 180; // 3분
-            await this.cacheService.set(ticket, (0, auth_response_util_1.buildAuthSessionResponse)(result), { ttl: ticketTtl, prefix: 'kakao:ticket' });
+            const authResponse = (0, auth_response_util_1.buildAuthSessionResponse)(result);
+            const payloadToStore = {
+                ...authResponse,
+                registered: result.registered ?? false,
+                loginFlow: result.loginFlow ?? (result.registered ? 'login' : 'signup'),
+            };
+            await this.cacheService.set(ticket, payloadToStore, { ttl: ticketTtl, prefix: 'kakao:ticket' });
             return redirect(`${deepLinkBase}?ticket=${ticket}`);
         }
         catch (error) {

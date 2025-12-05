@@ -523,6 +523,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                 password_hash: '',
                 role: 'user',
             };
+            const profileExists = await this.fastProfileCheck(userId);
             await this.supabaseService.upsertProfile({
                 id: userRecord.id,
                 email: userRecord.email,
@@ -535,7 +536,8 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                 await this.oauthTokenService.saveToken(userRecord.id, 'kakao', kakaoRefreshToken);
             }
             const session = await this.authService.createAuthSession(userRecord, 'kakao');
-            return session;
+            const loginFlow = profileExists ? 'login' : 'signup';
+            return { ...session, registered: profileExists, loginFlow };
         }
         const startTime = Date.now();
         const marks = [];

@@ -31,5 +31,7 @@ const buildAuthSessionResponse = (result) => ({
     sessionExpiresAt: result.session.expiresAt,
     lastLoginAt: result.session.lastSeenAt,
     loginType: result.loginType,
+    registered: result.registered ?? undefined,
+    loginFlow: result.loginFlow ?? undefined,
 });
 exports.buildAuthSessionResponse = buildAuthSessionResponse;

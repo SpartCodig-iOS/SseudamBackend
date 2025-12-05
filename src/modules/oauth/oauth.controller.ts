@@ -232,11 +232,13 @@ export class OAuthController {
         res.end();
         return;
       }
-      return {
-        statusCode: HttpStatus.FOUND,
-        headers: { Location: url },
-        body: '',
-      };
+      return res
+        ? res.redirect(HttpStatus.FOUND, url)
+        : {
+            statusCode: HttpStatus.FOUND,
+            headers: { Location: url },
+            body: '',
+          };
     };
 
     if (!code) {
@@ -266,7 +268,13 @@ export class OAuthController {
       // 1회용 티켓 생성 후 딥링크로 리다이렉트
       const ticket = randomBytes(32).toString('hex');
       const ticketTtl = 180; // 3분
-      await this.cacheService.set(ticket, buildAuthSessionResponse(result), { ttl: ticketTtl, prefix: 'kakao:ticket' });
+      const authResponse = buildAuthSessionResponse(result);
+      const payloadToStore = {
+        ...authResponse,
+        registered: (result as any).registered ?? false,
+        loginFlow: (result as any).loginFlow ?? ((result as any).registered ? 'login' : 'signup'),
+      };
+      await this.cacheService.set(ticket, payloadToStore, { ttl: ticketTtl, prefix: 'kakao:ticket' });
 
       return redirect(`${deepLinkBase}?ticket=${ticket}`);
     } catch (error) {
