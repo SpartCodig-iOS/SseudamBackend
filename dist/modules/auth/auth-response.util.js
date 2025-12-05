@@ -32,6 +32,5 @@ const buildAuthSessionResponse = (result) => ({
     lastLoginAt: result.session.lastSeenAt,
     loginType: result.loginType,
     registered: result.registered ?? undefined,
-    loginFlow: result.loginFlow ?? undefined,
 });
 exports.buildAuthSessionResponse = buildAuthSessionResponse;

@@ -126,7 +126,6 @@ let OAuthController = class OAuthController {
             const payloadToStore = {
                 ...authResponse,
                 registered: result.registered ?? false,
-                loginFlow: result.loginFlow ?? (result.registered ? 'login' : 'signup'),
             };
             await this.cacheService.set(ticket, payloadToStore, { ttl: ticketTtl, prefix: 'kakao:ticket' });
             return redirect(`${deepLinkBase}?ticket=${ticket}`);

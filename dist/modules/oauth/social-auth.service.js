@@ -536,8 +536,7 @@ let SocialAuthService = SocialAuthService_1 = class SocialAuthService {
                 await this.oauthTokenService.saveToken(userRecord.id, 'kakao', kakaoRefreshToken);
             }
             const session = await this.authService.createAuthSession(userRecord, 'kakao');
-            const loginFlow = profileExists ? 'login' : 'signup';
-            return { ...session, registered: profileExists, loginFlow };
+            return { ...session, registered: profileExists };
         }
         const startTime = Date.now();
         const marks = [];

@@ -272,7 +272,6 @@ export class OAuthController {
       const payloadToStore = {
         ...authResponse,
         registered: (result as any).registered ?? false,
-        loginFlow: (result as any).loginFlow ?? ((result as any).registered ? 'login' : 'signup'),
       };
       await this.cacheService.set(ticket, payloadToStore, { ttl: ticketTtl, prefix: 'kakao:ticket' });
 

@@ -33,5 +33,4 @@ export const buildAuthSessionResponse = (result: AuthSessionResult) => ({
   lastLoginAt: result.session.lastSeenAt,
   loginType: result.loginType,
   registered: (result as any).registered ?? undefined,
-  loginFlow: (result as any).loginFlow ?? undefined,
 });
