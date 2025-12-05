@@ -13,6 +13,41 @@ const optionalNumber = (value, fallback) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
 };
+const decodeSupabaseRef = (serviceRoleKey) => {
+    if (!serviceRoleKey)
+        return null;
+    const parts = serviceRoleKey.split('.');
+    if (parts.length < 2)
+        return null;
+    try {
+        const payload = parts[1]
+            .replace(/-/g, '+')
+            .replace(/_/g, '/')
+            .padEnd(Math.ceil(parts[1].length / 4) * 4, '=');
+        const decoded = JSON.parse(Buffer.from(payload, 'base64').toString('utf8'));
+        const ref = decoded?.ref;
+        return typeof ref === 'string' ? ref : null;
+    }
+    catch {
+        return null;
+    }
+};
+const normalizeSupabaseUrl = (rawUrl, serviceRoleKey) => {
+    const trimmed = (rawUrl ?? '').trim().replace(/\/+$/, '');
+    const hasValidHost = trimmed.includes('supabase.');
+    if (trimmed && hasValidHost) {
+        return trimmed;
+    }
+    const derivedRef = decodeSupabaseRef(serviceRoleKey);
+    if (derivedRef) {
+        const derivedUrl = `https://${derivedRef}.supabase.co`;
+        if (trimmed && trimmed !== derivedUrl) {
+            console.warn(`[ENV] SUPABASE_URL appears invalid ("${trimmed}"), auto-correcting to ${derivedUrl} from service key`);
+        }
+        return derivedUrl;
+    }
+    return trimmed;
+};
 const databaseUrl = process.env.RAILWAY_DATABASE_URL ||
     process.env.SUPERBASE_DB_URL ||
     process.env.SUPABASE_DB_URL ||
@@ -34,12 +69,13 @@ exports.env = {
     jwtSecret: process.env.JWT_SECRET ?? 'secret',
     accessTokenTTL: optionalNumber(process.env.ACCESS_TOKEN_TTL_SECONDS, 60 * 60 * 24) ?? 60 * 60 * 24,
     refreshTokenTTL: optionalNumber(process.env.REFRESH_TOKEN_TTL_SECONDS, 60 * 60 * 24 * 60) ?? 60 * 60 * 24 * 60,
-    supabaseUrl: process.env.SUPABASE_URL ?? process.env.SUPERBASE_URL ?? '',
-    supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ??
+    supabaseServiceRoleKey: (process.env.SUPABASE_SERVICE_ROLE_KEY ??
         process.env.SUPERBASE_SERVICE_ROLE_KEY ??
         process.env.SUPERBASE_ANON_KEY ??
         process.env.SUPABASE_ANON_KEY ??
-        '',
+        '').trim(),
+    supabaseUrl: '', // 값은 아래에서 service key 기반으로 정규화
+    supabaseProjectRef: null,
     supabaseProfileTable: process.env.SUPERBASE_PROFILE_TABLE ?? process.env.SUPABASE_PROFILE_TABLE ?? 'profiles',
     appleClientId: process.env.APPLE_CLIENT_ID ?? null,
     appleTeamId: process.env.APPLE_TEAM_ID ?? null,
@@ -67,21 +103,28 @@ exports.env = {
     sentryTracesSampleRate: optionalNumber(process.env.SENTRY_TRACES_SAMPLE_RATE, 0.1) ?? 0.1,
     sentryProfilesSampleRate: optionalNumber(process.env.SENTRY_PROFILES_SAMPLE_RATE, 0.1) ?? 0.1,
 };
+const supabaseProjectRef = decodeSupabaseRef(exports.env.supabaseServiceRoleKey);
+exports.env.supabaseUrl = normalizeSupabaseUrl(process.env.SUPABASE_URL ?? process.env.SUPERBASE_URL ?? '', exports.env.supabaseServiceRoleKey);
+exports.env.supabaseProjectRef = supabaseProjectRef;
 exports.isProduction = exports.env.nodeEnv === 'production';
 if (exports.env.corsOrigins.length === 0) {
     exports.env.corsOrigins.push('http://localhost:3000', 'https://sseudam.up.railway.app');
 }
 const missingVars = [];
+const supabaseHostLooksValid = exports.env.supabaseUrl.includes('supabase.');
 const requiredEnv = [
-    ['databaseUrl', 'RAILWAY_DATABASE_URL / DATABASE_URL / SUPABASE_DB_URL'],
-    ['jwtSecret', 'JWT_SECRET'],
-    ['supabaseUrl', 'SUPABASE_URL'],
-    ['supabaseServiceRoleKey', 'SUPABASE_SERVICE_ROLE_KEY'],
+    [Boolean(exports.env.databaseUrl), 'RAILWAY_DATABASE_URL / DATABASE_URL / SUPABASE_DB_URL'],
+    [Boolean(exports.env.jwtSecret), 'JWT_SECRET'],
+    [Boolean(exports.env.supabaseServiceRoleKey), 'SUPABASE_SERVICE_ROLE_KEY'],
+    [Boolean(exports.env.supabaseUrl), 'SUPABASE_URL'],
 ];
-for (const [key, label] of requiredEnv) {
-    if (!exports.env[key]) {
+for (const [isPresent, label] of requiredEnv) {
+    if (!isPresent) {
         missingVars.push(label);
     }
+}
+if (exports.env.supabaseUrl && !supabaseHostLooksValid && !supabaseProjectRef) {
+    missingVars.push('Valid SUPABASE_URL (expected https://<project>.supabase.co)');
 }
 if (missingVars.length > 0) {
     throw new Error(`[ENV] Missing required environment variables: ${missingVars.join(', ')}`);

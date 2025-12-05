@@ -11,6 +11,43 @@ const optionalNumber = (value?: string, fallback?: number): number | undefined =
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const decodeSupabaseRef = (serviceRoleKey?: string): string | null => {
+  if (!serviceRoleKey) return null;
+  const parts = serviceRoleKey.split('.');
+  if (parts.length < 2) return null;
+
+  try {
+    const payload = parts[1]
+      .replace(/-/g, '+')
+      .replace(/_/g, '/')
+      .padEnd(Math.ceil(parts[1].length / 4) * 4, '=');
+    const decoded = JSON.parse(Buffer.from(payload, 'base64').toString('utf8')) as Record<string, unknown>;
+    const ref = decoded?.ref;
+    return typeof ref === 'string' ? ref : null;
+  } catch {
+    return null;
+  }
+};
+
+const normalizeSupabaseUrl = (rawUrl?: string, serviceRoleKey?: string): string => {
+  const trimmed = (rawUrl ?? '').trim().replace(/\/+$/, '');
+  const hasValidHost = trimmed.includes('supabase.');
+  if (trimmed && hasValidHost) {
+    return trimmed;
+  }
+
+  const derivedRef = decodeSupabaseRef(serviceRoleKey);
+  if (derivedRef) {
+    const derivedUrl = `https://${derivedRef}.supabase.co`;
+    if (trimmed && trimmed !== derivedUrl) {
+      console.warn(`[ENV] SUPABASE_URL appears invalid ("${trimmed}"), auto-correcting to ${derivedUrl} from service key`);
+    }
+    return derivedUrl;
+  }
+
+  return trimmed;
+};
+
 const databaseUrl =
   process.env.RAILWAY_DATABASE_URL ||
   process.env.SUPERBASE_DB_URL ||
@@ -34,13 +71,15 @@ export const env = {
   jwtSecret: process.env.JWT_SECRET ?? 'secret',
   accessTokenTTL: optionalNumber(process.env.ACCESS_TOKEN_TTL_SECONDS, 60 * 60 * 24) ?? 60 * 60 * 24,
   refreshTokenTTL: optionalNumber(process.env.REFRESH_TOKEN_TTL_SECONDS, 60 * 60 * 24 * 60) ?? 60 * 60 * 24 * 60,
-  supabaseUrl: process.env.SUPABASE_URL ?? process.env.SUPERBASE_URL ?? '',
-  supabaseServiceRoleKey:
+  supabaseServiceRoleKey: (
     process.env.SUPABASE_SERVICE_ROLE_KEY ??
     process.env.SUPERBASE_SERVICE_ROLE_KEY ??
     process.env.SUPERBASE_ANON_KEY ??
     process.env.SUPABASE_ANON_KEY ??
-    '',
+    ''
+  ).trim(),
+  supabaseUrl: '', // 값은 아래에서 service key 기반으로 정규화
+  supabaseProjectRef: null as string | null,
   supabaseProfileTable:
     process.env.SUPERBASE_PROFILE_TABLE ?? process.env.SUPABASE_PROFILE_TABLE ?? 'profiles',
   appleClientId: process.env.APPLE_CLIENT_ID ?? null,
@@ -72,6 +111,13 @@ export const env = {
   sentryProfilesSampleRate: optionalNumber(process.env.SENTRY_PROFILES_SAMPLE_RATE, 0.1) ?? 0.1,
 };
 
+const supabaseProjectRef = decodeSupabaseRef(env.supabaseServiceRoleKey);
+env.supabaseUrl = normalizeSupabaseUrl(
+  process.env.SUPABASE_URL ?? process.env.SUPERBASE_URL ?? '',
+  env.supabaseServiceRoleKey,
+);
+env.supabaseProjectRef = supabaseProjectRef;
+
 export const isProduction = env.nodeEnv === 'production';
 
 if (env.corsOrigins.length === 0) {
@@ -79,17 +125,22 @@ if (env.corsOrigins.length === 0) {
 }
 
 const missingVars: string[] = [];
-const requiredEnv: Array<[keyof typeof env, string]> = [
-  ['databaseUrl', 'RAILWAY_DATABASE_URL / DATABASE_URL / SUPABASE_DB_URL'],
-  ['jwtSecret', 'JWT_SECRET'],
-  ['supabaseUrl', 'SUPABASE_URL'],
-  ['supabaseServiceRoleKey', 'SUPABASE_SERVICE_ROLE_KEY'],
+const supabaseHostLooksValid = env.supabaseUrl.includes('supabase.');
+const requiredEnv: Array<[boolean, string]> = [
+  [Boolean(env.databaseUrl), 'RAILWAY_DATABASE_URL / DATABASE_URL / SUPABASE_DB_URL'],
+  [Boolean(env.jwtSecret), 'JWT_SECRET'],
+  [Boolean(env.supabaseServiceRoleKey), 'SUPABASE_SERVICE_ROLE_KEY'],
+  [Boolean(env.supabaseUrl), 'SUPABASE_URL'],
 ];
 
-for (const [key, label] of requiredEnv) {
-  if (!env[key]) {
+for (const [isPresent, label] of requiredEnv) {
+  if (!isPresent) {
     missingVars.push(label);
   }
+}
+
+if (env.supabaseUrl && !supabaseHostLooksValid && !supabaseProjectRef) {
+  missingVars.push('Valid SUPABASE_URL (expected https://<project>.supabase.co)');
 }
 
 if (missingVars.length > 0) {
