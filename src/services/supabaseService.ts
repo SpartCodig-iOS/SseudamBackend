@@ -349,6 +349,17 @@ export class SupabaseService {
       loginType,
       avatarUrl,
     });
+
+    // Google 등에서 제공한 외부 URL이 있고, 프로필에 저장된 파일이 아니라면 비동기 업로드
+    if (
+      avatarUrl &&
+      !this.parseAvatarStoragePath(avatarUrl) &&
+      (!existingAvatar || !this.parseAvatarStoragePath(existingAvatar))
+    ) {
+      void this.ensureProfileAvatar(user.id, avatarUrl).catch((error) => {
+        this.logger.debug(`[ensureProfileFromSupabaseUser] Mirror avatar failed: ${error instanceof Error ? error.message : 'unknown'}`);
+      });
+    }
   }
 
   async saveAppleRefreshToken(userId: string, refreshToken: string | null) {
