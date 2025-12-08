@@ -11,6 +11,7 @@ const samplePayload = {
   countryNameKr: '일본',
   baseCurrency: 'JPY',
   baseExchangeRate: 111.11,
+  countryCurrencies: ['JPY'],
 };
 
 test('listTravels returns mapped and paginated travel summaries', async () => {
@@ -24,6 +25,7 @@ test('listTravels returns mapped and paginated travel summaries', async () => {
           start_date: '2024-08-01',
           end_date: '2024-08-05',
           country_code: 'JP',
+          country_currencies: ['JPY'],
           base_currency: 'JPY',
           base_exchange_rate: 144.5,
           invite_code: 'abc123',
@@ -73,6 +75,7 @@ test('listTravels returns mapped and paginated travel summaries', async () => {
     assert.equal(item.destinationCurrency, 'JPY');
     assert.ok(Array.isArray(item.members));
     assert.equal(item.members?.[0].name, '홍길동');
+    assert.deepEqual(item.countryCurrencies, ['JPY']);
 
     const [, listCall] = calls;
     assert.deepEqual(listCall.params, ['user-1', 1, 1], 'limit and offset should be applied');
@@ -106,6 +109,7 @@ test('updateTravel applies owner changes and returns refreshed summary', async (
             country_code: samplePayload.countryCode,
             base_currency: samplePayload.baseCurrency,
             base_exchange_rate: samplePayload.baseExchangeRate,
+            country_currencies: [samplePayload.baseCurrency],
             invite_code: 'invite-123',
             status: 'active',
             created_at: '2024-06-01T00:00:00.000Z',
@@ -125,6 +129,7 @@ test('updateTravel applies owner changes and returns refreshed summary', async (
             country_code: samplePayload.countryCode,
             base_currency: samplePayload.baseCurrency,
             base_exchange_rate: samplePayload.baseExchangeRate,
+            country_currencies: [samplePayload.baseCurrency],
             invite_code: 'invite-123',
             status: 'active',
             created_at: '2024-06-01T00:00:00.000Z',
@@ -164,6 +169,7 @@ test('updateTravel applies owner changes and returns refreshed summary', async (
     assert.equal(result.destinationCurrency, 'JPY');
     assert.equal(result.ownerName, '호스트');
     assert.equal(result.members?.[0].userId, 'user-123');
+    assert.deepEqual(result.countryCurrencies, ['JPY']);
     assert.equal(connectMock.mock.callCount(), 1, 'pool.connect should be called');
     assert.equal(client.release.mock.callCount(), 1, 'client should be released');
   } finally {

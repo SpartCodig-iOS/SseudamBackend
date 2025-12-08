@@ -23,6 +23,7 @@ interface OptimizedTravelSummary {
   baseCurrency: string;
   baseExchangeRate: number;
   destinationCurrency: string;
+  countryCurrencies: string[];
   inviteCode?: string;
   status: string;
   role: string;
@@ -169,6 +170,7 @@ export class OptimizedTravelService {
            t.end_date::text AS end_date,
            t.country_code,
            t.country_name_kr,
+           t.country_currencies,
            t.base_currency,
            t.base_exchange_rate,
            ti.invite_code,
@@ -210,6 +212,7 @@ export class OptimizedTravelService {
            t.end_date::text AS end_date,
            t.country_code,
            t.country_name_kr,
+           t.country_currencies,
            t.base_currency,
            t.base_exchange_rate,
            ti.invite_code,
@@ -294,6 +297,7 @@ export class OptimizedTravelService {
       baseCurrency: row.base_currency,
       baseExchangeRate: parseFloat(row.base_exchange_rate),
       destinationCurrency,
+      countryCurrencies: Array.isArray(row.country_currencies) ? row.country_currencies : [],
       inviteCode: row.invite_code,
       status: row.status,
       role: row.role,
@@ -329,14 +333,15 @@ export class OptimizedTravelService {
 
     const pool = await getPool();
     const result = await pool.query(
-      `SELECT
-         t.id::text AS id,
-         t.title,
-         t.start_date::text,
-         t.end_date::text,
-         t.country_code,
-         t.country_name_kr,
-         t.base_currency,
+       `SELECT
+          t.id::text AS id,
+          t.title,
+          t.start_date::text,
+          t.end_date::text,
+          t.country_code,
+          t.country_name_kr,
+          t.country_currencies,
+          t.base_currency,
          t.base_exchange_rate,
          t.invite_code,
          t.status,

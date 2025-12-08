@@ -22,6 +22,7 @@ exports.createTravelSchema = zod_1.z
     countryNameKr: zod_1.z.string().min(1).max(50).optional(),
     baseCurrency: zod_1.z.string().length(3, 'baseCurrency 는 3자리 통화 코드여야 합니다.'),
     baseExchangeRate: exchangeRateSchema,
+    countryCurrencies: zod_1.z.array(zod_1.z.string().length(3, 'countryCurrencies 항목은 3자리 ISO 코드여야 합니다.')).nonempty('countryCurrencies 는 적어도 하나 이상의 통화를 포함해야 합니다.'),
 })
     .refine((data) => data.startDate <= data.endDate, {
     message: 'endDate 는 startDate 이후여야 합니다.',
@@ -35,6 +36,7 @@ exports.createTravelSchema = zod_1.z
     countryNameKr: data.countryNameKr?.trim(),
     baseCurrency: data.baseCurrency.toUpperCase(),
     baseExchangeRate: data.baseExchangeRate,
+    countryCurrencies: Array.from(new Set(data.countryCurrencies.map(code => code.toUpperCase()))),
 }));
 exports.travelInviteCodeSchema = zod_1.z.object({
     inviteCode: zod_1.z.string().min(6).max(64),

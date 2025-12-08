@@ -177,6 +177,20 @@ let TravelService = TravelService_1 = class TravelService {
     getMembershipCacheKey(travelId, userId) {
         return `${travelId}:${userId}`;
     }
+    async recordCurrencySnapshot(client, params) {
+        await this.ensureCountryCurrencyMap();
+        const destinationCurrency = this.resolveDestinationCurrency(params.countryCode, params.baseCurrency);
+        const baseAmount = params.baseAmount ?? 1000;
+        await client.query(`INSERT INTO travel_currency_snapshots
+         (travel_id, base_currency, destination_currency, base_amount, base_exchange_rate)
+       VALUES ($1, $2, $3, $4, $5)`, [
+            params.travelId,
+            params.baseCurrency.toUpperCase(),
+            destinationCurrency,
+            baseAmount,
+            params.baseExchangeRate,
+        ]);
+    }
     async isMemberCached(travelId, userId) {
         const key = this.getMembershipCacheKey(travelId, userId);
         const cached = this.TRAVEL_MEMBER_CACHE.get(key);
@@ -302,14 +316,15 @@ let TravelService = TravelService_1 = class TravelService {
         await this.ensureCountryCurrencyMap();
         const pool = await (0, pool_1.getPool)();
         const result = await pool.query(`SELECT
-         t.id::text AS id,
-         t.title,
-         t.start_date::text,
-         t.end_date::text,
-         t.country_code,
-         t.country_name_kr,
-         t.base_currency,
-         t.base_exchange_rate,
+          t.id::text AS id,
+          t.title,
+          t.start_date::text,
+          t.end_date::text,
+          t.country_code,
+          t.country_name_kr,
+          t.country_currencies,
+          t.base_currency,
+          t.base_exchange_rate,
          ti.invite_code,
          CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS status,
          t.created_at::text,
@@ -345,6 +360,7 @@ let TravelService = TravelService_1 = class TravelService {
             baseCurrency: row.base_currency,
             baseExchangeRate: row.base_exchange_rate ? Number(row.base_exchange_rate) : 0,
             destinationCurrency,
+            countryCurrencies: Array.isArray(row.country_currencies) ? row.country_currencies : [],
             inviteCode,
             deepLink,
             status: row.status,
@@ -460,8 +476,8 @@ let TravelService = TravelService_1 = class TravelService {
                 // inviteCode 자동 생성
                 const inviteCode = this.generateInviteCode();
                 const insertResult = await client.query(`WITH new_travel AS (
-             INSERT INTO travels (owner_id, title, start_date, end_date, country_code, country_name_kr, base_currency, base_exchange_rate, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $4 < CURRENT_DATE THEN 'archived' ELSE 'active' END)
+             INSERT INTO travels (owner_id, title, start_date, end_date, country_code, country_name_kr, base_currency, base_exchange_rate, country_currencies, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $4 < CURRENT_DATE THEN 'archived' ELSE 'active' END)
              RETURNING id,
                        title,
                        start_date,
@@ -470,6 +486,7 @@ let TravelService = TravelService_1 = class TravelService {
                        country_name_kr,
                        base_currency,
                        base_exchange_rate,
+                       country_currencies,
                        status,
                        created_at
            ),
@@ -483,7 +500,7 @@ let TravelService = TravelService_1 = class TravelService {
            ),
            travel_invite AS (
              INSERT INTO travel_invites (travel_id, invite_code, created_by, status, expires_at, max_uses)
-             SELECT new_travel.id, $9, $1, 'active', NULL, NULL
+             SELECT new_travel.id, $10, $1, 'active', NULL, NULL
              FROM new_travel
              ON CONFLICT (invite_code) DO UPDATE SET invite_code = excluded.invite_code,
                                                       status = 'active',
@@ -500,6 +517,7 @@ let TravelService = TravelService_1 = class TravelService {
                   new_travel.country_name_kr,
                   new_travel.base_currency,
                   new_travel.base_exchange_rate,
+                  new_travel.country_currencies,
                   travel_invite.invite_code,
                   new_travel.status,
                   new_travel.created_at::text
@@ -512,9 +530,16 @@ let TravelService = TravelService_1 = class TravelService {
                     payload.countryNameKr,
                     payload.baseCurrency,
                     payload.baseExchangeRate,
+                    payload.countryCurrencies,
                     inviteCode,
                 ]);
                 const travelRow = insertResult.rows[0];
+                await this.recordCurrencySnapshot(client, {
+                    travelId: travelRow.id,
+                    countryCode: travelRow.country_code,
+                    baseCurrency: travelRow.base_currency,
+                    baseExchangeRate: Number(travelRow.base_exchange_rate ?? payload.baseExchangeRate),
+                });
                 const optimizedResult = {
                     ...travelRow,
                     owner_name: ownerName,
@@ -524,7 +549,8 @@ let TravelService = TravelService_1 = class TravelService {
                             name: ownerName,
                             role: 'owner'
                         }
-                    ]
+                    ],
+                    country_currencies: travelRow.country_currencies ?? [],
                 };
                 const duration = Date.now() - startTime;
                 this.logger.debug(`Travel created in ${duration}ms for user ${currentUser.id}`);
@@ -558,14 +584,15 @@ let TravelService = TravelService_1 = class TravelService {
             return { total: cachedList.length, page, limit, items: itemsWithLinks };
         }
         const listResult = await pool.query(`SELECT
-         ut.id::text AS id,
-         ut.title,
-         ut.start_date::text,
-         ut.end_date::text,
-         ut.country_code,
-         ut.country_name_kr,
-         ut.base_currency,
-         ut.base_exchange_rate,
+          ut.id::text AS id,
+          ut.title,
+          ut.start_date::text,
+          ut.end_date::text,
+          ut.country_code,
+          ut.country_name_kr,
+          ut.country_currencies,
+          ut.base_currency,
+          ut.base_exchange_rate,
          ti.invite_code,
          ut.computed_status AS status,
          ut.role,
@@ -655,6 +682,14 @@ let TravelService = TravelService_1 = class TravelService {
             deepLink: this.generateDeepLink(travel.inviteCode),
         };
     }
+    async invalidateExpenseAndSettlementCaches(travelId) {
+        await Promise.all([
+            this.cacheService.delPattern(`expense:list:${travelId}:*`).catch(() => undefined),
+            this.cacheService.delPattern(`expense:detail:${travelId}:*`).catch(() => undefined),
+            this.cacheService.del(travelId, { prefix: 'expense:context' }).catch(() => undefined),
+            this.cacheService.del(travelId, { prefix: 'settlement:summary' }).catch(() => undefined),
+        ]);
+    }
     async deleteTravel(travelId, userId) {
         const pool = await (0, pool_1.getPool)();
         await this.ensureOwner(travelId, userId, pool);
@@ -719,6 +754,8 @@ let TravelService = TravelService_1 = class TravelService {
          SET owner_id = $2
          WHERE id = $1`, [travelId, newOwnerId]);
         });
+        // 멤버/권한 변경 직후 캐시를 비워 최신 멤버 목록을 강제로 조회
+        await this.invalidateMembersCacheForTravel(travelId);
         // 트랜잭션 커밋 후 최신 상태 조회
         const summary = await this.fetchSummaryForMember(travelId, newOwnerId);
         // 캐시 무효화 및 최신 상세 캐시 저장
@@ -727,7 +764,6 @@ let TravelService = TravelService_1 = class TravelService {
         // 모든 멤버의 리스트 캐시 무효화
         const members = await pool.query(`SELECT user_id FROM travel_members WHERE travel_id = $1`, [travelId]);
         members.rows.forEach(member => this.invalidateUserTravelCache(member.user_id));
-        await this.invalidateMembersCacheForTravel(travelId);
         return summary;
     }
     async joinByInviteCode(userId, inviteCode) {
@@ -836,11 +872,7 @@ let TravelService = TravelService_1 = class TravelService {
         return { deletedTravel: false };
     }
     async updateTravel(travelId, userId, payload) {
-        const pool = await (0, pool_1.getPool)();
-        const client = await pool.connect();
-        let travelRow;
-        try {
-            await client.query('BEGIN');
+        const travelRow = await this.ensureTransaction(async (client) => {
             // 소유자 확인 + 행 잠금
             const ownerCheck = await client.query(`SELECT 1 FROM travels WHERE id = $1 AND owner_id = $2 LIMIT 1 FOR UPDATE`, [travelId, userId]);
             if (!ownerCheck.rows[0]) {
@@ -858,6 +890,7 @@ let TravelService = TravelService_1 = class TravelService {
              country_name_kr = $7,
              base_currency = $8,
              base_exchange_rate = $9,
+             country_currencies = $10,
              status = CASE WHEN $5 < CURRENT_DATE THEN 'archived' ELSE 'active' END,
              updated_at = NOW()
          WHERE id = $1 AND owner_id = $2
@@ -870,6 +903,7 @@ let TravelService = TravelService_1 = class TravelService {
            country_name_kr,
            base_currency,
            base_exchange_rate,
+           country_currencies,
            invite_code,
            status,
            created_at::text`, [
@@ -882,17 +916,19 @@ let TravelService = TravelService_1 = class TravelService {
                 payload.countryNameKr,
                 payload.baseCurrency,
                 payload.baseExchangeRate,
+                payload.countryCurrencies,
             ]);
-            travelRow = result.rows[0];
-            await client.query('COMMIT');
-        }
-        catch (error) {
-            await client.query('ROLLBACK');
-            throw error;
-        }
-        finally {
-            client.release();
-        }
+            const row = result.rows[0];
+            if (row) {
+                await this.recordCurrencySnapshot(client, {
+                    travelId,
+                    countryCode: row.country_code,
+                    baseCurrency: row.base_currency,
+                    baseExchangeRate: Number(row.base_exchange_rate ?? payload.baseExchangeRate),
+                });
+            }
+            return row;
+        });
         // 수정 후 관련 캐시 무효화
         this.invalidateTravelDetailCache(travelId);
         // 업데이트한 사용자의 여행 목록 캐시 직접 무효화
@@ -905,8 +941,10 @@ let TravelService = TravelService_1 = class TravelService {
         this.travelDetailCache.clear();
         await this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:*`).catch(() => undefined);
         await this.cacheService.delPattern(`${this.TRAVEL_DETAIL_REDIS_PREFIX}:*`).catch(() => undefined);
-        // 업데이트 응답에는 멤버 정보 불필요 - 성능 개선
-        const summary = await this.fetchSummaryForMember(travelId, userId, false);
+        // 통화/정산 관련 캐시도 무효화하여 최신 환율/금액 반영
+        await this.invalidateExpenseAndSettlementCaches(travelId);
+        // 업데이트 직후 바로 최신 멤버 정보를 내려주는 게 API UX에 맞음
+        const summary = await this.fetchSummaryForMember(travelId, userId, true);
         // 결과 캐시에 저장 (후속 요청 성능 개선)
         this.setCachedTravelDetail(travelId, summary);
         return summary;

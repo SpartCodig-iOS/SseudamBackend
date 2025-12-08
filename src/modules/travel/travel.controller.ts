@@ -72,40 +72,46 @@ export class TravelController {
     schema: {
       type: 'object',
       required: ['title', 'startDate', 'endDate', 'countryCode', 'baseCurrency', 'baseExchangeRate'],
-      properties: {
-        title: { type: 'string', example: '도쿄 가을 여행', description: '여행 이름' },
-        startDate: {
-          type: 'string',
-          example: '2025-10-01',
-          description: '여행 시작일 (YYYY-MM-DD)',
-        },
-        endDate: {
-          type: 'string',
-          example: '2025-10-05',
-          description: '여행 종료일 (YYYY-MM-DD) - 시작일 이후여야 함',
-        },
-        countryCode: {
-          type: 'string',
-          example: 'JP',
-          description: '여행 국가 ISO 3166-1 alpha-2 코드',
-        },
-        countryNameKr: {
-          type: 'string',
-          example: '일본',
-          description: '여행 국가 한국어 이름 (선택사항)',
-        },
-        baseCurrency: {
-          type: 'string',
-          example: 'KRW',
-          description: '기준 통화 (ISO 4217 코드, 예: KRW, USD, JPY)',
-        },
-        baseExchangeRate: {
-          type: 'number',
-          example: 105.6,
-          description: '기준 통화 1,000단위 대비 상대 통화 금액 (예: 1000 KRW → 105.6 JPY)',
+        properties: {
+          title: { type: 'string', example: '도쿄 가을 여행', description: '여행 이름' },
+          startDate: {
+            type: 'string',
+            example: '2025-10-01',
+            description: '여행 시작일 (YYYY-MM-DD)',
+          },
+          endDate: {
+            type: 'string',
+            example: '2025-10-05',
+            description: '여행 종료일 (YYYY-MM-DD) - 시작일 이후여야 함',
+          },
+          countryCode: {
+            type: 'string',
+            example: 'JP',
+            description: '여행 국가 ISO 3166-1 alpha-2 코드',
+          },
+          countryNameKr: {
+            type: 'string',
+            example: '일본',
+            description: '여행 국가 한국어 이름 (선택사항)',
+          },
+          baseCurrency: {
+            type: 'string',
+            example: 'KRW',
+            description: '기준 통화 (ISO 4217 코드, 예: KRW, USD, JPY)',
+          },
+          baseExchangeRate: {
+            type: 'number',
+            example: 105.6,
+            description: '기준 통화 1,000단위 대비 상대 통화 금액 (예: 1000 KRW → 105.6 JPY)',
+          },
+          countryCurrencies: {
+            type: 'array',
+            example: ['JPY', 'USD'],
+            description: '해당 여행 국가에서 사용하는 통화 리스트 (ISO 4217 코드)',
+            items: { type: 'string', minLength: 3, maxLength: 3 },
+          },
         },
       },
-    },
   })
   @ApiOkResponse({ type: TravelSummaryDto })
   async create(@Body() body: unknown, @Req() req: RequestWithUser) {
@@ -128,20 +134,26 @@ export class TravelController {
     schema: {
       type: 'object',
       required: ['title', 'startDate', 'endDate', 'countryCode', 'baseCurrency', 'baseExchangeRate'],
-      properties: {
-        title: { type: 'string', example: '일본 겨울 여행' },
-        startDate: { type: 'string', example: '2025-12-01' },
-        endDate: { type: 'string', example: '2025-12-05' },
-        countryCode: { type: 'string', example: 'JP' },
-        countryNameKr: {
-          type: 'string',
-          example: '일본',
-          description: '여행 국가 한국어 이름 (선택사항)',
+        properties: {
+          title: { type: 'string', example: '일본 겨울 여행' },
+          startDate: { type: 'string', example: '2025-12-01' },
+          endDate: { type: 'string', example: '2025-12-05' },
+          countryCode: { type: 'string', example: 'JP' },
+          countryNameKr: {
+            type: 'string',
+            example: '일본',
+            description: '여행 국가 한국어 이름 (선택사항)',
+          },
+          baseCurrency: { type: 'string', example: 'KRW' },
+          baseExchangeRate: { type: 'number', example: 105.6 },
+          countryCurrencies: {
+            type: 'array',
+            example: ['JPY', 'USD'],
+            description: '여행 국가에서 사용하는 통화 리스트 (ISO 4217 코드)',
+            items: { type: 'string', minLength: 3, maxLength: 3 },
+          },
         },
-        baseCurrency: { type: 'string', example: 'KRW' },
-        baseExchangeRate: { type: 'number', example: 105.6 },
       },
-    },
   })
   @ApiOkResponse({ type: TravelSummaryDto })
   async updateTravel(

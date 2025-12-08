@@ -19,6 +19,9 @@ export class TravelSummaryDto {
   @ApiProperty({ example: '일본', nullable: true, required: false })
   countryNameKr?: string;
 
+  @ApiProperty({ example: ['JPY'], description: '여행 국가에서 사용하는 통화 리스트 (ISO 4217 코드)' })
+  countryCurrencies!: string[];
+
   @ApiProperty({ example: 'JPY' })
   baseCurrency!: string;
 

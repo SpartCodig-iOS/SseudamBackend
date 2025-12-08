@@ -25,6 +25,7 @@ export interface TravelSummary {
   baseCurrency: string;
   baseExchangeRate: number;
   destinationCurrency: string;
+  countryCurrencies: string[];
   inviteCode?: string;
   deepLink?: string;
   status: string;
@@ -407,15 +408,16 @@ export class TravelService {
 
     const pool = await getPool();
     const result = await pool.query(
-      `SELECT
-         t.id::text AS id,
-         t.title,
-         t.start_date::text,
-         t.end_date::text,
-         t.country_code,
-         t.country_name_kr,
-         t.base_currency,
-         t.base_exchange_rate,
+       `SELECT
+          t.id::text AS id,
+          t.title,
+          t.start_date::text,
+          t.end_date::text,
+          t.country_code,
+          t.country_name_kr,
+          t.country_currencies,
+          t.base_currency,
+          t.base_exchange_rate,
          ti.invite_code,
          CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS status,
          t.created_at::text,
@@ -456,6 +458,7 @@ export class TravelService {
       baseCurrency: row.base_currency,
       baseExchangeRate: row.base_exchange_rate ? Number(row.base_exchange_rate) : 0,
       destinationCurrency,
+      countryCurrencies: Array.isArray(row.country_currencies) ? row.country_currencies : [],
       inviteCode,
       deepLink,
       status: row.status,
@@ -583,8 +586,8 @@ export class TravelService {
 
         const insertResult = await client.query(
           `WITH new_travel AS (
-             INSERT INTO travels (owner_id, title, start_date, end_date, country_code, country_name_kr, base_currency, base_exchange_rate, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CASE WHEN $4 < CURRENT_DATE THEN 'archived' ELSE 'active' END)
+             INSERT INTO travels (owner_id, title, start_date, end_date, country_code, country_name_kr, base_currency, base_exchange_rate, country_currencies, status)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $4 < CURRENT_DATE THEN 'archived' ELSE 'active' END)
              RETURNING id,
                        title,
                        start_date,
@@ -593,6 +596,7 @@ export class TravelService {
                        country_name_kr,
                        base_currency,
                        base_exchange_rate,
+                       country_currencies,
                        status,
                        created_at
            ),
@@ -606,7 +610,7 @@ export class TravelService {
            ),
            travel_invite AS (
              INSERT INTO travel_invites (travel_id, invite_code, created_by, status, expires_at, max_uses)
-             SELECT new_travel.id, $9, $1, 'active', NULL, NULL
+             SELECT new_travel.id, $10, $1, 'active', NULL, NULL
              FROM new_travel
              ON CONFLICT (invite_code) DO UPDATE SET invite_code = excluded.invite_code,
                                                       status = 'active',
@@ -623,6 +627,7 @@ export class TravelService {
                   new_travel.country_name_kr,
                   new_travel.base_currency,
                   new_travel.base_exchange_rate,
+                  new_travel.country_currencies,
                   travel_invite.invite_code,
                   new_travel.status,
                   new_travel.created_at::text
@@ -636,6 +641,7 @@ export class TravelService {
             payload.countryNameKr,
             payload.baseCurrency,
             payload.baseExchangeRate,
+            payload.countryCurrencies,
             inviteCode,
           ]
         );
@@ -658,7 +664,8 @@ export class TravelService {
               name: ownerName,
               role: 'owner'
             }
-          ]
+          ],
+          country_currencies: travelRow.country_currencies ?? [],
         };
 
         const duration = Date.now() - startTime;
@@ -702,15 +709,16 @@ export class TravelService {
     }
 
     const listResult = await pool.query(
-      `SELECT
-         ut.id::text AS id,
-         ut.title,
-         ut.start_date::text,
-         ut.end_date::text,
-         ut.country_code,
-         ut.country_name_kr,
-         ut.base_currency,
-         ut.base_exchange_rate,
+        `SELECT
+          ut.id::text AS id,
+          ut.title,
+          ut.start_date::text,
+          ut.end_date::text,
+          ut.country_code,
+          ut.country_name_kr,
+          ut.country_currencies,
+          ut.base_currency,
+          ut.base_exchange_rate,
          ti.invite_code,
          ut.computed_status AS status,
          ut.role,
@@ -1122,6 +1130,7 @@ export class TravelService {
              country_name_kr = $7,
              base_currency = $8,
              base_exchange_rate = $9,
+             country_currencies = $10,
              status = CASE WHEN $5 < CURRENT_DATE THEN 'archived' ELSE 'active' END,
              updated_at = NOW()
          WHERE id = $1 AND owner_id = $2
@@ -1134,6 +1143,7 @@ export class TravelService {
            country_name_kr,
            base_currency,
            base_exchange_rate,
+           country_currencies,
            invite_code,
            status,
            created_at::text`,
@@ -1147,6 +1157,7 @@ export class TravelService {
           payload.countryNameKr,
           payload.baseCurrency,
           payload.baseExchangeRate,
+          payload.countryCurrencies,
         ],
       );
       const row = result.rows[0];

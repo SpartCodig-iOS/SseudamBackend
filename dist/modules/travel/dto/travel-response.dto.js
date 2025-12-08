@@ -39,6 +39,10 @@ __decorate([
     __metadata("design:type", String)
 ], TravelSummaryDto.prototype, "countryNameKr", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({ example: ['JPY'], description: '여행 국가에서 사용하는 통화 리스트 (ISO 4217 코드)' }),
+    __metadata("design:type", Array)
+], TravelSummaryDto.prototype, "countryCurrencies", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ example: 'JPY' }),
     __metadata("design:type", String)
 ], TravelSummaryDto.prototype, "baseCurrency", void 0);

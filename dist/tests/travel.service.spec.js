@@ -48,6 +48,7 @@ const samplePayload = {
     countryNameKr: '일본',
     baseCurrency: 'JPY',
     baseExchangeRate: 111.11,
+    countryCurrencies: ['JPY'],
 };
 (0, node_test_1.default)('listTravels returns mapped and paginated travel summaries', async () => {
     const responses = [
@@ -60,6 +61,7 @@ const samplePayload = {
                     start_date: '2024-08-01',
                     end_date: '2024-08-05',
                     country_code: 'JP',
+                    country_currencies: ['JPY'],
                     base_currency: 'JPY',
                     base_exchange_rate: 144.5,
                     invite_code: 'abc123',
@@ -104,6 +106,7 @@ const samplePayload = {
         strict_1.default.equal(item.destinationCurrency, 'JPY');
         strict_1.default.ok(Array.isArray(item.members));
         strict_1.default.equal(item.members?.[0].name, '홍길동');
+        strict_1.default.deepEqual(item.countryCurrencies, ['JPY']);
         const [, listCall] = calls;
         strict_1.default.deepEqual(listCall.params, ['user-1', 1, 1], 'limit and offset should be applied');
     }
@@ -114,6 +117,15 @@ const samplePayload = {
 (0, node_test_1.default)('updateTravel applies owner changes and returns refreshed summary', async () => {
     const updateArgs = [];
     const queryMock = node_test_1.mock.fn(async (sql, params) => {
+        if (sql.startsWith('BEGIN') || sql.startsWith('COMMIT') || sql.startsWith('ROLLBACK')) {
+            return { rows: [] };
+        }
+        if (sql.includes('SELECT 1 FROM travels WHERE id = $1 AND owner_id = $2 LIMIT 1 FOR UPDATE')) {
+            return { rows: [{ exists: true }] };
+        }
+        if (sql.startsWith('INSERT INTO travel_currency_snapshots')) {
+            return { rows: [] };
+        }
         if (sql.startsWith('UPDATE travels')) {
             updateArgs.push(...(params ?? []));
             return {
@@ -126,6 +138,7 @@ const samplePayload = {
                         country_code: samplePayload.countryCode,
                         base_currency: samplePayload.baseCurrency,
                         base_exchange_rate: samplePayload.baseExchangeRate,
+                        country_currencies: [samplePayload.baseCurrency],
                         invite_code: 'invite-123',
                         status: 'active',
                         created_at: '2024-06-01T00:00:00.000Z',
@@ -144,6 +157,7 @@ const samplePayload = {
                         country_code: samplePayload.countryCode,
                         base_currency: samplePayload.baseCurrency,
                         base_exchange_rate: samplePayload.baseExchangeRate,
+                        country_currencies: [samplePayload.baseCurrency],
                         invite_code: 'invite-123',
                         status: 'active',
                         created_at: '2024-06-01T00:00:00.000Z',
@@ -162,6 +176,9 @@ const samplePayload = {
         throw new Error(`Unexpected SQL: ${sql}`);
     });
     const mockPool = { query: queryMock };
+    const client = { query: queryMock, release: node_test_1.mock.fn(() => { }) };
+    const connectMock = node_test_1.mock.fn(async () => client);
+    mockPool.connect = connectMock;
     node_test_1.mock.method(poolModule, 'getPool', async () => mockPool);
     try {
         const service = new travel_service_1.TravelService({
@@ -176,6 +193,9 @@ const samplePayload = {
         strict_1.default.equal(result.destinationCurrency, 'JPY');
         strict_1.default.equal(result.ownerName, '호스트');
         strict_1.default.equal(result.members?.[0].userId, 'user-123');
+        strict_1.default.deepEqual(result.countryCurrencies, ['JPY']);
+        strict_1.default.equal(connectMock.mock.callCount(), 1, 'pool.connect should be called');
+        strict_1.default.equal(client.release.mock.callCount(), 1, 'client should be released');
     }
     finally {
         node_test_1.mock.restoreAll();

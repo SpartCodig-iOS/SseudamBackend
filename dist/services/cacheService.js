@@ -26,7 +26,7 @@ let CacheService = CacheService_1 = class CacheService {
         this.redisNextRetryAt = 0;
         this.redisCooldownMs = 30000;
         this.redisKeepAliveTimer = null;
-        this.redisKeepAliveMs = 240000; // 4분 간격 ping으로 sleep 방지
+        this.redisKeepAliveMs = 0; // disable keep-alive so sleep allowed
     }
     async getRedisClient() {
         if (!this.redisUrl) {
@@ -58,14 +58,17 @@ let CacheService = CacheService_1 = class CacheService {
                 // Sleep 방지용 keep-alive
                 if (this.redisKeepAliveTimer) {
                     clearInterval(this.redisKeepAliveTimer);
+                    this.redisKeepAliveTimer = null;
                 }
-                this.redisKeepAliveTimer = setInterval(() => {
-                    if (!this.redis)
-                        return;
-                    this.redis.ping().catch((err) => {
-                        this.logger.warn(`Redis keep-alive ping failed: ${err.message}`);
-                    });
-                }, this.redisKeepAliveMs);
+                if (this.redisKeepAliveMs > 0) {
+                    this.redisKeepAliveTimer = setInterval(() => {
+                        if (!this.redis)
+                            return;
+                        this.redis.ping().catch((err) => {
+                            this.logger.warn(`Redis keep-alive ping failed: ${err.message}`);
+                        });
+                    }, this.redisKeepAliveMs);
+                }
             });
             this.redis.on('error', (err) => {
                 this.logger.warn(`⚠️ Redis error, falling back to memory cache (${err.message})`);
