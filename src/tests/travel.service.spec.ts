@@ -85,6 +85,15 @@ test('updateTravel applies owner changes and returns refreshed summary', async (
   const updateArgs: unknown[] = [];
 
   const queryMock = mock.fn(async (sql: string, params?: unknown[]) => {
+    if (sql.startsWith('BEGIN') || sql.startsWith('COMMIT') || sql.startsWith('ROLLBACK')) {
+      return { rows: [] };
+    }
+    if (sql.includes('SELECT 1 FROM travels WHERE id = $1 AND owner_id = $2 LIMIT 1 FOR UPDATE')) {
+      return { rows: [{ exists: true }] };
+    }
+    if (sql.startsWith('INSERT INTO travel_currency_snapshots')) {
+      return { rows: [] };
+    }
     if (sql.startsWith('UPDATE travels')) {
       updateArgs.push(...(params ?? []));
       return {
@@ -136,6 +145,9 @@ test('updateTravel applies owner changes and returns refreshed summary', async (
   });
 
   const mockPool = { query: queryMock } as any;
+  const client = { query: queryMock, release: mock.fn(() => {}) };
+  const connectMock = mock.fn(async () => client);
+  mockPool.connect = connectMock;
   mock.method(poolModule, 'getPool', async () => mockPool);
 
   try {
@@ -152,6 +164,8 @@ test('updateTravel applies owner changes and returns refreshed summary', async (
     assert.equal(result.destinationCurrency, 'JPY');
     assert.equal(result.ownerName, '호스트');
     assert.equal(result.members?.[0].userId, 'user-123');
+    assert.equal(connectMock.mock.callCount(), 1, 'pool.connect should be called');
+    assert.equal(client.release.mock.callCount(), 1, 'client should be released');
   } finally {
     mock.restoreAll();
   }

@@ -24,7 +24,6 @@ const optimized_delete_service_1 = require("../auth/optimized-delete.service");
 const social_auth_service_1 = require("../oauth/social-auth.service");
 const auth_service_1 = require("../auth/auth.service");
 const roles_guard_1 = require("../../common/guards/roles.guard");
-const keep_alive_service_1 = require("../../services/keep-alive.service");
 let SharedModule = class SharedModule {
 };
 exports.SharedModule = SharedModule;
@@ -33,7 +32,6 @@ exports.SharedModule = SharedModule = __decorate([
     (0, common_1.Module)({
         providers: [
             cacheService_1.CacheService,
-            keep_alive_service_1.KeepAliveService,
             supabaseService_1.SupabaseService,
             oauth_token_service_1.OAuthTokenService,
             jwtService_1.JwtTokenService,

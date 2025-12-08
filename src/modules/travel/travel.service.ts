@@ -233,6 +233,34 @@ export class TravelService {
     return `${travelId}:${userId}`;
   }
 
+  private async recordCurrencySnapshot(
+    client: PoolClient,
+    params: {
+      travelId: string;
+      countryCode: string;
+      baseCurrency: string;
+      baseExchangeRate: number;
+      baseAmount?: number;
+    },
+  ): Promise<void> {
+    await this.ensureCountryCurrencyMap();
+    const destinationCurrency = this.resolveDestinationCurrency(params.countryCode, params.baseCurrency);
+    const baseAmount = params.baseAmount ?? 1000;
+
+    await client.query(
+      `INSERT INTO travel_currency_snapshots
+         (travel_id, base_currency, destination_currency, base_amount, base_exchange_rate)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        params.travelId,
+        params.baseCurrency.toUpperCase(),
+        destinationCurrency,
+        baseAmount,
+        params.baseExchangeRate,
+      ],
+    );
+  }
+
   private async isMemberCached(travelId: string, userId: string): Promise<boolean | null> {
     const key = this.getMembershipCacheKey(travelId, userId);
     const cached = this.TRAVEL_MEMBER_CACHE.get(key);
@@ -614,6 +642,13 @@ export class TravelService {
 
         const travelRow = insertResult.rows[0];
 
+        await this.recordCurrencySnapshot(client, {
+          travelId: travelRow.id,
+          countryCode: travelRow.country_code,
+          baseCurrency: travelRow.base_currency,
+          baseExchangeRate: Number(travelRow.base_exchange_rate ?? payload.baseExchangeRate),
+        });
+
         const optimizedResult = {
           ...travelRow,
           owner_name: ownerName,
@@ -792,6 +827,15 @@ export class TravelService {
     };
   }
 
+  private async invalidateExpenseAndSettlementCaches(travelId: string): Promise<void> {
+    await Promise.all([
+      this.cacheService.delPattern(`expense:list:${travelId}:*`).catch(() => undefined),
+      this.cacheService.delPattern(`expense:detail:${travelId}:*`).catch(() => undefined),
+      this.cacheService.del(travelId, { prefix: 'expense:context' }).catch(() => undefined),
+      this.cacheService.del(travelId, { prefix: 'settlement:summary' }).catch(() => undefined),
+    ]);
+  }
+
   async deleteTravel(travelId: string, userId: string): Promise<void> {
     const pool = await getPool();
     await this.ensureOwner(travelId, userId, pool);
@@ -888,6 +932,9 @@ export class TravelService {
       );
     });
 
+    // 멤버/권한 변경 직후 캐시를 비워 최신 멤버 목록을 강제로 조회
+    await this.invalidateMembersCacheForTravel(travelId);
+
     // 트랜잭션 커밋 후 최신 상태 조회
     const summary = await this.fetchSummaryForMember(travelId, newOwnerId);
 
@@ -901,7 +948,6 @@ export class TravelService {
       [travelId]
     );
     members.rows.forEach(member => this.invalidateUserTravelCache(member.user_id));
-    await this.invalidateMembersCacheForTravel(travelId);
 
     return summary;
   }
@@ -1053,12 +1099,7 @@ export class TravelService {
     userId: string,
     payload: CreateTravelInput,
   ): Promise<TravelSummary> {
-    const pool = await getPool();
-    const client = await pool.connect();
-    let travelRow: any;
-    try {
-      await client.query('BEGIN');
-
+    const travelRow = await this.ensureTransaction(async (client) => {
       // 소유자 확인 + 행 잠금
       const ownerCheck = await client.query(
         `SELECT 1 FROM travels WHERE id = $1 AND owner_id = $2 LIMIT 1 FOR UPDATE`,
@@ -1108,15 +1149,17 @@ export class TravelService {
           payload.baseExchangeRate,
         ],
       );
-      travelRow = result.rows[0];
-
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+      const row = result.rows[0];
+      if (row) {
+        await this.recordCurrencySnapshot(client, {
+          travelId,
+          countryCode: row.country_code,
+          baseCurrency: row.base_currency,
+          baseExchangeRate: Number(row.base_exchange_rate ?? payload.baseExchangeRate),
+        });
+      }
+      return row;
+    });
 
     // 수정 후 관련 캐시 무효화
     this.invalidateTravelDetailCache(travelId);
@@ -1134,8 +1177,11 @@ export class TravelService {
     await this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:*`).catch(() => undefined);
     await this.cacheService.delPattern(`${this.TRAVEL_DETAIL_REDIS_PREFIX}:*`).catch(() => undefined);
 
-    // 업데이트 응답에는 멤버 정보 불필요 - 성능 개선
-    const summary = await this.fetchSummaryForMember(travelId, userId, false);
+    // 통화/정산 관련 캐시도 무효화하여 최신 환율/금액 반영
+    await this.invalidateExpenseAndSettlementCaches(travelId);
+
+    // 업데이트 직후 바로 최신 멤버 정보를 내려주는 게 API UX에 맞음
+    const summary = await this.fetchSummaryForMember(travelId, userId, true);
 
     // 결과 캐시에 저장 (후속 요청 성능 개선)
     this.setCachedTravelDetail(travelId, summary);

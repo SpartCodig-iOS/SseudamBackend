@@ -19,7 +19,7 @@ export class CacheService {
   private redisNextRetryAt = 0;
   private readonly redisCooldownMs = 30_000;
   private redisKeepAliveTimer: NodeJS.Timeout | null = null;
-  private readonly redisKeepAliveMs = 20_000; // 20초 간격 ping으로 sleep 방지
+  private readonly redisKeepAliveMs = 0; // disable keep-alive so sleep allowed
 
   async getRedisClient(): Promise<Redis | null> {
     if (!this.redisUrl) {
@@ -54,13 +54,16 @@ export class CacheService {
         // Sleep 방지용 keep-alive
         if (this.redisKeepAliveTimer) {
           clearInterval(this.redisKeepAliveTimer);
+          this.redisKeepAliveTimer = null;
         }
-        this.redisKeepAliveTimer = setInterval(() => {
-          if (!this.redis) return;
-          this.redis.ping().catch((err) => {
-            this.logger.warn(`Redis keep-alive ping failed: ${err.message}`);
-          });
-        }, this.redisKeepAliveMs);
+        if (this.redisKeepAliveMs > 0) {
+          this.redisKeepAliveTimer = setInterval(() => {
+            if (!this.redis) return;
+            this.redis.ping().catch((err) => {
+              this.logger.warn(`Redis keep-alive ping failed: ${err.message}`);
+            });
+          }, this.redisKeepAliveMs);
+        }
       });
 
       this.redis.on('error', (err: Error) => {

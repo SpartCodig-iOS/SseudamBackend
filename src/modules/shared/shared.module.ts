@@ -15,13 +15,11 @@ import { OptimizedDeleteService } from '../auth/optimized-delete.service';
 import { SocialAuthService } from '../oauth/social-auth.service';
 import { AuthService } from '../auth/auth.service';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { KeepAliveService } from '../../services/keep-alive.service';
 
 @Global()
 @Module({
   providers: [
     CacheService,
-    KeepAliveService,
     SupabaseService,
     OAuthTokenService,
     JwtTokenService,

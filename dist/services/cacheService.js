@@ -26,7 +26,7 @@ let CacheService = CacheService_1 = class CacheService {
         this.redisNextRetryAt = 0;
         this.redisCooldownMs = 30000;
         this.redisKeepAliveTimer = null;
-        this.redisKeepAliveMs = 20000; // 20초 간격 ping으로 sleep 방지
+        this.redisKeepAliveMs = 240000; // 4분 간격 ping으로 sleep 방지
     }
     async getRedisClient() {
         if (!this.redisUrl) {
