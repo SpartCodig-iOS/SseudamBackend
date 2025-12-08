@@ -521,7 +521,7 @@ export class SupabaseService {
 
       const ext = kind === 'png' ? 'png' : 'jpeg';
       const resolvedContentType = kind === 'png' ? 'image/png' : 'image/jpeg';
-      const objectPath = `${this.avatarBucket}/${userId}/${randomUUID()}.${ext}`;
+      const objectPath = `${userId}/${randomUUID()}.${ext}`;
 
       const client = this.getClient();
       await this.ensureAvatarBucket();
@@ -539,7 +539,7 @@ export class SupabaseService {
         throw new Error(`upload failed: ${error.message}`);
       }
 
-      const publicUrl = `${env.supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${objectPath}`;
+      const publicUrl = `${env.supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${this.avatarBucket}/${objectPath}`;
       const pool = await getPool();
       await pool.query(
         `UPDATE ${env.supabaseProfileTable}

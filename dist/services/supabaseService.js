@@ -433,7 +433,7 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
             }
             const ext = kind === 'png' ? 'png' : 'jpeg';
             const resolvedContentType = kind === 'png' ? 'image/png' : 'image/jpeg';
-            const objectPath = `${this.avatarBucket}/${userId}/${(0, crypto_1.randomUUID)()}.${ext}`;
+            const objectPath = `${userId}/${(0, crypto_1.randomUUID)()}.${ext}`;
             const client = this.getClient();
             await this.ensureAvatarBucket();
             const upload = async () => client.storage.from(this.avatarBucket).upload(objectPath, buffer, {
@@ -449,7 +449,7 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
             if (error) {
                 throw new Error(`upload failed: ${error.message}`);
             }
-            const publicUrl = `${env_1.env.supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${objectPath}`;
+            const publicUrl = `${env_1.env.supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${this.avatarBucket}/${objectPath}`;
             const pool = await (0, pool_1.getPool)();
             await pool.query(`UPDATE ${env_1.env.supabaseProfileTable}
            SET avatar_url = $1,
