@@ -14,6 +14,7 @@ export interface AppVersionMeta {
   currentVersion: string | null;
   shouldUpdate: boolean;
   message: string | null;
+  appStoreUrl: string | null;
 }
 
 @Injectable()
@@ -157,6 +158,7 @@ export class VersionService {
       currentVersion: currentVersion ?? null,
       shouldUpdate: false,
       message: null,
+      appStoreUrl: app?.trackViewUrl ?? null,
     };
 
     const baseForceUpdate =

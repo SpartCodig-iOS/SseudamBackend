@@ -32,6 +32,13 @@ export class AppVersionDto {
   shouldUpdate!: boolean;
 
   @ApiProperty({
+    example: 'https://apps.apple.com/kr/app/example/id123456789',
+    nullable: true,
+    description: 'App Store에서 해당 앱으로 이동할 수 있는 URL',
+  })
+  appStoreUrl!: string | null;
+
+  @ApiProperty({
     example: '최신 버전이 나왔습니다. 앱스토어에서 업데이트 해주세요!',
     nullable: true,
     description: '업데이트 안내 메시지 (업데이트 필요 시에만 제공)',

@@ -138,6 +138,7 @@ let VersionService = VersionService_1 = class VersionService {
             currentVersion: currentVersion ?? null,
             shouldUpdate: false,
             message: null,
+            appStoreUrl: app?.trackViewUrl ?? null,
         };
         const baseForceUpdate = typeof forceUpdateOverride === 'boolean'
             ? forceUpdateOverride
