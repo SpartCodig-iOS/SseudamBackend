@@ -106,7 +106,8 @@ let ProfileService = ProfileService_1 = class ProfileService {
         // 캐시에서 먼저 확인
         const cachedProfile = this.getCachedProfile(userId);
         if (cachedProfile) {
-            return await this.validateStorageAvatar(cachedProfile);
+            const syncedProfile = await this.syncGoogleAvatarIfNeeded(cachedProfile);
+            return this.validateStorageAvatar(syncedProfile);
         }
         // DB 조회와 Redis 캐시 조회를 병렬로 처리
         const [dbResult, redisProfile] = await Promise.allSettled([
@@ -115,12 +116,13 @@ let ProfileService = ProfileService_1 = class ProfileService {
         ]);
         // Redis 캐시에서 찾았다면 반환
         if (redisProfile.status === 'fulfilled' && redisProfile.value) {
-            this.setCachedProfile(userId, redisProfile.value);
-            return this.validateStorageAvatar(redisProfile.value);
+            const syncedProfile = await this.syncGoogleAvatarIfNeeded(redisProfile.value);
+            this.setCachedProfile(userId, syncedProfile);
+            return this.validateStorageAvatar(syncedProfile);
         }
         // DB에서 조회한 결과 처리
         if (dbResult.status === 'fulfilled' && dbResult.value) {
-            const profile = dbResult.value;
+            const profile = await this.syncGoogleAvatarIfNeeded(dbResult.value);
             // 메모리 캐시와 Redis 캐시에 동시에 저장 (비동기)
             Promise.allSettled([
                 Promise.resolve(this.setCachedProfile(userId, profile)),
@@ -137,14 +139,16 @@ let ProfileService = ProfileService_1 = class ProfileService {
         // 1. 메모리 캐시 확인 (가장 빠름)
         const cachedProfile = this.getCachedProfile(userId);
         if (cachedProfile) {
+            await this.syncGoogleAvatarIfNeeded(cachedProfile);
             return cachedProfile;
         }
         // 2. Redis 캐시 확인 (두 번째로 빠름)
         try {
             const redisProfile = await this.cacheService.get(`profile:${userId}`);
             if (redisProfile) {
-                this.setCachedProfile(userId, redisProfile);
-                return this.validateStorageAvatar(redisProfile);
+                const syncedProfile = await this.syncGoogleAvatarIfNeeded(redisProfile);
+                this.setCachedProfile(userId, syncedProfile);
+                return this.validateStorageAvatar(syncedProfile);
             }
         }
         catch (error) {
@@ -155,12 +159,12 @@ let ProfileService = ProfileService_1 = class ProfileService {
         try {
             const dbProfile = await this.getProfileFromDB(userId);
             if (dbProfile) {
-                // 캐시에 저장 (비동기)
+                const syncedProfile = await this.syncGoogleAvatarIfNeeded(dbProfile);
                 Promise.allSettled([
-                    Promise.resolve(this.setCachedProfile(userId, dbProfile)),
-                    this.cacheService.set(`profile:${userId}`, dbProfile, { ttl: 600 })
+                    Promise.resolve(this.setCachedProfile(userId, syncedProfile)),
+                    this.cacheService.set(`profile:${userId}`, syncedProfile, { ttl: 600 })
                 ]);
-                return this.validateStorageAvatar(dbProfile);
+                return this.validateStorageAvatar(syncedProfile);
             }
         }
         catch (error) {
@@ -195,6 +199,43 @@ let ProfileService = ProfileService_1 = class ProfileService {
         this.setCachedProfile(profile.id, profile);
         this.cacheService.set(`profile:${profile.id}`, profile, { ttl: 600 }).catch(() => undefined);
         await this.supabaseService.clearAvatarUrl(profile.id);
+        return profile;
+    }
+    async syncGoogleAvatarIfNeeded(profile) {
+        if (!profile)
+            return profile;
+        if (profile.avatar_url && this.supabaseService.parseAvatarStoragePath(profile.avatar_url)) {
+            return profile;
+        }
+        try {
+            const supabaseProfile = await this.supabaseService.findProfileById(profile.id);
+            const loginType = supabaseProfile?.login_type?.toLowerCase();
+            if (loginType !== 'google') {
+                return profile;
+            }
+            const supabaseUser = await this.supabaseService.getUserById(profile.id);
+            if (!supabaseUser) {
+                return profile;
+            }
+            const avatarUrl = this.supabaseService.resolveAvatarFromUser(supabaseUser);
+            if (!avatarUrl) {
+                return profile;
+            }
+            const mirroredUrl = await this.supabaseService.ensureProfileAvatar(profile.id, avatarUrl);
+            if (mirroredUrl && mirroredUrl !== profile.avatar_url) {
+                profile.avatar_url = mirroredUrl;
+                this.setCachedProfile(profile.id, profile);
+                this.cacheService.set(`profile:${profile.id}`, profile, { ttl: 600 }).catch(() => undefined);
+                this.setCachedStorageAvatar(profile.id, mirroredUrl);
+                this.cacheService.set(profile.id, mirroredUrl, {
+                    prefix: this.AVATAR_CACHE_PREFIX,
+                    ttl: 300,
+                }).catch(() => undefined);
+            }
+        }
+        catch (error) {
+            this.logger.warn(`[syncGoogleAvatarIfNeeded] Failed for ${profile.id}`, error);
+        }
         return profile;
     }
     async getProfileFromDB(userId) {

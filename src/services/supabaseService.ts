@@ -76,7 +76,7 @@ export class SupabaseService {
     return shouldPreferDisplay ? displayCandidate ?? nameCandidate : nameCandidate ?? displayCandidate;
   }
 
-  private resolveAvatarFromUser(user: User): string | null {
+  public resolveAvatarFromUser(user: User): string | null {
     const metadata = user.user_metadata ?? {};
     const raw = (user as any)?.raw_user_meta_data ?? {};
     const identityDataList = this.getIdentityData(user);
@@ -378,7 +378,7 @@ export class SupabaseService {
     return this.oauthTokenService.getToken(userId, 'google');
   }
 
-  private parseAvatarStoragePath(avatarUrl?: string | null): { bucket: string; path: string } | null {
+  public parseAvatarStoragePath(avatarUrl?: string | null): { bucket: string; path: string } | null {
     if (!avatarUrl) return null;
     const trimmed = avatarUrl.trim();
     if (!trimmed) return null;
