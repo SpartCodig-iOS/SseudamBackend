@@ -17,6 +17,7 @@ import { buildAuthSessionResponse, buildLightweightAuthResponse } from '../auth/
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RequestWithUser } from '../../types/request';
 import { CacheService } from '../../services/cacheService';
+import { DeviceTokenService } from '../../services/device-token.service';
 import { randomBytes } from 'crypto';
 
 @ApiTags('OAuth')
@@ -26,6 +27,7 @@ export class OAuthController {
     private readonly socialAuthService: SocialAuthService,
     private readonly optimizedOAuthService: OptimizedOAuthService,
     private readonly cacheService: CacheService,
+    private readonly deviceTokenService: DeviceTokenService,
   ) {}
 
   private async handleOAuthLogin(body: unknown, message: string) {
@@ -51,6 +53,14 @@ export class OAuthController {
         redirectUri: payload.redirectUri,
       },
     );
+
+    // deviceToken이 제공되면 디바이스 토큰 저장
+    if (payload.deviceToken && result.user?.id) {
+      await this.deviceTokenService.upsertDeviceToken(result.user.id, payload.deviceToken).catch(err => {
+        console.warn('Failed to save device token:', err.message);
+      });
+    }
+
     return success(buildLightweightAuthResponse(result), message);
   }
 

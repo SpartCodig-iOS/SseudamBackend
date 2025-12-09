@@ -24,14 +24,22 @@ const rate_limit_guard_1 = require("../../common/guards/rate-limit.guard");
 const auth_response_dto_1 = require("./dto/auth-response.dto");
 const auth_response_util_1 = require("./auth-response.util");
 const rate_limit_decorator_1 = require("../../common/decorators/rate-limit.decorator");
+const device_token_service_1 = require("../../services/device-token.service");
 let AuthController = class AuthController {
-    constructor(authService, optimizedDeleteService) {
+    constructor(authService, optimizedDeleteService, deviceTokenService) {
         this.authService = authService;
         this.optimizedDeleteService = optimizedDeleteService;
+        this.deviceTokenService = deviceTokenService;
     }
     async signup(body) {
         const payload = authSchemas_1.signupSchema.parse(body);
         const result = await this.authService.signup(payload);
+        // deviceToken이 제공되면 디바이스 토큰 저장
+        if (payload.deviceToken && result.user?.id) {
+            await this.deviceTokenService.upsertDeviceToken(result.user?.id, payload.deviceToken).catch(err => {
+                console.warn('Failed to save device token:', err.message);
+            });
+        }
         return (0, api_1.success)((0, auth_response_util_1.buildAuthSessionResponse)(result), 'Signup successful');
     }
     async login(body) {
@@ -55,9 +63,21 @@ let AuthController = class AuthController {
                 codeVerifier: payload.codeVerifier,
                 redirectUri: payload.redirectUri,
             });
+            // deviceToken이 제공되면 디바이스 토큰 저장
+            if (payload.deviceToken && result.user?.id) {
+                await this.deviceTokenService.upsertDeviceToken(result.user?.id, payload.deviceToken).catch(err => {
+                    console.warn('Failed to save device token:', err.message);
+                });
+            }
             return (0, api_1.success)((0, auth_response_util_1.buildAuthSessionResponse)(result), 'Login successful');
         }
         const result = await this.authService.login(payload);
+        // deviceToken이 제공되면 디바이스 토큰 저장
+        if (payload.deviceToken && result.user?.id) {
+            await this.deviceTokenService.upsertDeviceToken(result.user?.id, payload.deviceToken).catch(err => {
+                console.warn('Failed to save device token:', err.message);
+            });
+        }
         return (0, api_1.success)((0, auth_response_util_1.buildAuthSessionResponse)(result), 'Login successful');
     }
     async refresh(body) {
@@ -285,5 +305,6 @@ exports.AuthController = AuthController = __decorate([
     (0, swagger_1.ApiTags)('Auth'),
     (0, common_1.Controller)('api/v1/auth'),
     __metadata("design:paramtypes", [auth_service_1.AuthService,
-        optimized_delete_service_1.OptimizedDeleteService])
+        optimized_delete_service_1.OptimizedDeleteService,
+        device_token_service_1.DeviceTokenService])
 ], AuthController);

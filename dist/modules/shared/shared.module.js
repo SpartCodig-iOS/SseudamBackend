@@ -8,6 +8,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.SharedModule = void 0;
 const common_1 = require("@nestjs/common");
+const event_emitter_1 = require("@nestjs/event-emitter");
 const auth_guard_1 = require("../../common/guards/auth.guard");
 const rate_limit_guard_1 = require("../../common/guards/rate-limit.guard");
 const jwtService_1 = require("../../services/jwtService");
@@ -24,12 +25,18 @@ const optimized_delete_service_1 = require("../auth/optimized-delete.service");
 const social_auth_service_1 = require("../oauth/social-auth.service");
 const auth_service_1 = require("../auth/auth.service");
 const roles_guard_1 = require("../../common/guards/roles.guard");
+const device_token_service_1 = require("../../services/device-token.service");
+const apns_service_1 = require("../../services/apns.service");
+const push_notification_service_1 = require("../../services/push-notification.service");
 let SharedModule = class SharedModule {
 };
 exports.SharedModule = SharedModule;
 exports.SharedModule = SharedModule = __decorate([
     (0, common_1.Global)(),
     (0, common_1.Module)({
+        imports: [
+            event_emitter_1.EventEmitterModule.forRoot(),
+        ],
         providers: [
             cacheService_1.CacheService,
             supabaseService_1.SupabaseService,
@@ -44,6 +51,9 @@ exports.SharedModule = SharedModule = __decorate([
             sessionService_1.SessionService,
             rateLimitService_1.RateLimitService,
             background_job_service_1.BackgroundJobService,
+            device_token_service_1.DeviceTokenService,
+            apns_service_1.APNSService,
+            push_notification_service_1.PushNotificationService,
             auth_guard_1.AuthGuard,
             roles_guard_1.RolesGuard,
             rate_limit_guard_1.RateLimitGuard,
@@ -62,6 +72,9 @@ exports.SharedModule = SharedModule = __decorate([
             sessionService_1.SessionService,
             rateLimitService_1.RateLimitService,
             background_job_service_1.BackgroundJobService,
+            device_token_service_1.DeviceTokenService,
+            apns_service_1.APNSService,
+            push_notification_service_1.PushNotificationService,
             auth_guard_1.AuthGuard,
             roles_guard_1.RolesGuard,
             rate_limit_guard_1.RateLimitGuard,

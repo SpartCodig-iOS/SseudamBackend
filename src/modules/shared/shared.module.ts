@@ -1,4 +1,5 @@
 import { Global, Module, forwardRef } from '@nestjs/common';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RateLimitGuard } from '../../common/guards/rate-limit.guard';
 import { JwtTokenService } from '../../services/jwtService';
@@ -15,9 +16,15 @@ import { OptimizedDeleteService } from '../auth/optimized-delete.service';
 import { SocialAuthService } from '../oauth/social-auth.service';
 import { AuthService } from '../auth/auth.service';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { DeviceTokenService } from '../../services/device-token.service';
+import { APNSService } from '../../services/apns.service';
+import { PushNotificationService } from '../../services/push-notification.service';
 
 @Global()
 @Module({
+  imports: [
+    EventEmitterModule.forRoot(),
+  ],
   providers: [
     CacheService,
     SupabaseService,
@@ -32,6 +39,9 @@ import { RolesGuard } from '../../common/guards/roles.guard';
     SessionService,
     RateLimitService,
     BackgroundJobService,
+    DeviceTokenService,
+    APNSService,
+    PushNotificationService,
     AuthGuard,
     RolesGuard,
     RateLimitGuard,
@@ -50,6 +60,9 @@ import { RolesGuard } from '../../common/guards/roles.guard';
     SessionService,
     RateLimitService,
     BackgroundJobService,
+    DeviceTokenService,
+    APNSService,
+    PushNotificationService,
     AuthGuard,
     RolesGuard,
     RateLimitGuard,

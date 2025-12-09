@@ -24,12 +24,14 @@ const oauth_response_dto_1 = require("./dto/oauth-response.dto");
 const auth_response_util_1 = require("../auth/auth-response.util");
 const auth_guard_1 = require("../../common/guards/auth.guard");
 const cacheService_1 = require("../../services/cacheService");
+const device_token_service_1 = require("../../services/device-token.service");
 const crypto_1 = require("crypto");
 let OAuthController = class OAuthController {
-    constructor(socialAuthService, optimizedOAuthService, cacheService) {
+    constructor(socialAuthService, optimizedOAuthService, cacheService, deviceTokenService) {
         this.socialAuthService = socialAuthService;
         this.optimizedOAuthService = optimizedOAuthService;
         this.cacheService = cacheService;
+        this.deviceTokenService = deviceTokenService;
     }
     async handleOAuthLogin(body, message) {
         const payload = authSchemas_1.oauthTokenSchema.parse(body);
@@ -48,6 +50,12 @@ let OAuthController = class OAuthController {
             codeVerifier: payload.codeVerifier,
             redirectUri: payload.redirectUri,
         });
+        // deviceToken이 제공되면 디바이스 토큰 저장
+        if (payload.deviceToken && result.user?.id) {
+            await this.deviceTokenService.upsertDeviceToken(result.user.id, payload.deviceToken).catch(err => {
+                console.warn('Failed to save device token:', err.message);
+            });
+        }
         return (0, api_1.success)((0, auth_response_util_1.buildLightweightAuthResponse)(result), message);
     }
     async issueToken(body) {
@@ -352,5 +360,6 @@ exports.OAuthController = OAuthController = __decorate([
     (0, common_1.Controller)('api/v1/oauth'),
     __metadata("design:paramtypes", [social_auth_service_1.SocialAuthService,
         optimized_oauth_service_1.OptimizedOAuthService,
-        cacheService_1.CacheService])
+        cacheService_1.CacheService,
+        device_token_service_1.DeviceTokenService])
 ], OAuthController);

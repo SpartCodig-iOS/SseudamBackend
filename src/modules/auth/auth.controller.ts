@@ -24,6 +24,7 @@ import {
 import { buildAuthSessionResponse } from './auth-response.util';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator';
 import { LoginType } from '../../types/auth';
+import { DeviceTokenService } from '../../services/device-token.service';
 
 @ApiTags('Auth')
 @Controller('api/v1/auth')
@@ -31,6 +32,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly optimizedDeleteService: OptimizedDeleteService,
+    private readonly deviceTokenService: DeviceTokenService,
   ) {}
 
   @Post('signup')
@@ -64,6 +66,13 @@ export class AuthController {
   async signup(@Body() body: unknown) {
     const payload = signupSchema.parse(body);
     const result = await this.authService.signup(payload);
+
+    // deviceToken이 제공되면 디바이스 토큰 저장
+    if (payload.deviceToken && result.user?.id) {
+      await this.deviceTokenService.upsertDeviceToken(result.user?.id, payload.deviceToken).catch(err => {
+        console.warn('Failed to save device token:', err.message);
+      });
+    }
 
     return success(buildAuthSessionResponse(result), 'Signup successful');
   }
@@ -158,10 +167,25 @@ export class AuthController {
         codeVerifier: payload.codeVerifier,
         redirectUri: payload.redirectUri,
       });
+
+      // deviceToken이 제공되면 디바이스 토큰 저장
+      if (payload.deviceToken && result.user?.id) {
+        await this.deviceTokenService.upsertDeviceToken(result.user?.id, payload.deviceToken).catch(err => {
+          console.warn('Failed to save device token:', err.message);
+        });
+      }
+
       return success(buildAuthSessionResponse(result), 'Login successful');
     }
 
     const result = await this.authService.login(payload);
+
+    // deviceToken이 제공되면 디바이스 토큰 저장
+    if (payload.deviceToken && result.user?.id) {
+      await this.deviceTokenService.upsertDeviceToken(result.user?.id, payload.deviceToken).catch(err => {
+        console.warn('Failed to save device token:', err.message);
+      });
+    }
 
     return success(buildAuthSessionResponse(result), 'Login successful');
   }
