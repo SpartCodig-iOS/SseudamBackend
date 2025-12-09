@@ -100,10 +100,8 @@ let VersionService = VersionService_1 = class VersionService {
     }
     async getAppVersion(bundleId, currentVersion, forceUpdateOverride) {
         await this.ensureAppVersionTable();
-        const resolvedBundleId = (bundleId ?? env_1.env.appleClientId ?? '').trim();
-        if (!resolvedBundleId) {
-            throw new common_1.ServiceUnavailableException('bundleId (APPLE_CLIENT_ID) is not configured');
-        }
+        // bundleId 고정값으로 설정
+        const resolvedBundleId = 'io.sseudam.co';
         const cacheKey = `${resolvedBundleId}|${currentVersion ?? ''}|${forceUpdateOverride ?? 'auto'}`;
         const cached = this.appVersionCache.get(cacheKey);
         if (cached && cached.expiresAt > Date.now()) {
@@ -134,23 +132,17 @@ let VersionService = VersionService_1 = class VersionService {
             minimumOsVersion: app?.minimumOsVersion ?? null,
             lastUpdated: dbVersion?.updated_at ?? app?.currentVersionReleaseDate ?? null,
             minSupportedVersion: dbVersion?.min_supported_version ?? env_1.env.appMinSupportedVersion ?? null,
-            forceUpdate: Boolean(env_1.env.appForceUpdate),
+            forceUpdate: true, // forceUpdate 고정값으로 설정
             currentVersion: currentVersion ?? null,
             shouldUpdate: false,
             message: null,
             appStoreUrl: app?.trackViewUrl ?? null,
         };
-        const baseForceUpdate = typeof forceUpdateOverride === 'boolean'
-            ? forceUpdateOverride
-            : dbVersion?.force_update ?? Boolean(env_1.env.appForceUpdate);
-        let requiresMin = false;
+        // forceUpdate는 항상 true로 고정
+        data.forceUpdate = true;
         if (currentVersion) {
             data.shouldUpdate = this.compareVersions(currentVersion, data.latestVersion) < 0;
-            requiresMin = data.minSupportedVersion
-                ? this.compareVersions(currentVersion, data.minSupportedVersion) < 0
-                : false;
         }
-        data.forceUpdate = baseForceUpdate || requiresMin;
         if (data.shouldUpdate || data.forceUpdate) {
             data.message = '최신 버전이 나왔습니다. 앱스토어에서 업데이트 해주세요!';
         }
