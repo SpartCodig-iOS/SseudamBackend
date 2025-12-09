@@ -56,9 +56,31 @@ test('listTravels returns mapped and paginated travel summaries', async () => {
   mock.method(poolModule, 'getPool', async () => mockPool);
 
   try {
-    const service = new TravelService({
+    const mockMetaService = {
       getCountries: async () => [{ code: 'JP', currencies: ['JPY'] }],
-    } as any);
+    } as any;
+    const mockCacheService = {
+      get: async () => null,
+      set: async () => undefined,
+      del: async () => undefined,
+      delPattern: async () => undefined,
+      mget: async () => [],
+      mset: async () => undefined,
+    } as any;
+    const mockEventEmitter = {
+      emit: () => undefined,
+    } as any;
+    const mockPushNotificationService = {
+      sendTravelNotification: async () => undefined,
+      sendExpenseNotification: async () => undefined,
+    } as any;
+
+    const service = new TravelService(
+      mockMetaService,
+      mockCacheService,
+      mockEventEmitter,
+      mockPushNotificationService
+    );
     const result = await service.listTravels('user-1', { page: 2, limit: 1 });
 
     assert.equal(result.total, 2);
@@ -156,9 +178,29 @@ test('updateTravel applies owner changes and returns refreshed summary', async (
   mock.method(poolModule, 'getPool', async () => mockPool);
 
   try {
-    const service = new TravelService({
+    const mockMetaService = {
       getCountries: async () => [{ code: 'JP', currencies: ['JPY'] }],
-    } as any);
+    } as any;
+    const mockCacheService = {
+      get: async () => null,
+      set: async () => undefined,
+      del: async () => undefined,
+      delPattern: async () => undefined,
+    } as any;
+    const mockEventEmitter = {
+      emit: () => undefined,
+    } as any;
+    const mockPushNotificationService = {
+      sendTravelNotification: async () => undefined,
+      sendExpenseNotification: async () => undefined,
+    } as any;
+
+    const service = new TravelService(
+      mockMetaService,
+      mockCacheService,
+      mockEventEmitter,
+      mockPushNotificationService
+    );
     const result = await service.updateTravel('travel-123', 'user-123', samplePayload);
 
     assert.equal(updateArgs[0], 'travel-123');
@@ -204,9 +246,27 @@ test('deleteTravel verifies ownership and clears related records in a transactio
   mock.method(poolModule, 'getPool', async () => mockPool);
 
   try {
-    const service = new TravelService({
+    const mockMetaService = {
       getCountries: async () => [{ code: 'JP', currencies: ['JPY'] }],
-    } as any);
+    } as any;
+    const mockCacheService = {
+      delPattern: async () => undefined,
+      del: async () => undefined,
+    } as any;
+    const mockEventEmitter = {
+      emit: () => undefined,
+    } as any;
+    const mockPushNotificationService = {
+      sendTravelNotification: async () => undefined,
+      sendExpenseNotification: async () => undefined,
+    } as any;
+
+    const service = new TravelService(
+      mockMetaService,
+      mockCacheService,
+      mockEventEmitter,
+      mockPushNotificationService
+    );
     await service.deleteTravel('travel-abc', 'owner-999');
 
     assert.equal(poolQuery.mock.callCount(), 1, 'ownership should be checked once');
