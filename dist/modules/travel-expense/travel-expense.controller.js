@@ -30,7 +30,14 @@ let TravelExpenseController = class TravelExpenseController {
         }
         const page = Number(req.query?.page ?? '1') || 1;
         const limit = Number(req.query?.limit ?? '20') || 20;
-        const result = await this.travelExpenseService.listExpenses(travelId, req.currentUser.id, { page, limit });
+        const startDate = req.query?.startDate;
+        const endDate = req.query?.endDate;
+        const result = await this.travelExpenseService.listExpenses(travelId, req.currentUser.id, {
+            page,
+            limit,
+            startDate,
+            endDate
+        });
         return (0, api_1.success)(result);
     }
     async create(travelId, body, req) {
@@ -65,6 +72,8 @@ __decorate([
     (0, swagger_1.ApiOkResponse)({ type: travel_response_dto_1.TravelExpenseDto, isArray: true }),
     (0, swagger_1.ApiQuery)({ name: 'page', required: false, type: Number, example: 1 }),
     (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number, example: 20 }),
+    (0, swagger_1.ApiQuery)({ name: 'startDate', required: false, type: String, example: '2025-01-01', description: '시작일 (YYYY-MM-DD)' }),
+    (0, swagger_1.ApiQuery)({ name: 'endDate', required: false, type: String, example: '2025-01-31', description: '종료일 (YYYY-MM-DD)' }),
     __param(0, (0, common_1.Param)('travelId')),
     __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),

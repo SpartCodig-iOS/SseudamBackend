@@ -30,6 +30,13 @@ let TravelSettlementController = class TravelSettlementController {
         const summary = await this.travelSettlementService.getSettlementSummary(travelId, req.currentUser.id);
         return (0, api_1.success)(summary);
     }
+    async getStatistics(travelId, req) {
+        if (!req.currentUser) {
+            throw new common_1.UnauthorizedException('Unauthorized');
+        }
+        const statistics = await this.travelSettlementService.getSettlementStatistics(travelId, req.currentUser.id);
+        return (0, api_1.success)(statistics);
+    }
     async saveSettlements(travelId, req) {
         if (!req.currentUser) {
             throw new common_1.UnauthorizedException('Unauthorized');
@@ -57,6 +64,48 @@ __decorate([
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], TravelSettlementController.prototype, "getSummary", null);
+__decorate([
+    (0, common_1.Get)('statistics'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: '정산 통계 조회 - 총 내역, 내가 쓴 금액, 모든 멤버의 받을/줄 금액' }),
+    (0, swagger_1.ApiOkResponse)({
+        schema: {
+            type: 'object',
+            properties: {
+                code: { type: 'number', example: 200 },
+                message: { type: 'string', example: 'success' },
+                data: {
+                    type: 'object',
+                    properties: {
+                        totalExpenseAmount: { type: 'number', description: '총 지출 금액 (KRW)', example: 150000 },
+                        myPaidAmount: { type: 'number', description: '내가 지출한 금액 (KRW)', example: 80000 },
+                        mySharedAmount: { type: 'number', description: '내가 부담해야 할 금액 (KRW)', example: 75000 },
+                        myBalance: { type: 'number', description: '내 잔액 (양수: 받을 금액, 음수: 줄 금액)', example: 5000 },
+                        balanceStatus: { type: 'string', enum: ['receive', 'pay', 'settled'], description: '잔액 상태', example: 'receive' },
+                        memberBalances: {
+                            type: 'array',
+                            description: '모든 여행 멤버의 잔액 정보',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    memberId: { type: 'string', description: '멤버 ID', example: 'e11c473b-052d-4740-8213-999c05bfc332' },
+                                    memberName: { type: 'string', description: '멤버 이름', example: '홍길동' },
+                                    balance: { type: 'number', description: '잔액 (양수: 받을 금액, 음수: 줄 금액)', example: -5000 },
+                                    balanceStatus: { type: 'string', enum: ['receive', 'pay', 'settled'], description: '잔액 상태', example: 'pay' }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }),
+    __param(0, (0, common_1.Param)('travelId')),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], TravelSettlementController.prototype, "getStatistics", null);
 __decorate([
     (0, common_1.Post)('save'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),

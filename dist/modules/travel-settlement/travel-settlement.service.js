@@ -194,6 +194,79 @@ let TravelSettlementService = class TravelSettlementService {
         await this.cacheService.del(travelId, { prefix: this.SETTLEMENT_PREFIX }).catch(() => undefined);
         return this.getSettlementSummary(travelId, userId);
     }
+    async getSettlementStatistics(travelId, userId) {
+        const pool = await (0, pool_1.getPool)();
+        await this.ensureMember(travelId, userId, pool);
+        // 전체 통계와 모든 멤버의 잔액을 한번에 조회
+        const [totalResult, balancesResult] = await Promise.all([
+            pool.query(`WITH travel_totals AS (
+           SELECT SUM(converted_amount) AS total_expense_amount
+           FROM travel_expenses
+           WHERE travel_id = $1
+         ),
+         my_paid AS (
+           SELECT COALESCE(SUM(converted_amount), 0) AS my_paid_amount
+           FROM travel_expenses
+           WHERE travel_id = $1 AND payer_id = $2
+         ),
+         my_shared AS (
+           SELECT COALESCE(SUM(tep.split_amount), 0) AS my_shared_amount
+           FROM travel_expense_participants tep
+           INNER JOIN travel_expenses te ON te.id = tep.expense_id
+           WHERE te.travel_id = $1 AND tep.member_id = $2
+         )
+         SELECT
+           travel_totals.total_expense_amount,
+           my_paid.my_paid_amount,
+           my_shared.my_shared_amount,
+           (my_paid.my_paid_amount - my_shared.my_shared_amount) AS my_balance
+         FROM travel_totals, my_paid, my_shared`, [travelId, userId]),
+            this.fetchBalances(travelId, pool)
+        ]);
+        const row = totalResult.rows[0];
+        if (!row) {
+            return {
+                totalExpenseAmount: 0,
+                myPaidAmount: 0,
+                mySharedAmount: 0,
+                myBalance: 0,
+                balanceStatus: 'settled',
+                memberBalances: [],
+            };
+        }
+        const totalExpenseAmount = Number(row.total_expense_amount || 0);
+        const myPaidAmount = Number(row.my_paid_amount || 0);
+        const mySharedAmount = Number(row.my_shared_amount || 0);
+        const myBalance = Number(row.my_balance || 0);
+        // 잔액 상태 결정 함수
+        const getBalanceStatus = (balance) => {
+            if (Math.abs(balance) <= 1) { // 1원 이하는 정산 완료로 처리
+                return 'settled';
+            }
+            else if (balance > 0) {
+                return 'receive';
+            }
+            else {
+                return 'pay';
+            }
+        };
+        const myBalanceStatus = getBalanceStatus(myBalance);
+        // 모든 멤버의 잔액 정보 포맷
+        const memberBalances = balancesResult.map(member => ({
+            memberId: member.memberId,
+            memberName: member.name || '알 수 없음',
+            balance: member.balance,
+            balanceStatus: getBalanceStatus(member.balance),
+        }));
+        return {
+            totalExpenseAmount,
+            myPaidAmount,
+            mySharedAmount,
+            myBalance,
+            balanceStatus: myBalanceStatus,
+            memberBalances,
+        };
+    }
 };
 exports.TravelSettlementService = TravelSettlementService;
 exports.TravelSettlementService = TravelSettlementService = __decorate([

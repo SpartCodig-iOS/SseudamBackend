@@ -329,14 +329,37 @@ export class TravelExpenseService {
   async listExpenses(
     travelId: string,
     userId: string,
-    pagination: { page?: number; limit?: number } = {},
+    pagination: { page?: number; limit?: number; startDate?: string; endDate?: string } = {},
   ): Promise<{ total: number; page: number; limit: number; items: TravelExpense[] }> {
     const context = await this.getTravelContext(travelId, userId);
     const pool = await getPool();
     const page = Math.max(1, pagination.page ?? 1);
     const limit = Math.min(100, Math.max(1, pagination.limit ?? 20));
     const offset = (page - 1) * limit;
-    const cacheKey = `${travelId}:${page}:${limit}`;
+
+    // 날짜 필터 파라미터 검증 및 준비
+    const { startDate, endDate } = pagination;
+    let dateFilter = '';
+    const queryParams = [travelId, limit, offset];
+    let paramIndex = 4;
+
+    if (startDate || endDate) {
+      const dateConditions = [];
+      if (startDate) {
+        dateConditions.push(`e.expense_date >= $${paramIndex}`);
+        queryParams.push(startDate);
+        paramIndex++;
+      }
+      if (endDate) {
+        dateConditions.push(`e.expense_date <= $${paramIndex}`);
+        queryParams.push(endDate);
+        paramIndex++;
+      }
+      dateFilter = `AND ${dateConditions.join(' AND ')}`;
+    }
+
+    // 캐시 키에 날짜 필터 포함
+    const cacheKey = `${travelId}:${page}:${limit}:${startDate || ''}:${endDate || ''}`;
 
     const cached = await this.getCachedExpenseList(cacheKey);
     if (cached) {
@@ -362,7 +385,7 @@ export class TravelExpenseService {
            ROW_NUMBER() OVER (ORDER BY e.expense_date DESC, e.created_at DESC) as row_num
          FROM travel_expenses e
          LEFT JOIN profiles payer ON payer.id = e.payer_id
-         WHERE e.travel_id = $1
+         WHERE e.travel_id = $1 ${dateFilter}
        ),
        paginated_expenses AS (
          SELECT * FROM expense_list
@@ -387,7 +410,7 @@ export class TravelExpenseService {
                 pe.expense_date, pe.category, pe.author_id, pe.payer_id, pe.payer_name,
                 pe.total_count, pe.row_num
        ORDER BY pe.row_num`,
-      [travelId, limit, (page - 1) * limit],
+      queryParams,
     );
 
     const total = Number(combinedResult.rows[0]?.total_count ?? 0);

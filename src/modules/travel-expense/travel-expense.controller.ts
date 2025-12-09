@@ -20,13 +20,23 @@ export class TravelExpenseController {
   @ApiOkResponse({ type: TravelExpenseDto, isArray: true })
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
   @ApiQuery({ name: 'limit', required: false, type: Number, example: 20 })
+  @ApiQuery({ name: 'startDate', required: false, type: String, example: '2025-01-01', description: '시작일 (YYYY-MM-DD)' })
+  @ApiQuery({ name: 'endDate', required: false, type: String, example: '2025-01-31', description: '종료일 (YYYY-MM-DD)' })
   async list(@Param('travelId') travelId: string, @Req() req: RequestWithUser) {
     if (!req.currentUser) {
       throw new UnauthorizedException('Unauthorized');
     }
     const page = Number((req.query?.page as string) ?? '1') || 1;
     const limit = Number((req.query?.limit as string) ?? '20') || 20;
-    const result = await this.travelExpenseService.listExpenses(travelId, req.currentUser.id, { page, limit });
+    const startDate = req.query?.startDate as string;
+    const endDate = req.query?.endDate as string;
+
+    const result = await this.travelExpenseService.listExpenses(travelId, req.currentUser.id, {
+      page,
+      limit,
+      startDate,
+      endDate
+    });
     return success(result);
   }
 
