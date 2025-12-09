@@ -1,8 +1,10 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { getPool } from '../../db/pool';
 import { CreateExpenseInput } from '../../validators/travelExpenseSchemas';
 import { MetaService } from '../meta/meta.service';
 import { CacheService } from '../../services/cacheService';
+import { PushNotificationService } from '../../services/push-notification.service';
 
 interface TravelContext {
   id: string;
@@ -35,6 +37,8 @@ export class TravelExpenseService {
   constructor(
     private readonly metaService: MetaService,
     private readonly cacheService: CacheService,
+    private readonly eventEmitter: EventEmitter2,
+    private readonly pushNotificationService: PushNotificationService,
   ) {}
 
   private readonly EXPENSE_LIST_PREFIX = 'expense:list';
@@ -317,6 +321,19 @@ export class TravelExpenseService {
       // 생성 후 캐시 무효화 (동기)로 즉시 반영
       await this.invalidateExpenseCaches(travelId);
 
+      // 지출 추가 알림 이벤트 발송
+      const currentUserName = this.getMemberName(context, userId) || '사용자';
+      await this.pushNotificationService.sendExpenseNotification(
+        'expense_added',
+        travelId,
+        userId,
+        currentUserName,
+        payload.title,
+        context.memberIds,
+        payload.amount,
+        payload.currency
+      );
+
       return result;
     } catch (error) {
       await client.query('ROLLBACK');
@@ -584,6 +601,19 @@ export class TravelExpenseService {
       // 수정 후 캐시 무효화 (동기로 처리해 즉시 반영)
       await this.invalidateExpenseCaches(travelId, expenseId);
 
+      // 지출 수정 알림 이벤트 발송
+      const currentUserName = this.getMemberName(context, userId) || '사용자';
+      await this.pushNotificationService.sendExpenseNotification(
+        'expense_updated',
+        travelId,
+        userId,
+        currentUserName,
+        payload.title,
+        context.memberIds,
+        payload.amount,
+        payload.currency
+      );
+
       return result;
     } catch (error) {
       await client.query('ROLLBACK');
@@ -608,6 +638,7 @@ export class TravelExpenseService {
       `SELECT
          e.id::text,
          e.travel_id::text,
+         e.title,
          e.payer_id::text,
          e.author_id::text
        FROM travel_expenses e
@@ -650,6 +681,17 @@ export class TravelExpenseService {
 
       // 삭제 후 캐시 무효화 (동기로 처리해 즉시 반영)
       await this.invalidateExpenseCaches(travelId, expenseId);
+
+      // 지출 삭제 알림 이벤트 발송
+      const currentUserName = this.getMemberName(context, userId) || '사용자';
+      await this.pushNotificationService.sendExpenseNotification(
+        'expense_deleted',
+        travelId,
+        userId,
+        currentUserName,
+        expense.title,
+        context.memberIds
+      );
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;

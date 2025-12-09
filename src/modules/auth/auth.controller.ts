@@ -46,6 +46,7 @@ export class AuthController {
         email: { type: 'string', format: 'email', example: 'string' },
         password: { type: 'string', minLength: 6, example: 'string' },
         name: { type: 'string', example: 'string' },
+        deviceToken: { type: 'string', description: 'APNS device token for push notifications', nullable: true },
       },
     },
   })
@@ -109,6 +110,7 @@ export class AuthController {
           example: 'user@example.com',
         },
         password: { type: 'string', example: 'string' },
+        deviceToken: { type: 'string', description: 'APNS device token for push notifications', nullable: true },
       },
     },
   })

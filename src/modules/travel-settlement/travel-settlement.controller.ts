@@ -68,38 +68,4 @@ export class TravelSettlementController {
     return success(statistics);
   }
 
-  @Post('save')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '정산 추천 결과 저장' })
-  @ApiOkResponse({ type: TravelSettlementDto })
-  async saveSettlements(@Param('travelId') travelId: string, @Req() req: RequestWithUser) {
-    if (!req.currentUser) {
-      throw new UnauthorizedException('Unauthorized');
-    }
-    const summary = await this.travelSettlementService.saveComputedSettlements(travelId, req.currentUser.id);
-    return success(summary, 'Settlements saved');
-  }
-
-  @Patch(':settlementId/complete')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '정산 완료 처리' })
-  @Patch(':settlementId/complete')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '정산 완료 처리' })
-  @ApiOkResponse({ type: TravelSettlementDto })
-  async completeSettlement(
-    @Param('travelId') travelId: string,
-    @Param('settlementId') settlementId: string,
-    @Req() req: RequestWithUser,
-  ) {
-    if (!req.currentUser) {
-      throw new UnauthorizedException('Unauthorized');
-    }
-    const summary = await this.travelSettlementService.markSettlementCompleted(
-      travelId,
-      req.currentUser.id,
-      settlementId,
-    );
-    return success(summary, 'Settlement completed');
-  }
 }

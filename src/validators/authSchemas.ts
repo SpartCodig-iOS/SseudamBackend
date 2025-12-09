@@ -5,6 +5,7 @@ export const signupSchema = z.object({
   email: z.string().email(),
   password: z.string().min(6),
   name: z.string().min(1).max(120).optional(),
+  deviceToken: z.string().min(10).optional(),
 });
 
 const loginTypeEnum = z.enum(LOGIN_TYPE_VALUES);
@@ -19,6 +20,7 @@ export const loginSchema = z
     authorizationCode: z.string().min(1).optional(),
     codeVerifier: z.string().min(10).optional(),
     redirectUri: z.string().min(5).optional(),
+    deviceToken: z.string().min(10).optional(),
   })
   .refine((data) => {
     const hasProvider = Boolean(data.provider && data.provider !== 'email');
@@ -39,6 +41,7 @@ export const loginSchema = z
     authorizationCode: data.authorizationCode?.trim(),
     codeVerifier: data.codeVerifier?.trim(),
     redirectUri: data.redirectUri?.trim(),
+    deviceToken: data.deviceToken?.trim(),
   }));
 
 export const oauthTokenSchema = z
@@ -50,6 +53,7 @@ export const oauthTokenSchema = z
     authorizationCode: z.string().min(10).optional(),
     codeVerifier: z.string().min(10).optional(),
     redirectUri: z.string().min(5).optional(),
+    deviceToken: z.string().min(10).optional(),
   })
   .refine((data) => {
     const loginType = data.loginType ?? 'email';
@@ -81,6 +85,7 @@ export const oauthTokenSchema = z
       authorizationCode: data.authorizationCode?.trim(),
       codeVerifier: data.codeVerifier?.trim(),
       redirectUri: data.redirectUri?.trim(),
+      deviceToken: data.deviceToken?.trim(),
     };
   });
 

@@ -11,8 +11,14 @@ export class VersionController {
 
   @Get()
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '앱 버전 조회 (App Store / bundleId 쿼리, 기본 APPLE_CLIENT_ID)' })
+  @ApiOperation({ summary: '앱 버전 조회 (고정된 bundleId: io.sseudam.co 사용)' })
   @ApiOkResponse({ type: AppVersionDto })
+  @ApiQuery({
+    name: 'currentVersion',
+    required: false,
+    schema: { type: 'string' },
+    description: '현재 앱 버전 (예: 1.0.0)',
+  })
   @ApiQuery({
     name: 'forceUpdate',
     required: false,
@@ -20,7 +26,6 @@ export class VersionController {
     description: '강제 업데이트 플래그를 강제로 지정 (없으면 서버/최소버전 규칙 사용)',
   })
   async getAppVersion(
-    @Query('bundleId') bundleId?: string,
     @Query('currentVersion') currentVersion?: string,
     @Query('forceUpdate') forceUpdateRaw?: string,
   ) {
@@ -36,7 +41,8 @@ export class VersionController {
       }
     }
 
-    const version = await this.versionService.getAppVersion(bundleId, currentVersion, forceOverride);
+    // bundleId는 하드코딩된 값 사용
+    const version = await this.versionService.getAppVersion('io.sseudam.co', currentVersion, forceOverride);
     return success(version);
   }
 }

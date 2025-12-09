@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { randomBytes } from 'crypto';
 import { Pool, PoolClient } from 'pg';
 import { getPool } from '../../db/pool';
@@ -13,6 +14,7 @@ import { CreateTravelInput } from '../../validators/travelSchemas';
 import { UserRecord } from '../../types/user';
 import { MetaService } from '../meta/meta.service';
 import { CacheService } from '../../services/cacheService';
+import { PushNotificationService } from '../../services/push-notification.service';
 import { env } from '../../config/env';
 
 export interface TravelSummary {
@@ -76,6 +78,8 @@ export class TravelService {
   constructor(
     private readonly metaService: MetaService,
     private readonly cacheService: CacheService = new CacheService(),
+    private readonly eventEmitter: EventEmitter2,
+    private readonly pushNotificationService: PushNotificationService,
   ) {}
 
   private async getCachedTravelList(key: string, rawKey = false): Promise<TravelSummary[] | null> {
@@ -1048,16 +1052,39 @@ export class TravelService {
       this.setMemberListCache(inviteRow.travel_id, travelSummary.members);
     }
 
+    // 새 멤버 추가 알림 이벤트 발송
+    if (travelSummary.members && travelSummary.members.length > 0) {
+      const pool = await getPool();
+      const userNameResult = await pool.query(
+        `SELECT name FROM profiles WHERE id = $1`,
+        [userId]
+      );
+      const currentUserName = userNameResult.rows[0]?.name || '새 멤버';
+      const memberIds = travelSummary.members.map(m => m.userId);
+
+      await this.pushNotificationService.sendTravelNotification(
+        'travel_member_added',
+        inviteRow.travel_id,
+        userId,
+        currentUserName,
+        travelSummary.title,
+        memberIds
+      );
+    }
+
     return this.reorderMembersForUser(travelSummary, userId);
   }
 
   async leaveTravel(travelId: string, userId: string): Promise<{ deletedTravel: boolean }> {
     const pool = await getPool();
+    let travelTitle = '';
+    let memberIds: string[] = [];
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       const membership = await client.query(
-        `SELECT tm.role, t.owner_id,
+        `SELECT tm.role, t.owner_id, t.title,
                 (SELECT COUNT(*)::int FROM travel_members WHERE travel_id = $1) AS member_count
          FROM travel_members tm
          INNER JOIN travels t ON t.id = tm.travel_id
@@ -1072,10 +1099,19 @@ export class TravelService {
         throw new NotFoundException('여행을 찾을 수 없거나 멤버가 아닙니다.');
       }
 
+      travelTitle = row.title;
+
       // 소유자(owner)는 여행을 나갈 수 없음
       if (row.role === 'owner' || row.owner_id === userId) {
         throw new ForbiddenException('여행 호스트는 나갈 수 없습니다. 다른 멤버에게 호스트 권한을 위임하거나 여행을 삭제해주세요.');
       }
+
+      // 알림 발송용 멤버 목록 조회 (나가기 전)
+      const membersResult = await client.query(
+        `SELECT user_id FROM travel_members WHERE travel_id = $1`,
+        [travelId]
+      );
+      memberIds = membersResult.rows.map(m => m.user_id);
 
       // 일반 멤버 탈퇴: 멤버만 제거, 데이터 유지
       await client.query(
@@ -1098,6 +1134,24 @@ export class TravelService {
     // 다른 멤버들의 목록/멤버십 캐시도 무효화해 즉시 반영
     await this.invalidateTravelCachesForMembers(travelId);
     await this.invalidateMembersCacheForTravel(travelId);
+
+    // 멤버 나가기 알림 이벤트 발송
+    if (memberIds.length > 0 && travelTitle) {
+      const userNameResult = await pool.query(
+        `SELECT name FROM profiles WHERE id = $1`,
+        [userId]
+      );
+      const currentUserName = userNameResult.rows[0]?.name || '멤버';
+
+      await this.pushNotificationService.sendTravelNotification(
+        'travel_member_removed',
+        travelId,
+        userId,
+        currentUserName,
+        travelTitle,
+        memberIds
+      );
+    }
 
     return { deletedTravel: false };
   }
@@ -1197,6 +1251,26 @@ export class TravelService {
     // 결과 캐시에 저장 (후속 요청 성능 개선)
     this.setCachedTravelDetail(travelId, summary);
 
+    // 여행 수정 알림 이벤트 발송
+    if (summary.members && summary.members.length > 0) {
+      const pool = await getPool();
+      const userNameResult = await pool.query(
+        `SELECT name FROM profiles WHERE id = $1`,
+        [userId]
+      );
+      const currentUserName = userNameResult.rows[0]?.name || '사용자';
+      const memberIds = summary.members.map(m => m.userId);
+
+      await this.pushNotificationService.sendTravelNotification(
+        'travel_updated',
+        travelId,
+        userId,
+        currentUserName,
+        payload.title,
+        memberIds
+      );
+    }
+
     return summary;
   }
 
@@ -1207,9 +1281,26 @@ export class TravelService {
       throw new BadRequestException('호스트는 스스로를 삭제할 수 없습니다.');
     }
 
+    let travelTitle = '';
+    let memberIds: string[] = [];
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
+
+      // 여행 정보와 멤버 목록 조회 (삭제 전)
+      const travelResult = await client.query(
+        `SELECT title FROM travels WHERE id = $1`,
+        [travelId]
+      );
+      travelTitle = travelResult.rows[0]?.title || '';
+
+      const membersResult = await client.query(
+        `SELECT user_id FROM travel_members WHERE travel_id = $1`,
+        [travelId]
+      );
+      memberIds = membersResult.rows.map(m => m.user_id);
+
       const target = await client.query(
         `SELECT 1 FROM travel_members WHERE travel_id = $1 AND user_id = $2 FOR UPDATE`,
         [travelId, memberId],
@@ -1239,5 +1330,23 @@ export class TravelService {
     // 다른 멤버들의 여행 목록 캐시도 무효화 (멤버 정보가 변경되므로)
     await this.invalidateTravelCachesForMembers(travelId);
     await this.invalidateMembersCacheForTravel(travelId);
+
+    // 멤버 삭제 알림 이벤트 발송
+    if (memberIds.length > 0 && travelTitle) {
+      const ownerNameResult = await pool.query(
+        `SELECT name FROM profiles WHERE id = $1`,
+        [ownerId]
+      );
+      const ownerName = ownerNameResult.rows[0]?.name || '호스트';
+
+      await this.pushNotificationService.sendTravelNotification(
+        'travel_member_removed',
+        travelId,
+        ownerId,
+        ownerName,
+        travelTitle,
+        memberIds
+      );
+    }
   }
 }
