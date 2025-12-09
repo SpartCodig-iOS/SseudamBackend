@@ -54,6 +54,12 @@ export class TravelExpenseController {
         currency: { type: 'string', example: 'JPY', description: '지출 통화 (3자리 코드)' },
         expenseDate: { type: 'string', example: '2025-11-26', description: 'YYYY-MM-DD' },
         category: { type: 'string', example: 'food', maxLength: 20, pattern: '^[a-zA-Z0-9가-힣_-]+$', nullable: true, description: '카테고리 (영문/숫자/한글/_/- 만 가능, 최대 20자)' },
+        payerId: {
+          type: 'string',
+          format: 'uuid',
+          nullable: true,
+          description: '결제자 ID (생략 시 작성자가 결제자)'
+        },
         participantIds: {
           type: 'array',
           items: { type: 'string', format: 'uuid' },
@@ -93,6 +99,12 @@ export class TravelExpenseController {
         currency: { type: 'string', example: 'JPY', description: '지출 통화 (3자리 코드)' },
         expenseDate: { type: 'string', example: '2025-11-26', description: 'YYYY-MM-DD' },
         category: { type: 'string', example: 'food', maxLength: 20, pattern: '^[a-zA-Z0-9가-힣_-]+$', nullable: true, description: '카테고리 (영문/숫자/한글/_/- 만 가능, 최대 20자)' },
+        payerId: {
+          type: 'string',
+          format: 'uuid',
+          nullable: true,
+          description: '결제자 ID (생략 시 작성자가 결제자)'
+        },
         participantIds: {
           type: 'array',
           items: { type: 'string', format: 'uuid' },
