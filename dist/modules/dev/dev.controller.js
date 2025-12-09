@@ -20,7 +20,6 @@ const apns_service_1 = require("../../services/apns.service");
 const device_token_service_1 = require("../../services/device-token.service");
 const api_1 = require("../../types/api");
 const crypto_1 = require("crypto");
-// 개발 환경이 아니면 이 컨트롤러를 완전히 숨김
 let DevController = class DevController {
     constructor(jwtService, apnsService, deviceTokenService) {
         this.jwtService = jwtService;
@@ -272,7 +271,6 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], DevController.prototype, "registerTestDevice", null);
 exports.DevController = DevController = __decorate([
-    (0, swagger_1.ApiExcludeController)(),
     (0, swagger_1.ApiTags)('Development'),
     (0, common_1.Controller)('api/v1/dev'),
     __metadata("design:paramtypes", [jwtService_1.JwtTokenService,

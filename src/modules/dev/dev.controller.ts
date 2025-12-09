@@ -8,8 +8,6 @@ import { success } from '../../types/api';
 import { UserRole } from '../../types/user';
 import { randomUUID } from 'crypto';
 
-// 개발 환경이 아니면 이 컨트롤러를 완전히 숨김
-@ApiExcludeController()
 @ApiTags('Development')
 @Controller('api/v1/dev')
 export class DevController {

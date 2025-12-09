@@ -1349,4 +1349,53 @@ export class TravelService {
       );
     }
   }
+
+  /**
+   * 사용자가 참여 중인 모든 여행의 멤버 목록을 조회
+   */
+  async getTravelMembersForUser(userId: string): Promise<{ travelId: string; travelTitle: string; members: TravelMember[] }[]> {
+    const pool = await getPool();
+
+    // 사용자가 참여 중인 여행 목록과 해당 여행의 모든 멤버 정보를 한 번에 조회
+    const result = await pool.query(
+      `SELECT
+         t.id::text AS travel_id,
+         t.title AS travel_title,
+         tm_all.user_id::text AS member_user_id,
+         tm_all.role AS member_role,
+         p.name AS member_name
+       FROM travels t
+       INNER JOIN travel_members tm_user ON tm_user.travel_id = t.id AND tm_user.user_id = $1
+       INNER JOIN travel_members tm_all ON tm_all.travel_id = t.id
+       LEFT JOIN profiles p ON p.id = tm_all.user_id
+       ORDER BY t.title,
+                CASE WHEN tm_all.role = 'owner' THEN 0 ELSE 1 END,
+                tm_all.joined_at`,
+      [userId]
+    );
+
+    // 결과를 여행별로 그룹화
+    const travelMembersMap = new Map<string, { travelId: string; travelTitle: string; members: TravelMember[] }>();
+
+    for (const row of result.rows) {
+      const { travel_id, travel_title, member_user_id, member_role, member_name } = row;
+
+      if (!travelMembersMap.has(travel_id)) {
+        travelMembersMap.set(travel_id, {
+          travelId: travel_id,
+          travelTitle: travel_title,
+          members: []
+        });
+      }
+
+      const travelMembers = travelMembersMap.get(travel_id)!;
+      travelMembers.members.push({
+        userId: member_user_id,
+        name: member_name,
+        role: member_role
+      });
+    }
+
+    return Array.from(travelMembersMap.values());
+  }
 }
