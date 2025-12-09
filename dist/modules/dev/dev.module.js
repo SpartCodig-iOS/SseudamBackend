@@ -9,13 +9,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DevModule = void 0;
 const common_1 = require("@nestjs/common");
 const dev_controller_1 = require("./dev.controller");
-const jwtService_1 = require("../../services/jwtService");
+const shared_module_1 = require("../shared/shared.module");
 let DevModule = class DevModule {
 };
 exports.DevModule = DevModule;
 exports.DevModule = DevModule = __decorate([
     (0, common_1.Module)({
+        imports: [shared_module_1.SharedModule],
         controllers: [dev_controller_1.DevController],
-        providers: [jwtService_1.JwtTokenService],
     })
 ], DevModule);

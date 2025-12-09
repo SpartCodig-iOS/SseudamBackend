@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
 import { DevController } from './dev.controller';
-import { JwtTokenService } from '../../services/jwtService';
+import { SharedModule } from '../shared/shared.module';
 
 @Module({
+  imports: [SharedModule],
   controllers: [DevController],
-  providers: [JwtTokenService],
 })
 export class DevModule {}
