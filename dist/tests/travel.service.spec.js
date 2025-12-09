@@ -89,9 +89,25 @@ const samplePayload = {
     const mockPool = { query: queryMock };
     node_test_1.mock.method(poolModule, 'getPool', async () => mockPool);
     try {
-        const service = new travel_service_1.TravelService({
+        const mockMetaService = {
             getCountries: async () => [{ code: 'JP', currencies: ['JPY'] }],
-        });
+        };
+        const mockCacheService = {
+            get: async () => null,
+            set: async () => undefined,
+            del: async () => undefined,
+            delPattern: async () => undefined,
+            mget: async () => [],
+            mset: async () => undefined,
+        };
+        const mockEventEmitter = {
+            emit: () => undefined,
+        };
+        const mockPushNotificationService = {
+            sendTravelNotification: async () => undefined,
+            sendExpenseNotification: async () => undefined,
+        };
+        const service = new travel_service_1.TravelService(mockMetaService, mockCacheService, mockEventEmitter, mockPushNotificationService);
         const result = await service.listTravels('user-1', { page: 2, limit: 1 });
         strict_1.default.equal(result.total, 2);
         strict_1.default.equal(result.page, 2);
@@ -181,9 +197,23 @@ const samplePayload = {
     mockPool.connect = connectMock;
     node_test_1.mock.method(poolModule, 'getPool', async () => mockPool);
     try {
-        const service = new travel_service_1.TravelService({
+        const mockMetaService = {
             getCountries: async () => [{ code: 'JP', currencies: ['JPY'] }],
-        });
+        };
+        const mockCacheService = {
+            get: async () => null,
+            set: async () => undefined,
+            del: async () => undefined,
+            delPattern: async () => undefined,
+        };
+        const mockEventEmitter = {
+            emit: () => undefined,
+        };
+        const mockPushNotificationService = {
+            sendTravelNotification: async () => undefined,
+            sendExpenseNotification: async () => undefined,
+        };
+        const service = new travel_service_1.TravelService(mockMetaService, mockCacheService, mockEventEmitter, mockPushNotificationService);
         const result = await service.updateTravel('travel-123', 'user-123', samplePayload);
         strict_1.default.equal(updateArgs[0], 'travel-123');
         strict_1.default.equal(updateArgs[1], 'user-123');
@@ -224,9 +254,21 @@ const samplePayload = {
     };
     node_test_1.mock.method(poolModule, 'getPool', async () => mockPool);
     try {
-        const service = new travel_service_1.TravelService({
+        const mockMetaService = {
             getCountries: async () => [{ code: 'JP', currencies: ['JPY'] }],
-        });
+        };
+        const mockCacheService = {
+            delPattern: async () => undefined,
+            del: async () => undefined,
+        };
+        const mockEventEmitter = {
+            emit: () => undefined,
+        };
+        const mockPushNotificationService = {
+            sendTravelNotification: async () => undefined,
+            sendExpenseNotification: async () => undefined,
+        };
+        const service = new travel_service_1.TravelService(mockMetaService, mockCacheService, mockEventEmitter, mockPushNotificationService);
         await service.deleteTravel('travel-abc', 'owner-999');
         strict_1.default.equal(poolQuery.mock.callCount(), 1, 'ownership should be checked once');
         strict_1.default.equal(mockPool.connect.mock.callCount(), 1, 'transaction client should be acquired');

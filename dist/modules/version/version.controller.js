@@ -22,7 +22,7 @@ let VersionController = class VersionController {
     constructor(versionService) {
         this.versionService = versionService;
     }
-    async getAppVersion(bundleId, currentVersion, forceUpdateRaw) {
+    async getAppVersion(currentVersion, forceUpdateRaw) {
         let forceOverride;
         if (typeof forceUpdateRaw !== 'undefined') {
             const normalized = String(forceUpdateRaw).toLowerCase();
@@ -36,7 +36,8 @@ let VersionController = class VersionController {
                 throw new common_1.BadRequestException("forceUpdate는 true/false 또는 1/0 값만 허용됩니다.");
             }
         }
-        const version = await this.versionService.getAppVersion(bundleId, currentVersion, forceOverride);
+        // bundleId는 하드코딩된 값 사용
+        const version = await this.versionService.getAppVersion('io.sseudam.co', currentVersion, forceOverride);
         return (0, api_1.success)(version);
     }
 };
@@ -44,19 +45,24 @@ exports.VersionController = VersionController;
 __decorate([
     (0, common_1.Get)(),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    (0, swagger_1.ApiOperation)({ summary: '앱 버전 조회 (App Store / bundleId 쿼리, 기본 APPLE_CLIENT_ID)' }),
+    (0, swagger_1.ApiOperation)({ summary: '앱 버전 조회 (고정된 bundleId: io.sseudam.co 사용)' }),
     (0, swagger_1.ApiOkResponse)({ type: app_version_dto_1.AppVersionDto }),
+    (0, swagger_1.ApiQuery)({
+        name: 'currentVersion',
+        required: false,
+        schema: { type: 'string' },
+        description: '현재 앱 버전 (예: 1.0.0)',
+    }),
     (0, swagger_1.ApiQuery)({
         name: 'forceUpdate',
         required: false,
         schema: { type: 'boolean' },
         description: '강제 업데이트 플래그를 강제로 지정 (없으면 서버/최소버전 규칙 사용)',
     }),
-    __param(0, (0, common_1.Query)('bundleId')),
-    __param(1, (0, common_1.Query)('currentVersion')),
-    __param(2, (0, common_1.Query)('forceUpdate')),
+    __param(0, (0, common_1.Query)('currentVersion')),
+    __param(1, (0, common_1.Query)('forceUpdate')),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, String]),
+    __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], VersionController.prototype, "getAppVersion", null);
 exports.VersionController = VersionController = __decorate([

@@ -187,6 +187,11 @@ __decorate([
                     description: '인가 요청에 사용한 redirectUri (카카오 커스텀 스킴 등)',
                     nullable: true,
                 },
+                deviceToken: {
+                    type: 'string',
+                    description: 'APNS device token for push notifications',
+                    nullable: true,
+                },
             },
         },
     }),
@@ -220,6 +225,11 @@ __decorate([
                     type: 'string',
                     description: '로그인 타입 (기본값 email)',
                     example: 'apple',
+                    nullable: true,
+                },
+                deviceToken: {
+                    type: 'string',
+                    description: 'APNS device token for push notifications',
                     nullable: true,
                 },
             },

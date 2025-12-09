@@ -7,6 +7,7 @@ exports.signupSchema = zod_1.z.object({
     email: zod_1.z.string().email(),
     password: zod_1.z.string().min(6),
     name: zod_1.z.string().min(1).max(120).optional(),
+    deviceToken: zod_1.z.string().min(10).optional(),
 });
 const loginTypeEnum = zod_1.z.enum(auth_1.LOGIN_TYPE_VALUES);
 exports.loginSchema = zod_1.z
@@ -19,6 +20,7 @@ exports.loginSchema = zod_1.z
     authorizationCode: zod_1.z.string().min(1).optional(),
     codeVerifier: zod_1.z.string().min(10).optional(),
     redirectUri: zod_1.z.string().min(5).optional(),
+    deviceToken: zod_1.z.string().min(10).optional(),
 })
     .refine((data) => {
     const hasProvider = Boolean(data.provider && data.provider !== 'email');
@@ -39,6 +41,7 @@ exports.loginSchema = zod_1.z
     authorizationCode: data.authorizationCode?.trim(),
     codeVerifier: data.codeVerifier?.trim(),
     redirectUri: data.redirectUri?.trim(),
+    deviceToken: data.deviceToken?.trim(),
 }));
 exports.oauthTokenSchema = zod_1.z
     .object({
@@ -49,6 +52,7 @@ exports.oauthTokenSchema = zod_1.z
     authorizationCode: zod_1.z.string().min(10).optional(),
     codeVerifier: zod_1.z.string().min(10).optional(),
     redirectUri: zod_1.z.string().min(5).optional(),
+    deviceToken: zod_1.z.string().min(10).optional(),
 })
     .refine((data) => {
     const loginType = data.loginType ?? 'email';
@@ -77,6 +81,7 @@ exports.oauthTokenSchema = zod_1.z
         authorizationCode: data.authorizationCode?.trim(),
         codeVerifier: data.codeVerifier?.trim(),
         redirectUri: data.redirectUri?.trim(),
+        deviceToken: data.deviceToken?.trim(),
     };
 });
 exports.refreshSchema = zod_1.z.object({

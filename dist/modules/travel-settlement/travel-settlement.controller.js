@@ -37,20 +37,6 @@ let TravelSettlementController = class TravelSettlementController {
         const statistics = await this.travelSettlementService.getSettlementStatistics(travelId, req.currentUser.id);
         return (0, api_1.success)(statistics);
     }
-    async saveSettlements(travelId, req) {
-        if (!req.currentUser) {
-            throw new common_1.UnauthorizedException('Unauthorized');
-        }
-        const summary = await this.travelSettlementService.saveComputedSettlements(travelId, req.currentUser.id);
-        return (0, api_1.success)(summary, 'Settlements saved');
-    }
-    async completeSettlement(travelId, settlementId, req) {
-        if (!req.currentUser) {
-            throw new common_1.UnauthorizedException('Unauthorized');
-        }
-        const summary = await this.travelSettlementService.markSettlementCompleted(travelId, req.currentUser.id, settlementId);
-        return (0, api_1.success)(summary, 'Settlement completed');
-    }
 };
 exports.TravelSettlementController = TravelSettlementController;
 __decorate([
@@ -106,32 +92,6 @@ __decorate([
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], TravelSettlementController.prototype, "getStatistics", null);
-__decorate([
-    (0, common_1.Post)('save'),
-    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    (0, swagger_1.ApiOperation)({ summary: '정산 추천 결과 저장' }),
-    (0, swagger_1.ApiOkResponse)({ type: travel_settlement_dto_1.TravelSettlementDto }),
-    __param(0, (0, common_1.Param)('travelId')),
-    __param(1, (0, common_1.Req)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, Object]),
-    __metadata("design:returntype", Promise)
-], TravelSettlementController.prototype, "saveSettlements", null);
-__decorate([
-    (0, common_1.Patch)(':settlementId/complete'),
-    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    (0, swagger_1.ApiOperation)({ summary: '정산 완료 처리' }),
-    (0, common_1.Patch)(':settlementId/complete'),
-    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    (0, swagger_1.ApiOperation)({ summary: '정산 완료 처리' }),
-    (0, swagger_1.ApiOkResponse)({ type: travel_settlement_dto_1.TravelSettlementDto }),
-    __param(0, (0, common_1.Param)('travelId')),
-    __param(1, (0, common_1.Param)('settlementId')),
-    __param(2, (0, common_1.Req)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [String, String, Object]),
-    __metadata("design:returntype", Promise)
-], TravelSettlementController.prototype, "completeSettlement", null);
 exports.TravelSettlementController = TravelSettlementController = __decorate([
     (0, swagger_1.ApiTags)('Travel Settlements'),
     (0, swagger_1.ApiBearerAuth)(),

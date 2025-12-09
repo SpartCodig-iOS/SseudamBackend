@@ -11,13 +11,17 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TravelExpenseService = void 0;
 const common_1 = require("@nestjs/common");
+const event_emitter_1 = require("@nestjs/event-emitter");
 const pool_1 = require("../../db/pool");
 const meta_service_1 = require("../meta/meta.service");
 const cacheService_1 = require("../../services/cacheService");
+const push_notification_service_1 = require("../../services/push-notification.service");
 let TravelExpenseService = class TravelExpenseService {
-    constructor(metaService, cacheService) {
+    constructor(metaService, cacheService, eventEmitter, pushNotificationService) {
         this.metaService = metaService;
         this.cacheService = cacheService;
+        this.eventEmitter = eventEmitter;
+        this.pushNotificationService = pushNotificationService;
         this.EXPENSE_LIST_PREFIX = 'expense:list';
         this.EXPENSE_DETAIL_PREFIX = 'expense:detail';
         this.EXPENSE_LIST_TTL_SECONDS = 120; // 2분
@@ -255,6 +259,9 @@ let TravelExpenseService = class TravelExpenseService {
             };
             // 생성 후 캐시 무효화 (동기)로 즉시 반영
             await this.invalidateExpenseCaches(travelId);
+            // 지출 추가 알림 이벤트 발송
+            const currentUserName = this.getMemberName(context, userId) || '사용자';
+            await this.pushNotificationService.sendExpenseNotification('expense_added', travelId, userId, currentUserName, payload.title, context.memberIds, payload.amount, payload.currency);
             return result;
         }
         catch (error) {
@@ -461,6 +468,9 @@ let TravelExpenseService = class TravelExpenseService {
             };
             // 수정 후 캐시 무효화 (동기로 처리해 즉시 반영)
             await this.invalidateExpenseCaches(travelId, expenseId);
+            // 지출 수정 알림 이벤트 발송
+            const currentUserName = this.getMemberName(context, userId) || '사용자';
+            await this.pushNotificationService.sendExpenseNotification('expense_updated', travelId, userId, currentUserName, payload.title, context.memberIds, payload.amount, payload.currency);
             return result;
         }
         catch (error) {
@@ -483,6 +493,7 @@ let TravelExpenseService = class TravelExpenseService {
         const expenseResult = await pool.query(`SELECT
          e.id::text,
          e.travel_id::text,
+         e.title,
          e.payer_id::text,
          e.author_id::text
        FROM travel_expenses e
@@ -509,6 +520,9 @@ let TravelExpenseService = class TravelExpenseService {
             await client.query('COMMIT');
             // 삭제 후 캐시 무효화 (동기로 처리해 즉시 반영)
             await this.invalidateExpenseCaches(travelId, expenseId);
+            // 지출 삭제 알림 이벤트 발송
+            const currentUserName = this.getMemberName(context, userId) || '사용자';
+            await this.pushNotificationService.sendExpenseNotification('expense_deleted', travelId, userId, currentUserName, expense.title, context.memberIds);
         }
         catch (error) {
             await client.query('ROLLBACK');
@@ -523,5 +537,7 @@ exports.TravelExpenseService = TravelExpenseService;
 exports.TravelExpenseService = TravelExpenseService = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [meta_service_1.MetaService,
-        cacheService_1.CacheService])
+        cacheService_1.CacheService,
+        event_emitter_1.EventEmitter2,
+        push_notification_service_1.PushNotificationService])
 ], TravelExpenseService);

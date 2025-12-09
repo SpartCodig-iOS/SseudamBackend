@@ -12,15 +12,19 @@ var TravelService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TravelService = void 0;
 const common_1 = require("@nestjs/common");
+const event_emitter_1 = require("@nestjs/event-emitter");
 const crypto_1 = require("crypto");
 const pool_1 = require("../../db/pool");
 const meta_service_1 = require("../meta/meta.service");
 const cacheService_1 = require("../../services/cacheService");
+const push_notification_service_1 = require("../../services/push-notification.service");
 const env_1 = require("../../config/env");
 let TravelService = TravelService_1 = class TravelService {
-    constructor(metaService, cacheService = new cacheService_1.CacheService()) {
+    constructor(metaService, cacheService = new cacheService_1.CacheService(), eventEmitter, pushNotificationService) {
         this.metaService = metaService;
         this.cacheService = cacheService;
+        this.eventEmitter = eventEmitter;
+        this.pushNotificationService = pushNotificationService;
         this.logger = new common_1.Logger(TravelService_1.name);
         this.countryCurrencyCache = new Map();
         this.countryCurrencyLoaded = false;
@@ -829,14 +833,24 @@ let TravelService = TravelService_1 = class TravelService {
         if (travelSummary.members) {
             this.setMemberListCache(inviteRow.travel_id, travelSummary.members);
         }
+        // 새 멤버 추가 알림 이벤트 발송
+        if (travelSummary.members && travelSummary.members.length > 0) {
+            const pool = await (0, pool_1.getPool)();
+            const userNameResult = await pool.query(`SELECT name FROM profiles WHERE id = $1`, [userId]);
+            const currentUserName = userNameResult.rows[0]?.name || '새 멤버';
+            const memberIds = travelSummary.members.map(m => m.userId);
+            await this.pushNotificationService.sendTravelNotification('travel_member_added', inviteRow.travel_id, userId, currentUserName, travelSummary.title, memberIds);
+        }
         return this.reorderMembersForUser(travelSummary, userId);
     }
     async leaveTravel(travelId, userId) {
         const pool = await (0, pool_1.getPool)();
+        let travelTitle = '';
+        let memberIds = [];
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
-            const membership = await client.query(`SELECT tm.role, t.owner_id,
+            const membership = await client.query(`SELECT tm.role, t.owner_id, t.title,
                 (SELECT COUNT(*)::int FROM travel_members WHERE travel_id = $1) AS member_count
          FROM travel_members tm
          INNER JOIN travels t ON t.id = tm.travel_id
@@ -847,10 +861,14 @@ let TravelService = TravelService_1 = class TravelService {
             if (!row) {
                 throw new common_1.NotFoundException('여행을 찾을 수 없거나 멤버가 아닙니다.');
             }
+            travelTitle = row.title;
             // 소유자(owner)는 여행을 나갈 수 없음
             if (row.role === 'owner' || row.owner_id === userId) {
                 throw new common_1.ForbiddenException('여행 호스트는 나갈 수 없습니다. 다른 멤버에게 호스트 권한을 위임하거나 여행을 삭제해주세요.');
             }
+            // 알림 발송용 멤버 목록 조회 (나가기 전)
+            const membersResult = await client.query(`SELECT user_id FROM travel_members WHERE travel_id = $1`, [travelId]);
+            memberIds = membersResult.rows.map(m => m.user_id);
             // 일반 멤버 탈퇴: 멤버만 제거, 데이터 유지
             await client.query(`DELETE FROM travel_members WHERE travel_id = $1 AND user_id = $2`, [travelId, userId]);
             await client.query('COMMIT');
@@ -869,6 +887,12 @@ let TravelService = TravelService_1 = class TravelService {
         // 다른 멤버들의 목록/멤버십 캐시도 무효화해 즉시 반영
         await this.invalidateTravelCachesForMembers(travelId);
         await this.invalidateMembersCacheForTravel(travelId);
+        // 멤버 나가기 알림 이벤트 발송
+        if (memberIds.length > 0 && travelTitle) {
+            const userNameResult = await pool.query(`SELECT name FROM profiles WHERE id = $1`, [userId]);
+            const currentUserName = userNameResult.rows[0]?.name || '멤버';
+            await this.pushNotificationService.sendTravelNotification('travel_member_removed', travelId, userId, currentUserName, travelTitle, memberIds);
+        }
         return { deletedTravel: false };
     }
     async updateTravel(travelId, userId, payload) {
@@ -947,6 +971,14 @@ let TravelService = TravelService_1 = class TravelService {
         const summary = await this.fetchSummaryForMember(travelId, userId, true);
         // 결과 캐시에 저장 (후속 요청 성능 개선)
         this.setCachedTravelDetail(travelId, summary);
+        // 여행 수정 알림 이벤트 발송
+        if (summary.members && summary.members.length > 0) {
+            const pool = await (0, pool_1.getPool)();
+            const userNameResult = await pool.query(`SELECT name FROM profiles WHERE id = $1`, [userId]);
+            const currentUserName = userNameResult.rows[0]?.name || '사용자';
+            const memberIds = summary.members.map(m => m.userId);
+            await this.pushNotificationService.sendTravelNotification('travel_updated', travelId, userId, currentUserName, payload.title, memberIds);
+        }
         return summary;
     }
     async removeMember(travelId, ownerId, memberId) {
@@ -955,9 +987,16 @@ let TravelService = TravelService_1 = class TravelService {
         if (ownerId === memberId) {
             throw new common_1.BadRequestException('호스트는 스스로를 삭제할 수 없습니다.');
         }
+        let travelTitle = '';
+        let memberIds = [];
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
+            // 여행 정보와 멤버 목록 조회 (삭제 전)
+            const travelResult = await client.query(`SELECT title FROM travels WHERE id = $1`, [travelId]);
+            travelTitle = travelResult.rows[0]?.title || '';
+            const membersResult = await client.query(`SELECT user_id FROM travel_members WHERE travel_id = $1`, [travelId]);
+            memberIds = membersResult.rows.map(m => m.user_id);
             const target = await client.query(`SELECT 1 FROM travel_members WHERE travel_id = $1 AND user_id = $2 FOR UPDATE`, [travelId, memberId]);
             if (!target.rows[0]) {
                 throw new common_1.NotFoundException('멤버를 찾을 수 없습니다.');
@@ -979,11 +1018,19 @@ let TravelService = TravelService_1 = class TravelService {
         // 다른 멤버들의 여행 목록 캐시도 무효화 (멤버 정보가 변경되므로)
         await this.invalidateTravelCachesForMembers(travelId);
         await this.invalidateMembersCacheForTravel(travelId);
+        // 멤버 삭제 알림 이벤트 발송
+        if (memberIds.length > 0 && travelTitle) {
+            const ownerNameResult = await pool.query(`SELECT name FROM profiles WHERE id = $1`, [ownerId]);
+            const ownerName = ownerNameResult.rows[0]?.name || '호스트';
+            await this.pushNotificationService.sendTravelNotification('travel_member_removed', travelId, ownerId, ownerName, travelTitle, memberIds);
+        }
     }
 };
 exports.TravelService = TravelService;
 exports.TravelService = TravelService = TravelService_1 = __decorate([
     (0, common_1.Injectable)(),
     __metadata("design:paramtypes", [meta_service_1.MetaService,
-        cacheService_1.CacheService])
+        cacheService_1.CacheService,
+        event_emitter_1.EventEmitter2,
+        push_notification_service_1.PushNotificationService])
 ], TravelService);
