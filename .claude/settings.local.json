@@ -220,7 +220,9 @@
       "Bash(http://localhost:8081/api/v1/dev/register-test-device)",
       "Bash(http://localhost:8081/api/v1/travels/5d5f1678-ac37-44b0-a26a-9d3b87928410/members)",
       "Bash(\"https://sseudam.up.railway.app/api/v1/travels/cf1280cf-f89e-4bb6-971a-15217ce19338/members\")",
-      "Bash(NODE_ENV=development PORT=8090 npm start:*)"
+      "Bash(NODE_ENV=development PORT=8090 npm start:*)",
+      "Bash(PORT=8082 npm run dev:*)",
+      "Bash(echo \"NODE_ENV: $NODE_ENV\")"
     ],
     "deny": [],
     "ask": []

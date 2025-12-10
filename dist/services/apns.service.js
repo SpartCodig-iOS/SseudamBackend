@@ -73,7 +73,7 @@ let APNSService = APNSService_1 = class APNSService {
                 },
                 production: useProduction, // 프로덕션 여부 환경변수로 제어
             });
-            this.logger.log('APNS initialized successfully');
+            this.logger.log(`APNS initialized successfully (Production: ${useProduction})`);
         }
         catch (error) {
             this.logger.error('Failed to initialize APNS', error);
