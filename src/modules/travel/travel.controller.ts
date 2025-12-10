@@ -225,6 +225,40 @@ export class TravelController {
     return success(travel);
   }
 
+  @Get(':travelId/members')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '특정 여행의 멤버 목록 조회' })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        code: { type: 'number', example: 200 },
+        message: { type: 'string', example: 'Travel members retrieved' },
+        data: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              userId: { type: 'string', example: 'uuid' },
+              name: { type: 'string', example: '사용자 이름' },
+              role: { type: 'string', example: 'host' }
+            }
+          }
+        }
+      }
+    }
+  })
+  async getTravelMembersByTravelId(
+    @Param('travelId', new ParseUUIDPipe({ version: '4' })) travelId: string,
+    @Req() req: RequestWithUser,
+  ) {
+    if (!req.currentUser) {
+      throw new UnauthorizedException('Unauthorized');
+    }
+    const members = await this.travelService.getTravelMembersByTravelId(travelId, req.currentUser.id);
+    return success(members, 'Travel members retrieved');
+  }
+
   @Delete(':travelId/members/:memberId')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '여행 멤버 삭제 (호스트 전용)' })

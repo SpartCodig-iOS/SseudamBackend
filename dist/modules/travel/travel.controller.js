@@ -78,6 +78,13 @@ let TravelController = class TravelController {
         const travel = await this.travelService.getTravelDetail(travelId, req.currentUser.id);
         return (0, api_1.success)(travel);
     }
+    async getTravelMembersByTravelId(travelId, req) {
+        if (!req.currentUser) {
+            throw new common_1.UnauthorizedException('Unauthorized');
+        }
+        const members = await this.travelService.getTravelMembersByTravelId(travelId, req.currentUser.id);
+        return (0, api_1.success)(members, 'Travel members retrieved');
+    }
     async removeMember(travelId, memberId, req) {
         if (!req.currentUser) {
             throw new common_1.UnauthorizedException('Unauthorized');
@@ -300,6 +307,36 @@ __decorate([
     __metadata("design:paramtypes", [String, Object]),
     __metadata("design:returntype", Promise)
 ], TravelController.prototype, "getTravel", null);
+__decorate([
+    (0, common_1.Get)(':travelId/members'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: '특정 여행의 멤버 목록 조회' }),
+    (0, swagger_1.ApiOkResponse)({
+        schema: {
+            type: 'object',
+            properties: {
+                code: { type: 'number', example: 200 },
+                message: { type: 'string', example: 'Travel members retrieved' },
+                data: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            userId: { type: 'string', example: 'uuid' },
+                            name: { type: 'string', example: '사용자 이름' },
+                            role: { type: 'string', example: 'host' }
+                        }
+                    }
+                }
+            }
+        }
+    }),
+    __param(0, (0, common_1.Param)('travelId', new common_1.ParseUUIDPipe({ version: '4' }))),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], TravelController.prototype, "getTravelMembersByTravelId", null);
 __decorate([
     (0, common_1.Delete)(':travelId/members/:memberId'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),

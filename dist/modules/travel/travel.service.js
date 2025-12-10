@@ -1064,6 +1064,32 @@ let TravelService = TravelService_1 = class TravelService {
         }
         return Array.from(travelMembersMap.values());
     }
+    /**
+     * 특정 여행의 멤버 목록 조회
+     */
+    async getTravelMembersByTravelId(travelId, requestingUserId) {
+        const pool = await (0, pool_1.getPool)();
+        // 요청하는 사용자가 해당 여행의 멤버인지 확인
+        const memberCheckResult = await pool.query('SELECT 1 FROM travel_members WHERE travel_id = $1 AND user_id = $2', [travelId, requestingUserId]);
+        if (memberCheckResult.rows.length === 0) {
+            throw new common_1.NotFoundException('여행을 찾을 수 없거나 접근 권한이 없습니다.');
+        }
+        // 해당 여행의 모든 멤버 목록 조회
+        const result = await pool.query(`SELECT
+         tm.user_id::text AS user_id,
+         tm.role,
+         p.name
+       FROM travel_members tm
+       LEFT JOIN profiles p ON p.id = tm.user_id
+       WHERE tm.travel_id = $1
+       ORDER BY CASE WHEN tm.role = 'owner' THEN 0 ELSE 1 END,
+                tm.joined_at`, [travelId]);
+        return result.rows.map((row) => ({
+            userId: row.user_id,
+            name: row.name,
+            role: row.role
+        }));
+    }
 };
 exports.TravelService = TravelService;
 exports.TravelService = TravelService = TravelService_1 = __decorate([
