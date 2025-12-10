@@ -14,7 +14,7 @@ import {
   UseGuards,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { success } from '../../types/api';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RequestWithUser } from '../../types/request';
@@ -228,6 +228,13 @@ export class TravelController {
   @Get(':travelId/members')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '특정 여행의 멤버 목록 조회' })
+  @ApiParam({
+    name: 'travelId',
+    type: 'string',
+    format: 'uuid',
+    description: '여행 ID',
+    example: 'e11cc73b-052d-4740-8213-999c05bfc332'
+  })
   @ApiOkResponse({
     schema: {
       type: 'object',

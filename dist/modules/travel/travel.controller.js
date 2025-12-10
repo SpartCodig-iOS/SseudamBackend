@@ -311,6 +311,13 @@ __decorate([
     (0, common_1.Get)(':travelId/members'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     (0, swagger_1.ApiOperation)({ summary: '특정 여행의 멤버 목록 조회' }),
+    (0, swagger_1.ApiParam)({
+        name: 'travelId',
+        type: 'string',
+        format: 'uuid',
+        description: '여행 ID',
+        example: 'e11cc73b-052d-4740-8213-999c05bfc332'
+    }),
     (0, swagger_1.ApiOkResponse)({
         schema: {
             type: 'object',
