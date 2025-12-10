@@ -81,7 +81,7 @@ let OptimizedDeleteService = OptimizedDeleteService_1 = class OptimizedDeleteSer
     async fetchUserProfileData(userId) {
         const pool = await (0, pool_1.getPool)();
         try {
-            const result = await pool.query(`SELECT login_type, apple_refresh_token, google_refresh_token, avatar_url
+            const result = await pool.query(`SELECT login_type, avatar_url
          FROM profiles
          WHERE id = $1 LIMIT 1`, [userId]);
             return result.rows[0] || null;
@@ -135,35 +135,38 @@ let OptimizedDeleteService = OptimizedDeleteService_1 = class OptimizedDeleteSer
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
+            const profileRow = await client.query(`SELECT name FROM profiles WHERE id = $1 LIMIT 1`, [userId]);
+            const displayName = profileRow.rows[0]?.name ?? '탈퇴한 사용자';
             // 소유한 여행 ID를 먼저 수집 (캐시 무효화용)
             const targetTravelsResult = await client.query('SELECT id::text FROM travels WHERE owner_id = $1', [userId]);
             const travelIdArray = targetTravelsResult.rows.map((r) => r.id);
-            // 1) 사용자가 소유한 여행과 그 하위 데이터 제거
-            if (travelIdArray.length > 0) {
-                await client.query(`DELETE FROM travel_expense_participants
-             WHERE expense_id IN (SELECT id FROM travel_expenses WHERE travel_id = ANY($1::uuid[]))`, [travelIdArray]);
-                await client.query(`DELETE FROM travel_expenses WHERE travel_id = ANY($1::uuid[])`, [travelIdArray]);
-                await client.query(`DELETE FROM travel_settlements WHERE travel_id = ANY($1::uuid[])`, [travelIdArray]);
-                await client.query(`DELETE FROM travel_invites WHERE travel_id = ANY($1::uuid[])`, [travelIdArray]);
-                await client.query(`DELETE FROM travel_members WHERE travel_id = ANY($1::uuid[])`, [travelIdArray]);
-                await client.query(`DELETE FROM travels WHERE id = ANY($1::uuid[])`, [travelIdArray]);
-            }
-            // 2) 사용자 자신이 만든/참여한 잔여 데이터 제거
-            await client.query(`DELETE FROM travel_expense_participants WHERE member_id = $1`, [userId]);
-            await client.query(`DELETE FROM travel_expenses WHERE payer_id = $1`, [userId]);
-            await client.query(`DELETE FROM travel_settlements WHERE from_member = $1 OR to_member = $1`, [userId]);
-            await client.query(`DELETE FROM travel_invites WHERE created_by = $1`, [userId]);
-            await client.query(`DELETE FROM travel_members WHERE user_id = $1`, [userId]);
+            // 1) 사용자 세션/토큰 정리
             await client.query(`DELETE FROM user_sessions WHERE user_id = $1`, [userId]);
-            // 3) 프로필 삭제
+            await client.query(`DELETE FROM oauth_tokens WHERE user_id = $1`, [userId]).catch(() => undefined);
+            await client.query(`DELETE FROM device_tokens WHERE user_id = $1`, [userId]).catch(() => undefined);
+            // 2) 사용자 이름을 기록에 남기고 FK를 해제
+            await client.query(`UPDATE travel_expenses
+           SET display_name = COALESCE(display_name, $2),
+               payer_id = NULL,
+               author_id = NULL
+         WHERE payer_id = $1 OR author_id = $1`, [userId, displayName]);
+            await client.query(`UPDATE travel_expense_participants
+           SET display_name = COALESCE(display_name, $2),
+               member_id = NULL
+         WHERE member_id = $1`, [userId, displayName]);
+            await client.query(`UPDATE travel_members
+           SET display_name = COALESCE(display_name, $2),
+               user_id = NULL
+         WHERE user_id = $1`, [userId, displayName]);
+            // 3) 프로필 삭제 (앞에서 세션/토큰 제거로 FK 정리됨)
             await client.query(`DELETE FROM profiles WHERE id = $1`, [userId]);
             await client.query('COMMIT');
-            this.logger.debug(`Local data deletion completed for user ${userId}`);
+            this.logger.debug(`Local data anonymization completed for user ${userId}`);
             return travelIdArray;
         }
         catch (error) {
             await client.query('ROLLBACK');
-            this.logger.error(`Local deletion failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            this.logger.error(`Local anonymization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
             throw error;
         }
         finally {

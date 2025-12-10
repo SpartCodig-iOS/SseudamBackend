@@ -317,35 +317,35 @@ let TravelExpenseService = class TravelExpenseService {
         }
         // 최적화: 모든 데이터를 한 번에 조회 (JOIN + JSON 집계) - 페이지네이션 없이 전체 반환
         const combinedResult = await pool.query(`WITH expense_list AS (
-         SELECT
-           e.id::text,
-           e.title,
-           e.note,
-           e.amount,
-           e.currency,
-           e.converted_amount,
-           to_char(e.expense_date::date, 'YYYY-MM-DD') as expense_date,
-           e.category,
-           e.author_id::text,
-           e.payer_id::text,
-           payer.name AS payer_name,
-           ROW_NUMBER() OVER (ORDER BY e.expense_date::date DESC, e.created_at DESC) as row_num
-         FROM travel_expenses e
-         LEFT JOIN profiles payer ON payer.id = e.payer_id
-         WHERE e.travel_id = $1 ${dateFilter}
-       )
+        SELECT
+          e.id::text,
+          e.title,
+          e.note,
+          e.amount,
+          e.currency,
+          e.converted_amount,
+          to_char(e.expense_date::date, 'YYYY-MM-DD') as expense_date,
+          e.category,
+          e.author_id::text,
+          e.payer_id::text,
+          COALESCE(e.display_name, payer.name) AS payer_name,
+          ROW_NUMBER() OVER (ORDER BY e.expense_date::date DESC, e.created_at DESC) as row_num
+        FROM travel_expenses e
+        LEFT JOIN profiles payer ON payer.id = e.payer_id
+        WHERE e.travel_id = $1 ${dateFilter}
+      )
        SELECT
          el.*,
-         COALESCE(
-           json_agg(
-             json_build_object(
-               'memberId', tep.member_id::text,
-               'name', p.name
-             )
-             ORDER BY p.name
-           ) FILTER (WHERE tep.member_id IS NOT NULL),
-           '[]'::json
-         ) as participants
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'memberId', tep.member_id::text,
+              'name', COALESCE(tep.display_name, p.name)
+            )
+            ORDER BY p.name
+          ) FILTER (WHERE tep.member_id IS NOT NULL),
+          '[]'::json
+        ) as participants
        FROM expense_list el
        LEFT JOIN travel_expense_participants tep ON tep.expense_id = el.id::uuid
        LEFT JOIN profiles p ON p.id = tep.member_id

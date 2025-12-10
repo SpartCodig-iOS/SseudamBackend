@@ -345,7 +345,7 @@ export class TravelService {
            tm.travel_id::text AS travel_id,
            tm.user_id::text AS user_id,
            tm.role,
-           p.name,
+           COALESCE(tm.display_name, p.name) AS name,
            p.email,
            p.avatar_url,
            tm.joined_at
@@ -1383,7 +1383,7 @@ export class TravelService {
          t.title AS travel_title,
          tm_all.user_id::text AS member_user_id,
          tm_all.role AS member_role,
-         p.name AS member_name,
+         COALESCE(tm_all.display_name, p.name) AS member_name,
          p.email AS member_email,
          p.avatar_url AS member_avatar
        FROM travels t
@@ -1444,7 +1444,7 @@ export class TravelService {
       `SELECT
          tm.user_id::text AS user_id,
          tm.role,
-         p.name,
+         COALESCE(tm.display_name, p.name) AS name,
          p.email,
          p.avatar_url
        FROM travel_members tm
