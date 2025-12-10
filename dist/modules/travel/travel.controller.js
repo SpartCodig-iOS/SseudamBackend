@@ -279,13 +279,31 @@ __decorate([
                 code: { type: 'number', example: 200 },
                 message: { type: 'string', example: 'Travel members retrieved' },
                 data: {
-                    type: 'array',
-                    items: {
-                        type: 'object',
-                        properties: {
-                            userId: { type: 'string', example: 'uuid' },
-                            name: { type: 'string', example: '사용자 이름' },
-                            role: { type: 'string', example: 'host' }
+                    type: 'object',
+                    properties: {
+                        currentUser: {
+                            type: 'object',
+                            nullable: true,
+                            properties: {
+                                userId: { type: 'string', example: 'uuid' },
+                                name: { type: 'string', example: '사용자 이름' },
+                                email: { type: 'string', example: 'user@example.com', nullable: true },
+                                avatarUrl: { type: 'string', example: 'https://example.com/avatar.png', nullable: true },
+                                role: { type: 'string', example: 'host' }
+                            }
+                        },
+                        members: {
+                            type: 'array',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    userId: { type: 'string', example: 'uuid' },
+                                    name: { type: 'string', example: '사용자 이름' },
+                                    email: { type: 'string', example: 'user@example.com', nullable: true },
+                                    avatarUrl: { type: 'string', example: 'https://example.com/avatar.png', nullable: true },
+                                    role: { type: 'string', example: 'host' }
+                                }
+                            }
                         }
                     }
                 }

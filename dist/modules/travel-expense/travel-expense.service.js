@@ -46,19 +46,20 @@ let TravelExpenseService = class TravelExpenseService {
     async getTravelContext(travelId, userId) {
         const cached = this.contextCache.get(travelId);
         if (cached && cached.expiresAt > Date.now()) {
-            if (!cached.data.memberIds.includes(userId)) {
-                throw new common_1.BadRequestException('해당 여행에 접근 권한이 없습니다.');
+            if (cached.data.memberIds.includes(userId)) {
+                return cached.data;
             }
-            return cached.data;
+            // 캐시가 있지만 내 멤버십이 없으면 캐시를 버리고 DB 재조회
+            this.contextCache.delete(travelId);
         }
         try {
             const redisCached = await this.cacheService.get(travelId, { prefix: this.CONTEXT_PREFIX });
             if (redisCached) {
-                this.contextCache.set(travelId, { data: redisCached, expiresAt: Date.now() + this.CONTEXT_TTL_SECONDS * 1000 });
-                if (!redisCached.memberIds.includes(userId)) {
-                    throw new common_1.BadRequestException('해당 여행에 접근 권한이 없습니다.');
+                if (redisCached.memberIds.includes(userId)) {
+                    this.contextCache.set(travelId, { data: redisCached, expiresAt: Date.now() + this.CONTEXT_TTL_SECONDS * 1000 });
+                    return redisCached;
                 }
-                return redisCached;
+                // Redis 캐시에도 없으면 무시하고 DB 재조회
             }
         }
         catch {

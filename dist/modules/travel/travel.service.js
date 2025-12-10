@@ -1113,13 +1113,16 @@ let TravelService = TravelService_1 = class TravelService {
        WHERE tm.travel_id = $1
        ORDER BY CASE WHEN tm.role = 'owner' THEN 0 ELSE 1 END,
                 tm.joined_at`, [travelId]);
-        return result.rows.map((row) => ({
+        const members = result.rows.map((row) => ({
             userId: row.user_id,
             name: row.name ?? null,
             email: row.email ?? null,
             avatarUrl: row.avatar_url ?? null,
             role: row.role
         }));
+        const currentUser = members.find(member => member.userId === requestingUserId) ?? null;
+        const others = members.filter(member => member.userId !== requestingUserId);
+        return { currentUser, members: others };
     }
 };
 exports.TravelService = TravelService;

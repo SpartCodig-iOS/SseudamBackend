@@ -1433,7 +1433,10 @@ export class TravelService {
   /**
    * 특정 여행의 멤버 목록 조회
    */
-  async getTravelMembersByTravelId(travelId: string, requestingUserId: string): Promise<TravelMember[]> {
+  async getTravelMembersByTravelId(
+    travelId: string,
+    requestingUserId: string,
+  ): Promise<{ currentUser: TravelMember | null; members: TravelMember[] }> {
     const pool = await getPool();
 
     // 요청하는 사용자가 해당 여행의 멤버인지 확인
@@ -1462,12 +1465,17 @@ export class TravelService {
       [travelId]
     );
 
-    return result.rows.map((row) => ({
+    const members = result.rows.map((row) => ({
       userId: row.user_id,
       name: row.name ?? null,
       email: row.email ?? null,
       avatarUrl: row.avatar_url ?? null,
       role: row.role
     }));
+
+    const currentUser = members.find(member => member.userId === requestingUserId) ?? null;
+    const others = members.filter(member => member.userId !== requestingUserId);
+
+    return { currentUser, members: others };
   }
 }
