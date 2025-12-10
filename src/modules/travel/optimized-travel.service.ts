@@ -184,16 +184,14 @@ export class OptimizedTravelService {
          INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
          LEFT JOIN travel_invites ti ON ti.travel_id = t.id AND ti.status = 'active'
            LEFT JOIN LATERAL (
-             SELECT json_agg(
-                      json_build_object(
-                        'userId', tm2.user_id,
-                        'name', p.name,
-                        'email', p.email,
-                        'avatarUrl', p.avatar_url,
+            SELECT json_agg(
+                     json_build_object(
+                       'userId', tm2.user_id,
+                       'name', COALESCE(tm2.display_name, p.name),
                         'role', tm2.role
-                    )
-                    ORDER BY tm2.joined_at
-                  ) AS members
+                   )
+                   ORDER BY tm2.joined_at
+                 ) AS members
            FROM travel_members tm2
            LEFT JOIN profiles p ON p.id = tm2.user_id
            WHERE tm2.travel_id = t.id
@@ -310,7 +308,11 @@ export class OptimizedTravelService {
     // 멤버 정보가 있으면 members 배열로, 없으면 memberCount로
     if (row.members) {
       const members = typeof row.members === 'string' ? JSON.parse(row.members) : row.members;
-      result.members = members || [];
+      result.members = (members || []).map((m: any) => ({
+        userId: m.userId,
+        name: m.name ?? null,
+        role: m.role,
+      }));
     } else if (row.member_count !== undefined) {
       result.memberCount = row.member_count;
     }
@@ -355,12 +357,10 @@ export class OptimizedTravelService {
        INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $2
        INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
        LEFT JOIN LATERAL (
-             SELECT json_agg(
-                      json_build_object(
-                        'userId', tm2.user_id,
-                        'name', p.name,
-                        'email', p.email,
-                        'avatarUrl', p.avatar_url,
+            SELECT json_agg(
+                     json_build_object(
+                       'userId', tm2.user_id,
+                       'name', COALESCE(tm2.display_name, p.name),
                         'role', tm2.role
                     )
                     ORDER BY tm2.joined_at

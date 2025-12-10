@@ -458,6 +458,13 @@ export class TravelService {
     const destinationCurrency = this.resolveDestinationCurrency(row.country_code, row.base_currency);
     const inviteCode = row.invite_code ?? undefined;
     const deepLink = inviteCode ? this.generateDeepLink(inviteCode) : undefined;
+    const sanitizeMembers = (list: any[] | undefined) =>
+      list?.map((m: any) => ({
+        userId: m.userId ?? m.user_id,
+        name: m.name ?? null,
+        role: m.role,
+      }));
+    const sanitizedMembers = sanitizeMembers(members) ?? sanitizeMembers(row.members);
     return {
       id: row.id,
       title: row.title,
@@ -474,7 +481,7 @@ export class TravelService {
       status: row.status,
       createdAt: row.created_at,
       ownerName: row.owner_name ?? null,
-      members: members ?? row.members ?? undefined,
+      members: sanitizedMembers ?? row.members ?? undefined,
     };
   }
 
