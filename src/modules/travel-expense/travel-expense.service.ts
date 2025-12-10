@@ -201,7 +201,7 @@ export class TravelExpenseService {
     await this.cacheService.del(travelId, { prefix: this.CONTEXT_PREFIX }).catch(() => undefined);
   }
 
-  private async getCachedExpenseList(cacheKey: string): Promise<{ total: number; items: TravelExpense[] } | null> {
+  private async getCachedExpenseList(cacheKey: string): Promise<TravelExpense[] | null> {
     try {
       return await this.cacheService.get<TravelExpense[]>(cacheKey, {
         prefix: this.EXPENSE_LIST_PREFIX,

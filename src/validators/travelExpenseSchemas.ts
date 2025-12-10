@@ -18,9 +18,7 @@ export const createExpenseSchema = z.object({
   expenseDate: z
     .string()
     .regex(isoDatePattern, 'expenseDate 는 YYYY-MM-DD 형식이어야 합니다.'),
-  category: z.enum(expenseCategories, {
-    errorMap: () => ({ message: 'category는 지정된 값만 사용할 수 있습니다.' }),
-  }).optional().nullable(),
+  category: z.enum(expenseCategories).optional().nullable(),
   payerId: z.string().uuid().optional().nullable(),
   participantIds: z.array(z.string().uuid('잘못된 참가자 ID 형식입니다.'))
     .min(1, '참가자는 최소 1명 이상이어야 합니다.')

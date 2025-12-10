@@ -163,7 +163,12 @@ __decorate([
     __metadata("design:type", String)
 ], TravelExpenseDto.prototype, "expenseDate", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 'food', nullable: true }),
+    (0, swagger_1.ApiProperty)({
+        example: 'food_and_drink',
+        nullable: true,
+        enum: ['accommodation', 'food_and_drink', 'transportation', 'activity', 'shopping', 'other'],
+        description: '지출 카테고리',
+    }),
     __metadata("design:type", Object)
 ], TravelExpenseDto.prototype, "category", void 0);
 __decorate([

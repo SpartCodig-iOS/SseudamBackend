@@ -28,13 +28,9 @@ let TravelExpenseController = class TravelExpenseController {
         if (!req.currentUser) {
             throw new common_1.UnauthorizedException('Unauthorized');
         }
-        const page = Number(req.query?.page ?? '1') || 1;
-        const limit = Number(req.query?.limit ?? '20') || 20;
         const startDate = req.query?.startDate;
         const endDate = req.query?.endDate;
         const result = await this.travelExpenseService.listExpenses(travelId, req.currentUser.id, {
-            page,
-            limit,
             startDate,
             endDate
         });
@@ -70,8 +66,6 @@ __decorate([
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     (0, swagger_1.ApiOperation)({ summary: '여행 지출 목록 조회' }),
     (0, swagger_1.ApiOkResponse)({ type: travel_response_dto_1.TravelExpenseDto, isArray: true }),
-    (0, swagger_1.ApiQuery)({ name: 'page', required: false, type: Number, example: 1 }),
-    (0, swagger_1.ApiQuery)({ name: 'limit', required: false, type: Number, example: 20 }),
     (0, swagger_1.ApiQuery)({ name: 'startDate', required: false, type: String, example: '2025-01-01', description: '시작일 (YYYY-MM-DD)' }),
     (0, swagger_1.ApiQuery)({ name: 'endDate', required: false, type: String, example: '2025-01-31', description: '종료일 (YYYY-MM-DD)' }),
     __param(0, (0, common_1.Param)('travelId')),
@@ -94,7 +88,13 @@ __decorate([
                 amount: { type: 'number', example: 3500, minimum: 0.01, description: '지출 금액 (필수, 양수)' },
                 currency: { type: 'string', example: 'JPY', description: '지출 통화 (3자리 코드)' },
                 expenseDate: { type: 'string', example: '2025-11-26', description: 'YYYY-MM-DD' },
-                category: { type: 'string', example: 'food', maxLength: 20, pattern: '^[a-zA-Z0-9가-힣_-]+$', nullable: true, description: '카테고리 (영문/숫자/한글/_/- 만 가능, 최대 20자)' },
+                category: {
+                    type: 'string',
+                    nullable: true,
+                    enum: ['accommodation', 'food_and_drink', 'transportation', 'activity', 'shopping', 'other'],
+                    example: 'food_and_drink',
+                    description: '지출 카테고리',
+                },
                 payerId: {
                     type: 'string',
                     format: 'uuid',
@@ -134,7 +134,13 @@ __decorate([
                 amount: { type: 'number', example: 3500, minimum: 0.01, description: '지출 금액 (필수, 양수)' },
                 currency: { type: 'string', example: 'JPY', description: '지출 통화 (3자리 코드)' },
                 expenseDate: { type: 'string', example: '2025-11-26', description: 'YYYY-MM-DD' },
-                category: { type: 'string', example: 'food', maxLength: 20, pattern: '^[a-zA-Z0-9가-힣_-]+$', nullable: true, description: '카테고리 (영문/숫자/한글/_/- 만 가능, 최대 20자)' },
+                category: {
+                    type: 'string',
+                    nullable: true,
+                    enum: ['accommodation', 'food_and_drink', 'transportation', 'activity', 'shopping', 'other'],
+                    example: 'food_and_drink',
+                    description: '지출 카테고리',
+                },
                 payerId: {
                     type: 'string',
                     format: 'uuid',
