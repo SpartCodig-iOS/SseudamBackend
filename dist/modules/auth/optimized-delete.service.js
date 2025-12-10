@@ -147,6 +147,7 @@ let OptimizedDeleteService = OptimizedDeleteService_1 = class OptimizedDeleteSer
                 await client.query(`DELETE FROM oauth_tokens WHERE user_id = $1`, [userId]);
             }
             await client.query(`DELETE FROM device_tokens WHERE user_id = $1`, [userId]).catch(() => undefined);
+            await client.query(`UPDATE travel_invites SET created_by = NULL WHERE created_by = $1`, [userId]);
             // 2) 사용자 이름을 기록에 남기고 FK를 해제
             await client.query(`UPDATE travel_expenses
            SET display_name = COALESCE(display_name, $2),
