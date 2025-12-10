@@ -59,6 +59,7 @@ exports.SharedModule = SharedModule = __decorate([
             rate_limit_guard_1.RateLimitGuard,
         ],
         exports: [
+            event_emitter_1.EventEmitterModule,
             cacheService_1.CacheService,
             supabaseService_1.SupabaseService,
             oauth_token_service_1.OAuthTokenService,

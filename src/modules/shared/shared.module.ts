@@ -47,6 +47,7 @@ import { PushNotificationService } from '../../services/push-notification.servic
     RateLimitGuard,
   ],
   exports: [
+    EventEmitterModule,
     CacheService,
     SupabaseService,
     OAuthTokenService,
