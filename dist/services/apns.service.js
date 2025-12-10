@@ -104,7 +104,13 @@ let APNSService = APNSService_1 = class APNSService {
             // APNS 토픽 설정 (번들 ID)
             note.topic = 'io.sseudam.co';
             // 알림 전송
+            this.logger.debug(`Sending APNS notification to ${notification.deviceToken.substring(0, 8)}... with topic: ${note.topic}`);
             const result = await this.apnProvider.send(note, notification.deviceToken);
+            this.logger.debug('APNS send result:', {
+                sent: result.sent?.length || 0,
+                failed: result.failed?.length || 0,
+                deviceToken: notification.deviceToken.substring(0, 8)
+            });
             if (result.sent && result.sent.length > 0) {
                 this.logger.log(`APNS notification sent successfully to ${notification.deviceToken.substring(0, 8)}...`);
                 return true;
@@ -115,6 +121,7 @@ let APNSService = APNSService_1 = class APNSService {
                     deviceToken: notification.deviceToken.substring(0, 8),
                     status: failure.status,
                     response: failure.response,
+                    device: failure.device
                 });
                 return false;
             }
