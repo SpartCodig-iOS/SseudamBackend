@@ -111,7 +111,12 @@ export class TravelExpenseDto {
   @ApiProperty({ example: '2025-11-17' })
   expenseDate!: string;
 
-  @ApiProperty({ example: 'food', nullable: true })
+  @ApiProperty({
+    example: 'food_and_drink',
+    nullable: true,
+    enum: ['accommodation', 'food_and_drink', 'transportation', 'activity', 'shopping', 'other'],
+    description: '지출 카테고리',
+  })
   category?: string | null;
 
   @ApiProperty({ example: 'e11cc73b-052d-4740-8213-999c05bfc332' })

@@ -203,7 +203,7 @@ export class TravelExpenseService {
 
   private async getCachedExpenseList(cacheKey: string): Promise<{ total: number; items: TravelExpense[] } | null> {
     try {
-      return await this.cacheService.get<{ total: number; items: TravelExpense[] }>(cacheKey, {
+      return await this.cacheService.get<TravelExpense[]>(cacheKey, {
         prefix: this.EXPENSE_LIST_PREFIX,
       });
     } catch {
@@ -211,7 +211,7 @@ export class TravelExpenseService {
     }
   }
 
-  private async setCachedExpenseList(cacheKey: string, payload: { total: number; items: TravelExpense[] }): Promise<void> {
+  private async setCachedExpenseList(cacheKey: string, payload: TravelExpense[]): Promise<void> {
     this.cacheService.set(cacheKey, payload, {
       prefix: this.EXPENSE_LIST_PREFIX,
       ttl: this.EXPENSE_LIST_TTL_SECONDS,
@@ -360,19 +360,16 @@ export class TravelExpenseService {
   async listExpenses(
     travelId: string,
     userId: string,
-    pagination: { page?: number; limit?: number; startDate?: string; endDate?: string } = {},
-  ): Promise<{ total: number; page: number; limit: number; items: TravelExpense[] }> {
+    pagination: { startDate?: string; endDate?: string } = {},
+  ): Promise<TravelExpense[]> {
     const context = await this.getTravelContext(travelId, userId);
     const pool = await getPool();
-    const page = Math.max(1, pagination.page ?? 1);
-    const limit = Math.min(100, Math.max(1, pagination.limit ?? 20));
-    const offset = (page - 1) * limit;
 
     // 날짜 필터 파라미터 검증 및 준비
     const { startDate, endDate } = pagination;
     let dateFilter = '';
-    const queryParams = [travelId, limit, offset];
-    let paramIndex = 4;
+    const queryParams = [travelId];
+    let paramIndex = 2;
 
     if (startDate || endDate) {
       const dateConditions = [];
@@ -392,14 +389,14 @@ export class TravelExpenseService {
     }
 
     // 캐시 키에 날짜 필터 포함
-    const cacheKey = `${travelId}:${page}:${limit}:${startDate || ''}:${endDate || ''}`;
+    const cacheKey = `${travelId}:${startDate || ''}:${endDate || ''}`;
 
     const cached = await this.getCachedExpenseList(cacheKey);
     if (cached) {
-      return { total: cached.total, page, limit, items: cached.items };
+      return cached;
     }
 
-    // 최적화: 모든 데이터를 한 번에 조회 (JOIN + JSON 집계)
+    // 최적화: 모든 데이터를 한 번에 조회 (JOIN + JSON 집계) - 페이지네이션 없이 전체 반환
     const combinedResult = await pool.query(
       `WITH expense_list AS (
          SELECT
@@ -414,18 +411,13 @@ export class TravelExpenseService {
            e.author_id::text,
            e.payer_id::text,
            payer.name AS payer_name,
-           COUNT(*) OVER() AS total_count,
            ROW_NUMBER() OVER (ORDER BY e.expense_date::date DESC, e.created_at DESC) as row_num
          FROM travel_expenses e
          LEFT JOIN profiles payer ON payer.id = e.payer_id
          WHERE e.travel_id = $1 ${dateFilter}
-       ),
-       paginated_expenses AS (
-         SELECT * FROM expense_list
-         WHERE row_num > $3 AND row_num <= $3 + $2
        )
        SELECT
-         pe.*,
+         el.*,
          COALESCE(
            json_agg(
              json_build_object(
@@ -436,17 +428,15 @@ export class TravelExpenseService {
            ) FILTER (WHERE tep.member_id IS NOT NULL),
            '[]'::json
          ) as participants
-       FROM paginated_expenses pe
-       LEFT JOIN travel_expense_participants tep ON tep.expense_id = pe.id::uuid
+       FROM expense_list el
+       LEFT JOIN travel_expense_participants tep ON tep.expense_id = el.id::uuid
        LEFT JOIN profiles p ON p.id = tep.member_id
-       GROUP BY pe.id, pe.title, pe.note, pe.amount, pe.currency, pe.converted_amount,
-                pe.expense_date, pe.category, pe.author_id, pe.payer_id, pe.payer_name,
-                pe.total_count, pe.row_num
-       ORDER BY pe.row_num`,
+       GROUP BY el.id, el.title, el.note, el.amount, el.currency, el.converted_amount,
+                el.expense_date, el.category, el.author_id, el.payer_id, el.payer_name,
+                el.row_num
+       ORDER BY el.row_num`,
       queryParams,
     );
-
-    const total = Number(combinedResult.rows[0]?.total_count ?? 0);
 
     const items = await Promise.all(combinedResult.rows.map(async (row) => {
       const amount = Number(row.amount);
@@ -474,9 +464,9 @@ export class TravelExpenseService {
     }));
 
     // 캐시에 저장
-    await this.setCachedExpenseList(cacheKey, { total, items });
+    await this.setCachedExpenseList(cacheKey, items);
 
-    return { total, page, limit, items };
+    return items;
   }
 
   /**
