@@ -34,8 +34,8 @@ let TravelController = class TravelController {
         const limit = Number(request.query?.limit ?? '20') || 20;
         const rawStatus = request.query?.status?.toLowerCase();
         const status = rawStatus === 'active' || rawStatus === 'archived' ? rawStatus : undefined;
-        // 정렬 파라미터는 받지 않고 시작일 오름차순으로 고정
-        const sort = 'start_date';
+        // 정렬 파라미터는 받지 않고 생성일 내림차순(최근 생성 순)으로 고정
+        const sort = 'recent';
         if (rawStatus && !status) {
             throw new common_1.BadRequestException('status 값은 active 또는 archived 여야 합니다.');
         }
