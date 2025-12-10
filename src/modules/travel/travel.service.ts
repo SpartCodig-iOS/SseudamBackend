@@ -46,6 +46,8 @@ export interface TravelInvitePayload {
 export interface TravelMember {
   userId: string;
   name: string | null;
+  email?: string | null;
+  avatarUrl?: string | null;
   role: string;
 }
 
@@ -344,6 +346,8 @@ export class TravelService {
            tm.user_id::text AS user_id,
            tm.role,
            p.name,
+           p.email,
+           p.avatar_url,
            tm.joined_at
          FROM travel_members tm
          LEFT JOIN profiles p ON p.id = tm.user_id
@@ -359,6 +363,8 @@ export class TravelService {
         list.push({
           userId: row.user_id,
           name: row.name ?? null,
+          email: row.email ?? null,
+          avatarUrl: row.avatar_url ?? null,
           role: row.role ?? 'member',
         });
         membersMap.set(row.travel_id, list);
@@ -1377,7 +1383,9 @@ export class TravelService {
          t.title AS travel_title,
          tm_all.user_id::text AS member_user_id,
          tm_all.role AS member_role,
-         p.name AS member_name
+         p.name AS member_name,
+         p.email AS member_email,
+         p.avatar_url AS member_avatar
        FROM travels t
        INNER JOIN travel_members tm_user ON tm_user.travel_id = t.id AND tm_user.user_id = $1
        INNER JOIN travel_members tm_all ON tm_all.travel_id = t.id
@@ -1392,7 +1400,7 @@ export class TravelService {
     const travelMembersMap = new Map<string, { travelId: string; travelTitle: string; members: TravelMember[] }>();
 
     for (const row of result.rows) {
-      const { travel_id, travel_title, member_user_id, member_role, member_name } = row;
+      const { travel_id, travel_title, member_user_id, member_role, member_name, member_email, member_avatar } = row;
 
       if (!travelMembersMap.has(travel_id)) {
         travelMembersMap.set(travel_id, {
@@ -1406,6 +1414,8 @@ export class TravelService {
       travelMembers.members.push({
         userId: member_user_id,
         name: member_name,
+        email: member_email ?? null,
+        avatarUrl: member_avatar ?? null,
         role: member_role
       });
     }
@@ -1434,7 +1444,9 @@ export class TravelService {
       `SELECT
          tm.user_id::text AS user_id,
          tm.role,
-         p.name
+         p.name,
+         p.email,
+         p.avatar_url
        FROM travel_members tm
        LEFT JOIN profiles p ON p.id = tm.user_id
        WHERE tm.travel_id = $1
@@ -1445,7 +1457,9 @@ export class TravelService {
 
     return result.rows.map((row) => ({
       userId: row.user_id,
-      name: row.name,
+      name: row.name ?? null,
+      email: row.email ?? null,
+      avatarUrl: row.avatar_url ?? null,
       role: row.role
     }));
   }

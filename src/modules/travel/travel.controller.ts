@@ -207,6 +207,8 @@ export class TravelController {
             properties: {
               userId: { type: 'string', example: 'uuid' },
               name: { type: 'string', example: '사용자 이름' },
+              email: { type: 'string', example: 'user@example.com', nullable: true },
+              avatarUrl: { type: 'string', example: 'https://example.com/avatar.png', nullable: true },
               role: { type: 'string', example: 'host' }
             }
           }

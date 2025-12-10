@@ -132,22 +132,22 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
         if (includeMembers) {
             // 멤버 정보 포함 (최적화된 쿼리)
             return pool.query(`SELECT
-           t.id::text AS id,
-           t.title,
-           t.start_date::text AS start_date,
-           t.end_date::text AS end_date,
-           t.country_code,
-           t.country_name_kr,
-           t.country_currencies,
-           t.base_currency,
-           t.base_exchange_rate,
-           ti.invite_code,
-           CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS status,
-           tm.role,
-           t.created_at::text,
-           owner_profile.name AS owner_name,
-           COALESCE(members.members, '[]'::json) AS members
-         FROM travels t
+             t.id::text AS id,
+             t.title,
+             to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date,
+             to_char(t.end_date::date, 'YYYY-MM-DD') AS end_date,
+             t.country_code,
+             t.country_name_kr,
+             t.country_currencies,
+             t.base_currency,
+             t.base_exchange_rate,
+             ti.invite_code,
+             CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS status,
+             tm.role,
+             t.created_at::text,
+             owner_profile.name AS owner_name,
+             COALESCE(members.members, '[]'::json) AS members
+           FROM travels t
          INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
          INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
          LEFT JOIN travel_invites ti ON ti.travel_id = t.id AND ti.status = 'active'
@@ -156,6 +156,8 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
                       json_build_object(
                         'userId', tm2.user_id,
                         'name', p.name,
+                        'email', p.email,
+                        'avatarUrl', p.avatar_url,
                         'role', tm2.role
                     )
                     ORDER BY tm2.joined_at
@@ -174,8 +176,8 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
             return pool.query(`SELECT
            t.id::text AS id,
            t.title,
-           t.start_date::text AS start_date,
-           t.end_date::text AS end_date,
+           to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date,
+           to_char(t.end_date::date, 'YYYY-MM-DD') AS end_date,
            t.country_code,
            t.country_name_kr,
            t.country_currencies,
@@ -266,8 +268,8 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
         const result = await pool.query(`SELECT
           t.id::text AS id,
           t.title,
-          t.start_date::text,
-          t.end_date::text,
+          to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date,
+          to_char(t.end_date::date, 'YYYY-MM-DD') AS end_date,
           t.country_code,
           t.country_name_kr,
           t.country_currencies,
@@ -283,16 +285,18 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
        INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $2
        INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
        LEFT JOIN LATERAL (
-         SELECT json_agg(
-                  json_build_object(
-                    'userId', tm2.user_id,
-                    'name', p.name,
-                    'role', tm2.role
-                  )
-                  ORDER BY tm2.joined_at
-                ) AS members
-         FROM travel_members tm2
-         LEFT JOIN profiles p ON p.id = tm2.user_id
+             SELECT json_agg(
+                      json_build_object(
+                        'userId', tm2.user_id,
+                        'name', p.name,
+                        'email', p.email,
+                        'avatarUrl', p.avatar_url,
+                        'role', tm2.role
+                    )
+                    ORDER BY tm2.joined_at
+                  ) AS members
+           FROM travel_members tm2
+           LEFT JOIN profiles p ON p.id = tm2.user_id
          WHERE tm2.travel_id = t.id
        ) AS members ON TRUE
        WHERE t.id = $1`, [travelId, userId]);
@@ -355,8 +359,8 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
             const result = await pool.query(`SELECT
            t.id::text AS id,
            t.title,
-           t.start_date::text,
-           t.end_date::text,
+           to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date,
+           to_char(t.end_date::date, 'YYYY-MM-DD') AS end_date,
            t.country_code,
            t.country_name_kr,
            t.base_currency,

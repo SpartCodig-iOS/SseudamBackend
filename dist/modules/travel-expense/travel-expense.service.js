@@ -30,6 +30,18 @@ let TravelExpenseService = class TravelExpenseService {
         this.CONTEXT_TTL_SECONDS = 600; // 10분
         this.contextCache = new Map();
         this.conversionCache = new Map(); // currency->KRW 환율 캐시 (요청 단위)
+        this.DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+    }
+    normalizeExpenseDate(input) {
+        if (!input || !this.DATE_PATTERN.test(input)) {
+            throw new common_1.BadRequestException('expenseDate는 YYYY-MM-DD 형식이어야 합니다.');
+        }
+        // 간단 검증: 존재하지 않는 날짜 거르기
+        const parsed = new Date(`${input}T00:00:00`);
+        if (Number.isNaN(parsed.getTime())) {
+            throw new common_1.BadRequestException('유효한 expenseDate가 아닙니다.');
+        }
+        return input;
     }
     async getTravelContext(travelId, userId) {
         const cached = this.contextCache.get(travelId);
@@ -194,6 +206,7 @@ let TravelExpenseService = class TravelExpenseService {
         const context = await this.getTravelContext(travelId, userId);
         const payerId = payload.payerId ?? userId;
         this.ensurePayer(context.memberIds, payerId);
+        const expenseDate = this.normalizeExpenseDate(payload.expenseDate);
         const participantIds = this.normalizeParticipants(context.memberIds, payload.participantIds);
         if (participantIds.length === 0) {
             throw new common_1.BadRequestException('최소 한 명 이상의 참여자가 필요합니다.');
@@ -208,7 +221,7 @@ let TravelExpenseService = class TravelExpenseService {
             const expenseResult = await client.query(`INSERT INTO travel_expenses
            (travel_id, title, note, amount, currency, converted_amount, expense_date, category, payer_id, author_id)
          VALUES
-           ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           ($1, $2, $3, $4, $5, $6, to_date($7, 'YYYY-MM-DD'), $8, $9, $10)
          RETURNING
            id::text,
            title,
@@ -216,7 +229,7 @@ let TravelExpenseService = class TravelExpenseService {
            amount,
            currency,
            converted_amount,
-           expense_date::text,
+           expense_date::date::text,
            category,
            payer_id::text,
            author_id::text`, [
@@ -226,7 +239,7 @@ let TravelExpenseService = class TravelExpenseService {
                 payload.amount,
                 payload.currency.toUpperCase(),
                 convertedAmount,
-                payload.expenseDate,
+                expenseDate,
                 payload.category ?? null,
                 payerId,
                 userId,
@@ -250,7 +263,7 @@ let TravelExpenseService = class TravelExpenseService {
                 amount: Number(expense.amount),
                 currency: expense.currency,
                 convertedAmount: Number(expense.converted_amount),
-                expenseDate: expense.expense_date,
+                expenseDate,
                 category: expense.category,
                 authorId: expense.author_id,
                 payerId: expense.payer_id,
@@ -286,13 +299,15 @@ let TravelExpenseService = class TravelExpenseService {
         if (startDate || endDate) {
             const dateConditions = [];
             if (startDate) {
-                dateConditions.push(`e.expense_date >= $${paramIndex}`);
-                queryParams.push(startDate);
+                const normalized = this.normalizeExpenseDate(startDate);
+                dateConditions.push(`e.expense_date::date >= to_date($${paramIndex}, 'YYYY-MM-DD')`);
+                queryParams.push(normalized);
                 paramIndex++;
             }
             if (endDate) {
-                dateConditions.push(`e.expense_date <= $${paramIndex}`);
-                queryParams.push(endDate);
+                const normalized = this.normalizeExpenseDate(endDate);
+                dateConditions.push(`e.expense_date::date <= to_date($${paramIndex}, 'YYYY-MM-DD')`);
+                queryParams.push(normalized);
                 paramIndex++;
             }
             dateFilter = `AND ${dateConditions.join(' AND ')}`;
@@ -312,13 +327,13 @@ let TravelExpenseService = class TravelExpenseService {
            e.amount,
            e.currency,
            e.converted_amount,
-           e.expense_date::text,
+           to_char(e.expense_date::date, 'YYYY-MM-DD') as expense_date,
            e.category,
            e.author_id::text,
            e.payer_id::text,
            payer.name AS payer_name,
            COUNT(*) OVER() AS total_count,
-           ROW_NUMBER() OVER (ORDER BY e.expense_date DESC, e.created_at DESC) as row_num
+           ROW_NUMBER() OVER (ORDER BY e.expense_date::date DESC, e.created_at DESC) as row_num
          FROM travel_expenses e
          LEFT JOIN profiles payer ON payer.id = e.payer_id
          WHERE e.travel_id = $1 ${dateFilter}
@@ -394,6 +409,7 @@ let TravelExpenseService = class TravelExpenseService {
         }
         const payerId = payload.payerId ?? userId;
         this.ensurePayer(context.memberIds, payerId);
+        const expenseDate = this.normalizeExpenseDate(payload.expenseDate);
         const participantIds = this.normalizeParticipants(context.memberIds, payload.participantIds);
         if (participantIds.length === 0) {
             throw new common_1.BadRequestException('최소 한 명 이상의 참여자가 필요합니다.');
@@ -412,7 +428,7 @@ let TravelExpenseService = class TravelExpenseService {
              amount = $5,
              currency = $6,
              converted_amount = $7,
-             expense_date = $8,
+             expense_date = to_date($8, 'YYYY-MM-DD'),
              category = $9,
              payer_id = $10,
              updated_at = NOW()
@@ -424,7 +440,7 @@ let TravelExpenseService = class TravelExpenseService {
            amount,
            currency,
            converted_amount,
-           expense_date::text,
+           expense_date::date::text,
            category,
            payer_id::text,
            author_id::text`, [
@@ -435,7 +451,7 @@ let TravelExpenseService = class TravelExpenseService {
                 payload.amount,
                 payload.currency.toUpperCase(),
                 convertedAmount,
-                payload.expenseDate,
+                expenseDate,
                 payload.category ?? null,
                 payerId,
             ]);
@@ -459,7 +475,7 @@ let TravelExpenseService = class TravelExpenseService {
                 amount: Number(expense.amount),
                 currency: expense.currency,
                 convertedAmount: Number(expense.converted_amount),
-                expenseDate: expense.expense_date,
+                expenseDate,
                 category: expense.category,
                 authorId: expense.author_id,
                 payerId: expense.payer_id,

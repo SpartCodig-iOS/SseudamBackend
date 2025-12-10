@@ -109,6 +109,14 @@ __decorate([
     __metadata("design:type", Object)
 ], TravelMemberDto.prototype, "name", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({ example: 'user@example.com', nullable: true }),
+    __metadata("design:type", Object)
+], TravelMemberDto.prototype, "email", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'https://example.com/avatar.png', nullable: true }),
+    __metadata("design:type", Object)
+], TravelMemberDto.prototype, "avatarUrl", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ example: 'member' }),
     __metadata("design:type", String)
 ], TravelMemberDto.prototype, "role", void 0);

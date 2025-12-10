@@ -71,6 +71,12 @@ export class TravelMemberDto {
   @ApiProperty({ example: '김철수', nullable: true })
   name!: string | null;
 
+  @ApiProperty({ example: 'user@example.com', nullable: true })
+  email?: string | null;
+
+  @ApiProperty({ example: 'https://example.com/avatar.png', nullable: true })
+  avatarUrl?: string | null;
+
   @ApiProperty({ example: 'member' })
   role!: string;
 }

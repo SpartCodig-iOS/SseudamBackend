@@ -267,6 +267,8 @@ let TravelService = TravelService_1 = class TravelService {
            tm.user_id::text AS user_id,
            tm.role,
            p.name,
+           p.email,
+           p.avatar_url,
            tm.joined_at
          FROM travel_members tm
          LEFT JOIN profiles p ON p.id = tm.user_id
@@ -279,6 +281,8 @@ let TravelService = TravelService_1 = class TravelService {
                 list.push({
                     userId: row.user_id,
                     name: row.name ?? null,
+                    email: row.email ?? null,
+                    avatarUrl: row.avatar_url ?? null,
                     role: row.role ?? 'member',
                 });
                 membersMap.set(row.travel_id, list);
@@ -322,8 +326,8 @@ let TravelService = TravelService_1 = class TravelService {
         const result = await pool.query(`SELECT
           t.id::text AS id,
           t.title,
-          t.start_date::text,
-          t.end_date::text,
+          to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date,
+          to_char(t.end_date::date, 'YYYY-MM-DD') AS end_date,
           t.country_code,
           t.country_name_kr,
           t.country_currencies,
@@ -454,6 +458,17 @@ let TravelService = TravelService_1 = class TravelService {
         }
         return '';
     }
+    normalizeDate(input, fieldName) {
+        const pattern = /^\d{4}-\d{2}-\d{2}$/;
+        if (!input || !pattern.test(input)) {
+            throw new common_1.BadRequestException(`${fieldName}는 YYYY-MM-DD 형식이어야 합니다.`);
+        }
+        const parsed = new Date(`${input}T00:00:00`);
+        if (Number.isNaN(parsed.getTime())) {
+            throw new common_1.BadRequestException(`유효한 ${fieldName}가 아닙니다.`);
+        }
+        return input;
+    }
     async ensureTransaction(callback) {
         const pool = await (0, pool_1.getPool)();
         const client = await pool.connect();
@@ -474,6 +489,8 @@ let TravelService = TravelService_1 = class TravelService {
     }
     async createTravel(currentUser, payload) {
         try {
+            const startDate = this.normalizeDate(payload.startDate, 'startDate');
+            const endDate = this.normalizeDate(payload.endDate, 'endDate');
             const travel = await this.ensureTransaction(async (client) => {
                 const startTime = Date.now();
                 const ownerName = currentUser.name ?? currentUser.email ?? '알 수 없는 사용자';
@@ -481,11 +498,11 @@ let TravelService = TravelService_1 = class TravelService {
                 const inviteCode = this.generateInviteCode();
                 const insertResult = await client.query(`WITH new_travel AS (
              INSERT INTO travels (owner_id, title, start_date, end_date, country_code, country_name_kr, base_currency, base_exchange_rate, country_currencies, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $4 < CURRENT_DATE THEN 'archived' ELSE 'active' END)
+             VALUES ($1, $2, to_date($3, 'YYYY-MM-DD'), to_date($4, 'YYYY-MM-DD'), $5, $6, $7, $8, $9, CASE WHEN to_date($4, 'YYYY-MM-DD') < CURRENT_DATE THEN 'archived' ELSE 'active' END)
              RETURNING id,
                        title,
-                       start_date,
-                       end_date,
+                       start_date::date::text,
+                       end_date::date::text,
                        country_code,
                        country_name_kr,
                        base_currency,
@@ -504,19 +521,19 @@ let TravelService = TravelService_1 = class TravelService {
            ),
            travel_invite AS (
              INSERT INTO travel_invites (travel_id, invite_code, created_by, status, expires_at, max_uses)
-             SELECT new_travel.id, $10, $1, 'active', NULL, NULL
-             FROM new_travel
-             ON CONFLICT (invite_code) DO UPDATE SET invite_code = excluded.invite_code,
-                                                      status = 'active',
-                                                      used_count = 0,
-                                                      expires_at = NULL,
-                                                      max_uses = NULL
-             RETURNING invite_code
-           )
+           SELECT new_travel.id, $10, $1, 'active', NULL, NULL
+            FROM new_travel
+            ON CONFLICT (invite_code) DO UPDATE SET invite_code = excluded.invite_code,
+                                                     status = 'active',
+                                                     used_count = 0,
+                                                     expires_at = NULL,
+                                                     max_uses = NULL
+            RETURNING invite_code
+          )
            SELECT new_travel.id::text AS id,
                   new_travel.title,
-                  new_travel.start_date::text,
-                  new_travel.end_date::text,
+                  new_travel.start_date::date::text,
+                  new_travel.end_date::date::text,
                   new_travel.country_code,
                   new_travel.country_name_kr,
                   new_travel.base_currency,
@@ -528,8 +545,8 @@ let TravelService = TravelService_1 = class TravelService {
            FROM new_travel, travel_invite`, [
                     currentUser.id,
                     payload.title,
-                    payload.startDate,
-                    payload.endDate,
+                    startDate,
+                    endDate,
                     payload.countryCode,
                     payload.countryNameKr,
                     payload.baseCurrency,
@@ -590,8 +607,8 @@ let TravelService = TravelService_1 = class TravelService {
         const listResult = await pool.query(`SELECT
           ut.id::text AS id,
           ut.title,
-          ut.start_date::text,
-          ut.end_date::text,
+          to_char(ut.start_date::date, 'YYYY-MM-DD') AS start_date,
+          to_char(ut.end_date::date, 'YYYY-MM-DD') AS end_date,
           ut.country_code,
           ut.country_name_kr,
           ut.country_currencies,
@@ -908,8 +925,8 @@ let TravelService = TravelService_1 = class TravelService {
             }
             const result = await client.query(`UPDATE travels
          SET title = $3,
-             start_date = $4,
-             end_date = $5,
+             start_date = to_date($4, 'YYYY-MM-DD'),
+             end_date = to_date($5, 'YYYY-MM-DD'),
              country_code = $6,
              country_name_kr = $7,
              base_currency = $8,
@@ -921,8 +938,8 @@ let TravelService = TravelService_1 = class TravelService {
          RETURNING
            id::text AS id,
            title,
-           start_date::text,
-           end_date::text,
+           start_date::date::text,
+           end_date::date::text,
            country_code,
            country_name_kr,
            base_currency,
@@ -934,8 +951,8 @@ let TravelService = TravelService_1 = class TravelService {
                 travelId,
                 userId,
                 payload.title,
-                payload.startDate,
-                payload.endDate,
+                this.normalizeDate(payload.startDate, 'startDate'),
+                this.normalizeDate(payload.endDate, 'endDate'),
                 payload.countryCode,
                 payload.countryNameKr,
                 payload.baseCurrency,
@@ -1036,7 +1053,9 @@ let TravelService = TravelService_1 = class TravelService {
          t.title AS travel_title,
          tm_all.user_id::text AS member_user_id,
          tm_all.role AS member_role,
-         p.name AS member_name
+         p.name AS member_name,
+         p.email AS member_email,
+         p.avatar_url AS member_avatar
        FROM travels t
        INNER JOIN travel_members tm_user ON tm_user.travel_id = t.id AND tm_user.user_id = $1
        INNER JOIN travel_members tm_all ON tm_all.travel_id = t.id
@@ -1047,7 +1066,7 @@ let TravelService = TravelService_1 = class TravelService {
         // 결과를 여행별로 그룹화
         const travelMembersMap = new Map();
         for (const row of result.rows) {
-            const { travel_id, travel_title, member_user_id, member_role, member_name } = row;
+            const { travel_id, travel_title, member_user_id, member_role, member_name, member_email, member_avatar } = row;
             if (!travelMembersMap.has(travel_id)) {
                 travelMembersMap.set(travel_id, {
                     travelId: travel_id,
@@ -1059,6 +1078,8 @@ let TravelService = TravelService_1 = class TravelService {
             travelMembers.members.push({
                 userId: member_user_id,
                 name: member_name,
+                email: member_email ?? null,
+                avatarUrl: member_avatar ?? null,
                 role: member_role
             });
         }
@@ -1078,7 +1099,9 @@ let TravelService = TravelService_1 = class TravelService {
         const result = await pool.query(`SELECT
          tm.user_id::text AS user_id,
          tm.role,
-         p.name
+         p.name,
+         p.email,
+         p.avatar_url
        FROM travel_members tm
        LEFT JOIN profiles p ON p.id = tm.user_id
        WHERE tm.travel_id = $1
@@ -1086,7 +1109,9 @@ let TravelService = TravelService_1 = class TravelService {
                 tm.joined_at`, [travelId]);
         return result.rows.map((row) => ({
             userId: row.user_id,
-            name: row.name,
+            name: row.name ?? null,
+            email: row.email ?? null,
+            avatarUrl: row.avatar_url ?? null,
             role: row.role
         }));
     }

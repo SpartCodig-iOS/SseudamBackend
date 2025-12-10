@@ -15,7 +15,7 @@ export const createExpenseSchema = z.object({
     .max(20, '카테고리는 20자 이하여야 합니다.')
     .regex(/^[a-zA-Z0-9가-힣_-]+$/, '카테고리는 영문, 숫자, 한글, _, - 만 사용 가능합니다.')
     .optional(),
-  payerId: z.string().uuid().optional(),
+  payerId: z.string().uuid().optional().nullable(),
   participantIds: z.array(z.string().uuid('잘못된 참가자 ID 형식입니다.'))
     .min(1, '참가자는 최소 1명 이상이어야 합니다.')
     .max(20, '참가자는 최대 20명까지 가능합니다.')
