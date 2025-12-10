@@ -26,13 +26,6 @@ let TravelController = class TravelController {
         this.travelService = travelService;
         this.optimizedTravelService = optimizedTravelService;
     }
-    async getTravelMembers(req) {
-        if (!req.currentUser) {
-            throw new common_1.UnauthorizedException('Unauthorized');
-        }
-        const result = await this.travelService.getTravelMembersForUser(req.currentUser.id);
-        return (0, api_1.success)(result, 'Travel members retrieved');
-    }
     async list(req, request) {
         if (!req.currentUser) {
             throw new common_1.UnauthorizedException('Unauthorized');
@@ -149,45 +142,6 @@ let TravelController = class TravelController {
     }
 };
 exports.TravelController = TravelController;
-__decorate([
-    (0, common_1.Get)('members'),
-    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    (0, swagger_1.ApiOperation)({ summary: '참여 중인 모든 여행의 멤버 목록 조회' }),
-    (0, swagger_1.ApiOkResponse)({
-        schema: {
-            type: 'object',
-            properties: {
-                code: { type: 'number', example: 200 },
-                message: { type: 'string', example: 'Travel members retrieved' },
-                data: {
-                    type: 'array',
-                    items: {
-                        type: 'object',
-                        properties: {
-                            travelId: { type: 'string', example: 'uuid' },
-                            travelTitle: { type: 'string', example: '도쿄 가을 여행' },
-                            members: {
-                                type: 'array',
-                                items: {
-                                    type: 'object',
-                                    properties: {
-                                        userId: { type: 'string', example: 'uuid' },
-                                        name: { type: 'string', example: '사용자 이름' },
-                                        role: { type: 'string', example: 'host' }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }),
-    __param(0, (0, common_1.Req)()),
-    __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
-    __metadata("design:returntype", Promise)
-], TravelController.prototype, "getTravelMembers", null);
 __decorate([
     (0, common_1.Get)(),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),

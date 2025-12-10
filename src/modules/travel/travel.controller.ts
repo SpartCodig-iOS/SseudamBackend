@@ -33,47 +33,6 @@ export class TravelController {
     private readonly optimizedTravelService: OptimizedTravelService,
   ) {}
 
-  @Get('members')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '참여 중인 모든 여행의 멤버 목록 조회' })
-  @ApiOkResponse({
-    schema: {
-      type: 'object',
-      properties: {
-        code: { type: 'number', example: 200 },
-        message: { type: 'string', example: 'Travel members retrieved' },
-        data: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              travelId: { type: 'string', example: 'uuid' },
-              travelTitle: { type: 'string', example: '도쿄 가을 여행' },
-              members: {
-                type: 'array',
-                items: {
-                  type: 'object',
-                  properties: {
-                    userId: { type: 'string', example: 'uuid' },
-                    name: { type: 'string', example: '사용자 이름' },
-                    role: { type: 'string', example: 'host' }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  })
-  async getTravelMembers(@Req() req: RequestWithUser) {
-    if (!req.currentUser) {
-      throw new UnauthorizedException('Unauthorized');
-    }
-    const result = await this.travelService.getTravelMembersForUser(req.currentUser.id);
-    return success(result, 'Travel members retrieved');
-  }
-
   @Get()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '참여 중인 여행 목록 조회 (최적화됨)' })
