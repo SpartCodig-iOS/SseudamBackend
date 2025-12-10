@@ -27,10 +27,15 @@ export class APNSService {
         return;
       }
 
+      // 환경변수에 literal "\n" 이 포함된 경우 실제 개행으로 치환
+      const normalizedKey = env.applePrivateKey.includes('\\n')
+        ? env.applePrivateKey.replace(/\\n/g, '\n')
+        : env.applePrivateKey;
+
       // APNS Auth Key 방식으로 초기화
       this.apnProvider = new apn.Provider({
         token: {
-          key: env.applePrivateKey, // 환경변수에서 개인 키 로드
+          key: normalizedKey, // 환경변수에서 개인 키 로드
           keyId: env.appleKeyId,
           teamId: env.appleTeamId,
         },

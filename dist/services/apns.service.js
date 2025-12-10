@@ -59,10 +59,14 @@ let APNSService = APNSService_1 = class APNSService {
                 this.logger.warn('APNS configuration missing. Push notifications will be disabled.');
                 return;
             }
+            // 환경변수에 literal "\n" 이 포함된 경우 실제 개행으로 치환
+            const normalizedKey = env_1.env.applePrivateKey.includes('\\n')
+                ? env_1.env.applePrivateKey.replace(/\\n/g, '\n')
+                : env_1.env.applePrivateKey;
             // APNS Auth Key 방식으로 초기화
             this.apnProvider = new apn.Provider({
                 token: {
-                    key: env_1.env.applePrivateKey, // 환경변수에서 개인 키 로드
+                    key: normalizedKey, // 환경변수에서 개인 키 로드
                     keyId: env_1.env.appleKeyId,
                     teamId: env_1.env.appleTeamId,
                 },
