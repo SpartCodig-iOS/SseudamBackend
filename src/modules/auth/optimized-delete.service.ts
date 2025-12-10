@@ -186,9 +186,14 @@ export class OptimizedDeleteService {
       );
       const travelIdArray = targetTravelsResult.rows.map((r) => r.id);
 
-      // 1) 사용자 세션/토큰 정리
+      // 1) 사용자 세션/토큰 정리 (존재하지 않는 테이블은 건너뜀)
       await client.query(`DELETE FROM user_sessions WHERE user_id = $1`, [userId]);
-      await client.query(`DELETE FROM oauth_tokens WHERE user_id = $1`, [userId]).catch(() => undefined);
+      const oauthTable = await client.query<{ name: string | null }>(
+        `SELECT to_regclass('oauth_tokens')::text AS name`,
+      );
+      if (oauthTable.rows[0]?.name) {
+        await client.query(`DELETE FROM oauth_tokens WHERE user_id = $1`, [userId]);
+      }
       await client.query(`DELETE FROM device_tokens WHERE user_id = $1`, [userId]).catch(() => undefined);
 
       // 2) 사용자 이름을 기록에 남기고 FK를 해제
