@@ -86,6 +86,8 @@ export const env = {
   appleTeamId: process.env.APPLE_TEAM_ID ?? null,
   appleKeyId: process.env.APPLE_KEY_ID ?? null,
   applePrivateKey: process.env.APPLE_PRIVATE_KEY ?? null,
+  appleBundleId: process.env.APPLE_BUNDLE_ID ?? 'io.sseudam.co',
+  appleApnsProduction: truthy(process.env.APPLE_APNS_PRODUCTION) ?? undefined,
   appBaseUrl: process.env.APP_BASE_URL ?? 'https://sseudam.up.railway.app',
   appMinSupportedVersion: process.env.APP_MIN_SUPPORTED_VERSION ?? null,
   appForceUpdate: truthy(process.env.APP_FORCE_UPDATE) ?? true,

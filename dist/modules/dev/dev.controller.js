@@ -69,7 +69,7 @@ let DevController = class DevController {
                 throw new common_1.BadRequestException('Title and body are required');
             }
             // APNS로 직접 푸시 알림 전송
-            const result = await this.apnsService.sendNotification({
+            const result = await this.apnsService.sendNotificationWithResult({
                 deviceToken: body.deviceToken,
                 title: body.title,
                 body: body.body,
@@ -82,9 +82,10 @@ let DevController = class DevController {
                 sound: body.sound || 'default'
             });
             return (0, api_1.success)({
-                success: result,
+                success: result.success,
                 deviceToken: `${body.deviceToken.substring(0, 8)}...`,
-                result: result ? 'Notification sent successfully' : 'Notification failed to send',
+                result: result.success ? 'Notification sent successfully' : (result.reason || 'Notification failed to send'),
+                detail: result.detail ?? null,
                 timestamp: new Date().toISOString()
             }, 'Push notification test completed');
         }

@@ -11,6 +11,12 @@ export interface APNSNotification {
   sound?: string;
 }
 
+interface APNSendResult {
+  success: boolean;
+  reason?: string;
+  detail?: any;
+}
+
 @Injectable()
 export class APNSService {
   private readonly logger = new Logger(APNSService.name);
@@ -33,13 +39,15 @@ export class APNSService {
         : env.applePrivateKey;
 
       // APNS Auth Key 방식으로 초기화
+      const useProduction = env.appleApnsProduction ?? env.nodeEnv === 'production';
+
       this.apnProvider = new apn.Provider({
         token: {
           key: normalizedKey, // 환경변수에서 개인 키 로드
           keyId: env.appleKeyId,
           teamId: env.appleTeamId,
         },
-        production: env.nodeEnv === 'production', // 프로덕션 여부에 따라 자동 설정
+        production: useProduction, // 프로덕션 여부 환경변수로 제어
       });
 
       this.logger.log('APNS initialized successfully');
@@ -50,9 +58,14 @@ export class APNSService {
   }
 
   async sendNotification(notification: APNSNotification): Promise<boolean> {
+    const result = await this.sendNotificationWithResult(notification);
+    return result.success;
+  }
+
+  async sendNotificationWithResult(notification: APNSNotification): Promise<APNSendResult> {
     if (!this.apnProvider) {
       this.logger.warn('APNS not configured. Skipping notification send.');
-      return false;
+      return { success: false, reason: 'APNS_NOT_CONFIGURED' };
     }
 
     try {
@@ -84,7 +97,7 @@ export class APNSService {
       note.priority = 10;
 
       // APNS 토픽 설정 (번들 ID)
-      note.topic = 'io.sseudam.co';
+      note.topic = env.appleBundleId || 'io.sseudam.co';
 
       // 알림 전송
       this.logger.debug(`Sending APNS notification to ${notification.deviceToken.substring(0, 8)}... with topic: ${note.topic}`);
@@ -98,26 +111,30 @@ export class APNSService {
 
       if (result.sent && result.sent.length > 0) {
         this.logger.log(`APNS notification sent successfully to ${notification.deviceToken.substring(0, 8)}...`);
-        return true;
+        return { success: true };
       } else if (result.failed && result.failed.length > 0) {
         const failure = result.failed[0];
-        this.logger.error(`APNS notification failed: ${failure.error}`, {
+        const reason =
+          (failure?.response as any)?.reason ||
+          (failure?.status ? `status_${failure.status}` : undefined) ||
+          (failure?.error instanceof Error ? failure.error.message : String(failure?.error ?? 'unknown_error'));
+        this.logger.error(`APNS notification failed: ${reason}`, {
           deviceToken: notification.deviceToken.substring(0, 8),
           status: failure.status,
           response: failure.response,
           device: failure.device
         });
-        return false;
+        return { success: false, reason, detail: failure };
       }
 
       this.logger.warn('APNS result is unclear', { result });
-      return false;
+      return { success: false, reason: 'UNKNOWN_RESULT', detail: result };
     } catch (error) {
       this.logger.error('Error sending APNS notification', {
         error: error instanceof Error ? error.message : String(error),
         deviceToken: notification.deviceToken.substring(0, 8),
       });
-      return false;
+      return { success: false, reason: error instanceof Error ? error.message : String(error) };
     }
   }
 
