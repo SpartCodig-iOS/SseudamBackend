@@ -166,8 +166,8 @@ export class OptimizedTravelService {
         `SELECT
            t.id::text AS id,
            t.title,
-           t.start_date::text AS start_date,
-           t.end_date::text AS end_date,
+           to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date,
+           to_char(t.end_date::date, 'YYYY-MM-DD') AS end_date,
            t.country_code,
            t.country_name_kr,
            t.country_currencies,
@@ -208,8 +208,8 @@ export class OptimizedTravelService {
         `SELECT
            t.id::text AS id,
            t.title,
-           t.start_date::text AS start_date,
-           t.end_date::text AS end_date,
+           to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date,
+           to_char(t.end_date::date, 'YYYY-MM-DD') AS end_date,
            t.country_code,
            t.country_name_kr,
            t.country_currencies,
@@ -336,8 +336,8 @@ export class OptimizedTravelService {
        `SELECT
           t.id::text AS id,
           t.title,
-          t.start_date::text,
-          t.end_date::text,
+          to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date,
+          to_char(t.end_date::date, 'YYYY-MM-DD') AS end_date,
           t.country_code,
           t.country_name_kr,
           t.country_currencies,
@@ -439,8 +439,8 @@ export class OptimizedTravelService {
         `SELECT
            t.id::text AS id,
            t.title,
-           t.start_date::text,
-           t.end_date::text,
+           to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date,
+           to_char(t.end_date::date, 'YYYY-MM-DD') AS end_date,
            t.country_code,
            t.country_name_kr,
            t.base_currency,

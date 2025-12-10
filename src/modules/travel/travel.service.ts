@@ -415,8 +415,8 @@ export class TravelService {
        `SELECT
           t.id::text AS id,
           t.title,
-          t.start_date::text,
-          t.end_date::text,
+          to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date,
+          to_char(t.end_date::date, 'YYYY-MM-DD') AS end_date,
           t.country_code,
           t.country_name_kr,
           t.country_currencies,
@@ -562,6 +562,18 @@ export class TravelService {
     return '';
   }
 
+  private normalizeDate(input: string, fieldName: string): string {
+    const pattern = /^\d{4}-\d{2}-\d{2}$/;
+    if (!input || !pattern.test(input)) {
+      throw new BadRequestException(`${fieldName}는 YYYY-MM-DD 형식이어야 합니다.`);
+    }
+    const parsed = new Date(`${input}T00:00:00`);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException(`유효한 ${fieldName}가 아닙니다.`);
+    }
+    return input;
+  }
+
   private async ensureTransaction<T>(callback: (client: PoolClient) => Promise<T>): Promise<T> {
     const pool = await getPool();
     const client = await pool.connect();
@@ -581,6 +593,8 @@ export class TravelService {
 
   async createTravel(currentUser: UserRecord, payload: CreateTravelInput): Promise<TravelDetail> {
     try {
+      const startDate = this.normalizeDate(payload.startDate, 'startDate');
+      const endDate = this.normalizeDate(payload.endDate, 'endDate');
       const travel = await this.ensureTransaction(async (client) => {
         const startTime = Date.now();
         const ownerName = currentUser.name ?? currentUser.email ?? '알 수 없는 사용자';
@@ -591,11 +605,11 @@ export class TravelService {
         const insertResult = await client.query(
           `WITH new_travel AS (
              INSERT INTO travels (owner_id, title, start_date, end_date, country_code, country_name_kr, base_currency, base_exchange_rate, country_currencies, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $4 < CURRENT_DATE THEN 'archived' ELSE 'active' END)
+             VALUES ($1, $2, to_date($3, 'YYYY-MM-DD'), to_date($4, 'YYYY-MM-DD'), $5, $6, $7, $8, $9, CASE WHEN to_date($4, 'YYYY-MM-DD') < CURRENT_DATE THEN 'archived' ELSE 'active' END)
              RETURNING id,
                        title,
-                       start_date,
-                       end_date,
+                       start_date::date::text,
+                       end_date::date::text,
                        country_code,
                        country_name_kr,
                        base_currency,
@@ -614,19 +628,19 @@ export class TravelService {
            ),
            travel_invite AS (
              INSERT INTO travel_invites (travel_id, invite_code, created_by, status, expires_at, max_uses)
-             SELECT new_travel.id, $10, $1, 'active', NULL, NULL
-             FROM new_travel
-             ON CONFLICT (invite_code) DO UPDATE SET invite_code = excluded.invite_code,
-                                                      status = 'active',
-                                                      used_count = 0,
-                                                      expires_at = NULL,
-                                                      max_uses = NULL
-             RETURNING invite_code
-           )
+           SELECT new_travel.id, $10, $1, 'active', NULL, NULL
+            FROM new_travel
+            ON CONFLICT (invite_code) DO UPDATE SET invite_code = excluded.invite_code,
+                                                     status = 'active',
+                                                     used_count = 0,
+                                                     expires_at = NULL,
+                                                     max_uses = NULL
+            RETURNING invite_code
+          )
            SELECT new_travel.id::text AS id,
                   new_travel.title,
-                  new_travel.start_date::text,
-                  new_travel.end_date::text,
+                  new_travel.start_date::date::text,
+                  new_travel.end_date::date::text,
                   new_travel.country_code,
                   new_travel.country_name_kr,
                   new_travel.base_currency,
@@ -639,8 +653,8 @@ export class TravelService {
           [
             currentUser.id,
             payload.title,
-            payload.startDate,
-            payload.endDate,
+            startDate,
+            endDate,
             payload.countryCode,
             payload.countryNameKr,
             payload.baseCurrency,
@@ -716,8 +730,8 @@ export class TravelService {
         `SELECT
           ut.id::text AS id,
           ut.title,
-          ut.start_date::text,
-          ut.end_date::text,
+          to_char(ut.start_date::date, 'YYYY-MM-DD') AS start_date,
+          to_char(ut.end_date::date, 'YYYY-MM-DD') AS end_date,
           ut.country_code,
           ut.country_name_kr,
           ut.country_currencies,
@@ -1178,8 +1192,8 @@ export class TravelService {
       const result = await client.query(
         `UPDATE travels
          SET title = $3,
-             start_date = $4,
-             end_date = $5,
+             start_date = to_date($4, 'YYYY-MM-DD'),
+             end_date = to_date($5, 'YYYY-MM-DD'),
              country_code = $6,
              country_name_kr = $7,
              base_currency = $8,
@@ -1191,8 +1205,8 @@ export class TravelService {
          RETURNING
            id::text AS id,
            title,
-           start_date::text,
-           end_date::text,
+           start_date::date::text,
+           end_date::date::text,
            country_code,
            country_name_kr,
            base_currency,
@@ -1205,8 +1219,8 @@ export class TravelService {
           travelId,
           userId,
           payload.title,
-          payload.startDate,
-          payload.endDate,
+          this.normalizeDate(payload.startDate, 'startDate'),
+          this.normalizeDate(payload.endDate, 'endDate'),
           payload.countryCode,
           payload.countryNameKr,
           payload.baseCurrency,
