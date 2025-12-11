@@ -49,6 +49,7 @@ export class AuthController {
         password: { type: 'string', minLength: 6, example: 'string' },
         name: { type: 'string', example: 'string' },
         deviceToken: { type: 'string', description: 'APNS device token for push notifications', nullable: true },
+        pendingKey: { type: 'string', description: 'anonymous token matching key', nullable: true },
       },
     },
   })
@@ -68,10 +69,12 @@ export class AuthController {
     const result = await this.authService.signup(payload);
 
     // deviceToken이 제공되면 디바이스 토큰 저장
-    if (payload.deviceToken && result.user?.id) {
-      await this.deviceTokenService.upsertDeviceToken(result.user?.id, payload.deviceToken).catch(err => {
-        console.warn('Failed to save device token:', err.message);
-      });
+    if (result.user?.id) {
+      await this.deviceTokenService.bindPendingTokensToUser(
+        result.user.id,
+        (payload as any).pendingKey,
+        payload.deviceToken,
+      ).catch(err => console.warn('Failed to bind device token:', err.message));
     }
 
     return success(buildAuthSessionResponse(result), 'Signup successful');
@@ -120,6 +123,7 @@ export class AuthController {
         },
         password: { type: 'string', example: 'string' },
         deviceToken: { type: 'string', description: 'APNS device token for push notifications', nullable: true },
+        pendingKey: { type: 'string', description: 'anonymous token matching key', nullable: true },
       },
     },
   })
@@ -181,9 +185,13 @@ export class AuthController {
     const result = await this.authService.login(payload);
 
     // deviceToken이 제공되면 디바이스 토큰 저장
-    if (payload.deviceToken && result.user?.id) {
-      await this.deviceTokenService.upsertDeviceToken(result.user?.id, payload.deviceToken).catch(err => {
-        console.warn('Failed to save device token:', err.message);
+    if (result.user?.id) {
+      await this.deviceTokenService.bindPendingTokensToUser(
+        result.user.id,
+        (payload as any).pendingKey,
+        payload.deviceToken,
+      ).catch(err => {
+        console.warn('Failed to bind device token:', err.message);
       });
     }
 
@@ -299,9 +307,7 @@ export class AuthController {
 
   @Post('device-token')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(AuthGuard)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: '디바이스 토큰 등록/업데이트 (로그인 사용자)' })
+  @ApiOperation({ summary: '디바이스 토큰 등록/업데이트 (인증/비인증 모두 가능)' })
   @ApiBody({
     schema: {
       type: 'object',
@@ -312,18 +318,37 @@ export class AuthController {
           example: 'fe13ccdb7ea3fe314f0df403383b7d5d974dd0f946cd4b89b0f1fd7523dc9a07',
           description: 'APNS device token',
         },
+        pendingKey: {
+          type: 'string',
+          example: 'anon-uuid-123',
+          description: '로그인 전 토큰 매칭용 키(비로그인 등록 시 필수)',
+          nullable: true,
+        },
       },
     },
   })
-  async registerDeviceToken(@Body('deviceToken') deviceTokenRaw: unknown, @Req() req: RequestWithUser) {
-    if (!req.currentUser) {
-      throw new UnauthorizedException('Unauthorized');
-    }
+  async registerDeviceToken(
+    @Body('deviceToken') deviceTokenRaw: unknown,
+    @Body('pendingKey') pendingKeyRaw: unknown,
+    @Req() req: RequestWithUser,
+  ) {
     const deviceToken = typeof deviceTokenRaw === 'string' ? deviceTokenRaw.trim() : '';
     if (!deviceToken) {
       throw new BadRequestException('deviceToken is required');
     }
-    await this.deviceTokenService.upsertDeviceToken(req.currentUser.id, deviceToken);
+    const pendingKey = typeof pendingKeyRaw === 'string' ? pendingKeyRaw.trim() : undefined;
+
+    if (req.currentUser?.id) {
+      // 인증된 경우: 바로 사용자에 매핑
+      await this.deviceTokenService.upsertDeviceToken(req.currentUser.id, deviceToken);
+    } else {
+      // 비인증: pendingKey가 있어야 매핑 가능
+      if (!pendingKey) {
+        throw new BadRequestException('pendingKey is required for anonymous registration');
+      }
+      await this.deviceTokenService.upsertAnonymousToken(pendingKey, deviceToken);
+    }
+
     return success({}, 'Device token registered');
   }
 

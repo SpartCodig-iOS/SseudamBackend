@@ -35,10 +35,8 @@ let AuthController = class AuthController {
         const payload = authSchemas_1.signupSchema.parse(body);
         const result = await this.authService.signup(payload);
         // deviceToken이 제공되면 디바이스 토큰 저장
-        if (payload.deviceToken && result.user?.id) {
-            await this.deviceTokenService.upsertDeviceToken(result.user?.id, payload.deviceToken).catch(err => {
-                console.warn('Failed to save device token:', err.message);
-            });
+        if (result.user?.id) {
+            await this.deviceTokenService.bindPendingTokensToUser(result.user.id, payload.pendingKey, payload.deviceToken).catch(err => console.warn('Failed to bind device token:', err.message));
         }
         return (0, api_1.success)((0, auth_response_util_1.buildAuthSessionResponse)(result), 'Signup successful');
     }
@@ -73,9 +71,9 @@ let AuthController = class AuthController {
         }
         const result = await this.authService.login(payload);
         // deviceToken이 제공되면 디바이스 토큰 저장
-        if (payload.deviceToken && result.user?.id) {
-            await this.deviceTokenService.upsertDeviceToken(result.user?.id, payload.deviceToken).catch(err => {
-                console.warn('Failed to save device token:', err.message);
+        if (result.user?.id) {
+            await this.deviceTokenService.bindPendingTokensToUser(result.user.id, payload.pendingKey, payload.deviceToken).catch(err => {
+                console.warn('Failed to bind device token:', err.message);
             });
         }
         return (0, api_1.success)((0, auth_response_util_1.buildAuthSessionResponse)(result), 'Login successful');
@@ -110,15 +108,23 @@ let AuthController = class AuthController {
         const result = await this.authService.logoutBySessionId(payload.sessionId);
         return (0, api_1.success)(result, 'Logout successful');
     }
-    async registerDeviceToken(deviceTokenRaw, req) {
-        if (!req.currentUser) {
-            throw new common_1.UnauthorizedException('Unauthorized');
-        }
+    async registerDeviceToken(deviceTokenRaw, pendingKeyRaw, req) {
         const deviceToken = typeof deviceTokenRaw === 'string' ? deviceTokenRaw.trim() : '';
         if (!deviceToken) {
             throw new common_1.BadRequestException('deviceToken is required');
         }
-        await this.deviceTokenService.upsertDeviceToken(req.currentUser.id, deviceToken);
+        const pendingKey = typeof pendingKeyRaw === 'string' ? pendingKeyRaw.trim() : undefined;
+        if (req.currentUser?.id) {
+            // 인증된 경우: 바로 사용자에 매핑
+            await this.deviceTokenService.upsertDeviceToken(req.currentUser.id, deviceToken);
+        }
+        else {
+            // 비인증: pendingKey가 있어야 매핑 가능
+            if (!pendingKey) {
+                throw new common_1.BadRequestException('pendingKey is required for anonymous registration');
+            }
+            await this.deviceTokenService.upsertAnonymousToken(pendingKey, deviceToken);
+        }
         return (0, api_1.success)({}, 'Device token registered');
     }
 };
@@ -138,6 +144,7 @@ __decorate([
                 password: { type: 'string', minLength: 6, example: 'string' },
                 name: { type: 'string', example: 'string' },
                 deviceToken: { type: 'string', description: 'APNS device token for push notifications', nullable: true },
+                pendingKey: { type: 'string', description: 'anonymous token matching key', nullable: true },
             },
         },
     }),
@@ -201,6 +208,7 @@ __decorate([
                 },
                 password: { type: 'string', example: 'string' },
                 deviceToken: { type: 'string', description: 'APNS device token for push notifications', nullable: true },
+                pendingKey: { type: 'string', description: 'anonymous token matching key', nullable: true },
             },
         },
     }),
@@ -315,9 +323,7 @@ __decorate([
 __decorate([
     (0, common_1.Post)('device-token'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    (0, common_1.UseGuards)(auth_guard_1.AuthGuard),
-    (0, swagger_1.ApiBearerAuth)(),
-    (0, swagger_1.ApiOperation)({ summary: '디바이스 토큰 등록/업데이트 (로그인 사용자)' }),
+    (0, swagger_1.ApiOperation)({ summary: '디바이스 토큰 등록/업데이트 (인증/비인증 모두 가능)' }),
     (0, swagger_1.ApiBody)({
         schema: {
             type: 'object',
@@ -328,13 +334,20 @@ __decorate([
                     example: 'fe13ccdb7ea3fe314f0df403383b7d5d974dd0f946cd4b89b0f1fd7523dc9a07',
                     description: 'APNS device token',
                 },
+                pendingKey: {
+                    type: 'string',
+                    example: 'anon-uuid-123',
+                    description: '로그인 전 토큰 매칭용 키(비로그인 등록 시 필수)',
+                    nullable: true,
+                },
             },
         },
     }),
     __param(0, (0, common_1.Body)('deviceToken')),
-    __param(1, (0, common_1.Req)()),
+    __param(1, (0, common_1.Body)('pendingKey')),
+    __param(2, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:paramtypes", [Object, Object, Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "registerDeviceToken", null);
 exports.AuthController = AuthController = __decorate([

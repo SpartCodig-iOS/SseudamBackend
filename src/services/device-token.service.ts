@@ -6,6 +6,65 @@ export class DeviceTokenService {
   private readonly logger = new Logger(DeviceTokenService.name);
 
   /**
+   * 비로그인 상태 토큰 등록: pendingKey 기준으로 저장/업데이트
+   */
+  async upsertAnonymousToken(pendingKey: string, deviceToken: string): Promise<void> {
+    const token = deviceToken?.trim() ?? '';
+    const key = pendingKey?.trim() ?? '';
+    if (!token || token.length < 10 || !key) {
+      this.logger.warn('Invalid anonymous token or pendingKey provided');
+      return;
+    }
+    try {
+      const pool = await getPool();
+      await pool.query(
+        `INSERT INTO device_tokens (user_id, pending_key, device_token, platform, is_active, last_used_at, created_at, updated_at)
+         VALUES (NULL, $1, $2, 'ios', true, NOW(), NOW(), NOW())
+         ON CONFLICT (device_token)
+         DO UPDATE SET
+           pending_key = EXCLUDED.pending_key,
+           is_active = true,
+           last_used_at = NOW(),
+           updated_at = NOW()`,
+        [key, token],
+      );
+    } catch (error) {
+      this.logger.error('Failed to upsert anonymous device token', {
+        error: error instanceof Error ? error.message : String(error),
+        pendingKey: key,
+      });
+    }
+  }
+
+  /**
+   * pendingKey/deviceToken 기반으로 토큰을 특정 사용자에 매칭
+   */
+  async bindPendingTokensToUser(userId: string, pendingKey?: string, deviceToken?: string): Promise<void> {
+    const token = deviceToken?.trim();
+    const key = pendingKey?.trim();
+    if (!token && !key) return;
+    try {
+      const pool = await getPool();
+      await pool.query(
+        `UPDATE device_tokens
+           SET user_id = $1,
+               pending_key = NULL,
+               is_active = true,
+               last_used_at = NOW(),
+               updated_at = NOW()
+         WHERE ($2 IS NOT NULL AND device_token = $2)
+            OR ($3 IS NOT NULL AND pending_key = $3)`,
+        [userId, token || null, key || null],
+      );
+    } catch (error) {
+      this.logger.error('Failed to bind pending tokens', {
+        error: error instanceof Error ? error.message : String(error),
+        userId,
+      });
+    }
+  }
+
+  /**
    * 디바이스 토큰을 저장하거나 업데이트합니다.
    * 같은 user_id + device_token 조합이면 last_used_at만 업데이트하고,
    * 새로운 토큰이면 추가합니다.
@@ -21,13 +80,14 @@ export class DeviceTokenService {
 
       // 기존 토큰이 있는지 확인하고 업데이트, 없으면 새로 추가
       await pool.query(
-        `INSERT INTO device_tokens (user_id, device_token, platform, is_active, last_used_at, created_at, updated_at)
-         VALUES ($1, $2, 'ios', true, NOW(), NOW(), NOW())
+        `INSERT INTO device_tokens (user_id, device_token, platform, is_active, last_used_at, created_at, updated_at, pending_key)
+         VALUES ($1, $2, 'ios', true, NOW(), NOW(), NOW(), NULL)
          ON CONFLICT (user_id, device_token)
          DO UPDATE SET
            is_active = true,
            last_used_at = NOW(),
-           updated_at = NOW()`,
+           updated_at = NOW(),
+           pending_key = NULL`,
         [userId, deviceToken.trim()]
       );
 
