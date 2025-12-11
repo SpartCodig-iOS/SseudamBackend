@@ -4,9 +4,11 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Post,
   Patch,
   Req,
   UnauthorizedException,
+  BadRequestException,
   UseGuards,
   UploadedFile,
   UseInterceptors,
@@ -32,7 +34,9 @@ const formatDate = (value: Date | string | null | undefined): string | null => {
 @ApiTags('Profile')
 @Controller('api/v1/profile')
 export class ProfileController {
-  constructor(private readonly profileService: ProfileService) {}
+  constructor(
+    private readonly profileService: ProfileService,
+  ) {}
 
 
   @UseGuards(AuthGuard)

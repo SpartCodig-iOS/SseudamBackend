@@ -110,6 +110,17 @@ let AuthController = class AuthController {
         const result = await this.authService.logoutBySessionId(payload.sessionId);
         return (0, api_1.success)(result, 'Logout successful');
     }
+    async registerDeviceToken(deviceTokenRaw, req) {
+        if (!req.currentUser) {
+            throw new common_1.UnauthorizedException('Unauthorized');
+        }
+        const deviceToken = typeof deviceTokenRaw === 'string' ? deviceTokenRaw.trim() : '';
+        if (!deviceToken) {
+            throw new common_1.BadRequestException('deviceToken is required');
+        }
+        await this.deviceTokenService.upsertDeviceToken(req.currentUser.id, deviceToken);
+        return (0, api_1.success)({}, 'Device token registered');
+    }
 };
 exports.AuthController = AuthController;
 __decorate([
@@ -301,6 +312,31 @@ __decorate([
     __metadata("design:paramtypes", [Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "logout", null);
+__decorate([
+    (0, common_1.Post)('device-token'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, common_1.UseGuards)(auth_guard_1.AuthGuard),
+    (0, swagger_1.ApiBearerAuth)(),
+    (0, swagger_1.ApiOperation)({ summary: '디바이스 토큰 등록/업데이트 (로그인 사용자)' }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['deviceToken'],
+            properties: {
+                deviceToken: {
+                    type: 'string',
+                    example: 'fe13ccdb7ea3fe314f0df403383b7d5d974dd0f946cd4b89b0f1fd7523dc9a07',
+                    description: 'APNS device token',
+                },
+            },
+        },
+    }),
+    __param(0, (0, common_1.Body)('deviceToken')),
+    __param(1, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "registerDeviceToken", null);
 exports.AuthController = AuthController = __decorate([
     (0, swagger_1.ApiTags)('Auth'),
     (0, common_1.Controller)('api/v1/auth'),

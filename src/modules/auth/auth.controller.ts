@@ -297,4 +297,34 @@ export class AuthController {
     return success(result, 'Logout successful');
   }
 
+  @Post('device-token')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '디바이스 토큰 등록/업데이트 (로그인 사용자)' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['deviceToken'],
+      properties: {
+        deviceToken: {
+          type: 'string',
+          example: 'fe13ccdb7ea3fe314f0df403383b7d5d974dd0f946cd4b89b0f1fd7523dc9a07',
+          description: 'APNS device token',
+        },
+      },
+    },
+  })
+  async registerDeviceToken(@Body('deviceToken') deviceTokenRaw: unknown, @Req() req: RequestWithUser) {
+    if (!req.currentUser) {
+      throw new UnauthorizedException('Unauthorized');
+    }
+    const deviceToken = typeof deviceTokenRaw === 'string' ? deviceTokenRaw.trim() : '';
+    if (!deviceToken) {
+      throw new BadRequestException('deviceToken is required');
+    }
+    await this.deviceTokenService.upsertDeviceToken(req.currentUser.id, deviceToken);
+    return success({}, 'Device token registered');
+  }
+
 }
