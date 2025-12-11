@@ -116,7 +116,12 @@ let AuthController = class AuthController {
         const pendingKey = typeof pendingKeyRaw === 'string' ? pendingKeyRaw.trim() : undefined;
         if (req.currentUser?.id) {
             // 인증된 경우: 바로 사용자에 매핑
+            if (pendingKey) {
+                // 로그인 전 등록된 토큰이 있으면 함께 사용자에 매핑
+                await this.deviceTokenService.bindPendingTokensToUser(req.currentUser.id, pendingKey, deviceToken);
+            }
             await this.deviceTokenService.upsertDeviceToken(req.currentUser.id, deviceToken);
+            return (0, api_1.success)({ deviceToken, pendingKey, mode: 'authenticated' }, 'Device token registered');
         }
         else {
             // 비인증: pendingKey가 있어야 매핑 가능
@@ -124,8 +129,8 @@ let AuthController = class AuthController {
                 throw new common_1.BadRequestException('pendingKey is required for anonymous registration');
             }
             await this.deviceTokenService.upsertAnonymousToken(pendingKey, deviceToken);
+            return (0, api_1.success)({ deviceToken, pendingKey, mode: 'anonymous' }, 'Device token registered');
         }
-        return (0, api_1.success)({}, 'Device token registered');
     }
 };
 exports.AuthController = AuthController;
@@ -339,6 +344,23 @@ __decorate([
                     example: 'anon-uuid-123',
                     description: '로그인 전 토큰 매칭용 키(비로그인 등록 시 필수)',
                     nullable: true,
+                },
+            },
+        },
+    }),
+    (0, swagger_1.ApiOkResponse)({
+        schema: {
+            type: 'object',
+            properties: {
+                code: { type: 'number', example: 200 },
+                message: { type: 'string', example: 'Device token registered' },
+                data: {
+                    type: 'object',
+                    properties: {
+                        deviceToken: { type: 'string', example: 'fe13ccdb...' },
+                        pendingKey: { type: 'string', example: 'anon-uuid-123', nullable: true },
+                        mode: { type: 'string', example: 'anonymous', description: 'anonymous | authenticated' },
+                    },
                 },
             },
         },

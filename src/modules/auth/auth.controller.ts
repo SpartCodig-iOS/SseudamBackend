@@ -357,6 +357,10 @@ export class AuthController {
 
     if (req.currentUser?.id) {
       // 인증된 경우: 바로 사용자에 매핑
+      if (pendingKey) {
+        // 로그인 전 등록된 토큰이 있으면 함께 사용자에 매핑
+        await this.deviceTokenService.bindPendingTokensToUser(req.currentUser.id, pendingKey, deviceToken);
+      }
       await this.deviceTokenService.upsertDeviceToken(req.currentUser.id, deviceToken);
       return success({ deviceToken, pendingKey, mode: 'authenticated' }, 'Device token registered');
     } else {
