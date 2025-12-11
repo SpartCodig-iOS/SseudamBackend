@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.createExpenseSchema = exports.expenseCategories = void 0;
 const zod_1 = require("zod");
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
+const uuidPattern = /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/;
 exports.expenseCategories = [
     'accommodation', // 숙박
     'food_and_drink', // 식비
@@ -21,14 +22,12 @@ exports.createExpenseSchema = zod_1.z.object({
         .regex(isoDatePattern, 'expenseDate 는 YYYY-MM-DD 형식이어야 합니다.'),
     category: zod_1.z.enum(exports.expenseCategories).optional().nullable(),
     payerId: zod_1.z.string().uuid().optional().nullable(),
-    participantIds: zod_1.z.array(zod_1.z.string().uuid('잘못된 참가자 ID 형식입니다.'))
-        .min(1, '참가자는 최소 1명 이상이어야 합니다.')
-        .max(20, '참가자는 최대 20명까지 가능합니다.')
+    participantIds: zod_1.z
+        .array(zod_1.z.string().trim())
         .optional()
+        .transform(ids => (ids ?? []).map(id => id.trim()).filter(Boolean))
+        .transform(ids => ids.filter(id => uuidPattern.test(id)))
         .refine((ids) => {
-        if (!ids)
-            return true; // optional이므로 undefined는 허용
-        // 중복 ID 검사
         const uniqueIds = new Set(ids);
         return uniqueIds.size === ids.length;
     }, '중복된 참가자 ID가 있습니다.'),
