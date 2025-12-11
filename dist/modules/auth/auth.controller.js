@@ -25,11 +25,13 @@ const auth_response_dto_1 = require("./dto/auth-response.dto");
 const auth_response_util_1 = require("./auth-response.util");
 const rate_limit_decorator_1 = require("../../common/decorators/rate-limit.decorator");
 const device_token_service_1 = require("../../services/device-token.service");
+const analytics_service_1 = require("../../services/analytics.service");
 let AuthController = class AuthController {
-    constructor(authService, optimizedDeleteService, deviceTokenService) {
+    constructor(authService, optimizedDeleteService, deviceTokenService, analyticsService) {
         this.authService = authService;
         this.optimizedDeleteService = optimizedDeleteService;
         this.deviceTokenService = deviceTokenService;
+        this.analyticsService = analyticsService;
     }
     async signup(body) {
         const payload = authSchemas_1.signupSchema.parse(body);
@@ -37,6 +39,10 @@ let AuthController = class AuthController {
         // deviceToken이 제공되면 디바이스 토큰 저장
         if (result.user?.id) {
             await this.deviceTokenService.bindPendingTokensToUser(result.user.id, payload.pendingKey, payload.deviceToken).catch(err => console.warn('Failed to bind device token:', err.message));
+        }
+        // Analytics: 회원가입 성공
+        if (result.user?.id) {
+            this.analyticsService.trackEvent('signup_success', { provider: payload.provider ?? 'email' }, { userId: result.user.id }).catch(() => undefined);
         }
         return (0, api_1.success)((0, auth_response_util_1.buildAuthSessionResponse)(result), 'Signup successful');
     }
@@ -67,6 +73,9 @@ let AuthController = class AuthController {
                     console.warn('Failed to save device token:', err.message);
                 });
             }
+            if (result.user?.id) {
+                this.analyticsService.trackEvent('login_success', { provider: payload.provider ?? 'email' }, { userId: result.user.id }).catch(() => undefined);
+            }
             return (0, api_1.success)((0, auth_response_util_1.buildAuthSessionResponse)(result), 'Login successful');
         }
         const result = await this.authService.login(payload);
@@ -75,6 +84,10 @@ let AuthController = class AuthController {
             await this.deviceTokenService.bindPendingTokensToUser(result.user.id, payload.pendingKey, payload.deviceToken).catch(err => {
                 console.warn('Failed to bind device token:', err.message);
             });
+        }
+        // Analytics: 로그인 성공
+        if (result.user?.id) {
+            this.analyticsService.trackEvent('login_success', { provider: payload.provider ?? 'email' }, { userId: result.user.id }).catch(() => undefined);
         }
         return (0, api_1.success)((0, auth_response_util_1.buildAuthSessionResponse)(result), 'Login successful');
     }
@@ -377,5 +390,6 @@ exports.AuthController = AuthController = __decorate([
     (0, common_1.Controller)('api/v1/auth'),
     __metadata("design:paramtypes", [auth_service_1.AuthService,
         optimized_delete_service_1.OptimizedDeleteService,
-        device_token_service_1.DeviceTokenService])
+        device_token_service_1.DeviceTokenService,
+        analytics_service_1.AnalyticsService])
 ], AuthController);

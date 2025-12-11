@@ -28,6 +28,7 @@ const roles_guard_1 = require("../../common/guards/roles.guard");
 const device_token_service_1 = require("../../services/device-token.service");
 const apns_service_1 = require("../../services/apns.service");
 const push_notification_service_1 = require("../../services/push-notification.service");
+const analytics_service_1 = require("../../services/analytics.service");
 let SharedModule = class SharedModule {
 };
 exports.SharedModule = SharedModule;
@@ -54,6 +55,7 @@ exports.SharedModule = SharedModule = __decorate([
             device_token_service_1.DeviceTokenService,
             apns_service_1.APNSService,
             push_notification_service_1.PushNotificationService,
+            analytics_service_1.AnalyticsService,
             auth_guard_1.AuthGuard,
             roles_guard_1.RolesGuard,
             rate_limit_guard_1.RateLimitGuard,
@@ -76,6 +78,7 @@ exports.SharedModule = SharedModule = __decorate([
             device_token_service_1.DeviceTokenService,
             apns_service_1.APNSService,
             push_notification_service_1.PushNotificationService,
+            analytics_service_1.AnalyticsService,
             auth_guard_1.AuthGuard,
             roles_guard_1.RolesGuard,
             rate_limit_guard_1.RateLimitGuard,

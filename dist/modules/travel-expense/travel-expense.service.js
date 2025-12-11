@@ -16,12 +16,14 @@ const pool_1 = require("../../db/pool");
 const meta_service_1 = require("../meta/meta.service");
 const cacheService_1 = require("../../services/cacheService");
 const push_notification_service_1 = require("../../services/push-notification.service");
+const analytics_service_1 = require("../../services/analytics.service");
 let TravelExpenseService = class TravelExpenseService {
-    constructor(metaService, cacheService, eventEmitter, pushNotificationService) {
+    constructor(metaService, cacheService, eventEmitter, pushNotificationService, analyticsService) {
         this.metaService = metaService;
         this.cacheService = cacheService;
         this.eventEmitter = eventEmitter;
         this.pushNotificationService = pushNotificationService;
+        this.analyticsService = analyticsService;
         this.EXPENSE_LIST_PREFIX = 'expense:list';
         this.EXPENSE_DETAIL_PREFIX = 'expense:detail';
         this.EXPENSE_LIST_TTL_SECONDS = 120; // 2분
@@ -277,6 +279,14 @@ let TravelExpenseService = class TravelExpenseService {
             const currentUserName = this.getMemberName(context, userId) || '사용자';
             await this.pushNotificationService.sendExpenseNotification('expense_added', travelId, result.id, // expenseId for deep link
             userId, currentUserName, payload.title, context.memberIds, payload.amount, payload.currency);
+            // Analytics 전송 (비동기)
+            this.analyticsService.trackEvent('expense_created', {
+                travel_id: travelId,
+                expense_id: result.id,
+                amount: payload.amount,
+                currency: payload.currency.toUpperCase(),
+                participant_count: participantIds.length,
+            }, { userId }).catch(() => undefined);
             return result;
         }
         catch (error) {
@@ -481,6 +491,14 @@ let TravelExpenseService = class TravelExpenseService {
             const currentUserName = this.getMemberName(context, userId) || '사용자';
             await this.pushNotificationService.sendExpenseNotification('expense_updated', travelId, expenseId, // expenseId for deep link
             userId, currentUserName, payload.title, context.memberIds, payload.amount, payload.currency);
+            // Analytics 전송 (비동기)
+            this.analyticsService.trackEvent('expense_updated', {
+                travel_id: travelId,
+                expense_id: expense.id,
+                amount: payload.amount,
+                currency: payload.currency.toUpperCase(),
+                participant_count: participantIds.length,
+            }, { userId }).catch(() => undefined);
             return result;
         }
         catch (error) {
@@ -534,6 +552,11 @@ let TravelExpenseService = class TravelExpenseService {
             const currentUserName = this.getMemberName(context, userId) || '사용자';
             await this.pushNotificationService.sendExpenseNotification('expense_deleted', travelId, expenseId, // expenseId for completeness (deep link will go to travel detail since expense is deleted)
             userId, currentUserName, expense.title, context.memberIds);
+            // Analytics 전송 (비동기)
+            this.analyticsService.trackEvent('expense_deleted', {
+                travel_id: travelId,
+                expense_id: expenseId,
+            }, { userId }).catch(() => undefined);
         }
         catch (error) {
             await client.query('ROLLBACK');
@@ -550,5 +573,6 @@ exports.TravelExpenseService = TravelExpenseService = __decorate([
     __metadata("design:paramtypes", [meta_service_1.MetaService,
         cacheService_1.CacheService,
         event_emitter_1.EventEmitter2,
-        push_notification_service_1.PushNotificationService])
+        push_notification_service_1.PushNotificationService,
+        analytics_service_1.AnalyticsService])
 ], TravelExpenseService);

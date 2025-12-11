@@ -5,6 +5,7 @@ import { CreateExpenseInput } from '../../validators/travelExpenseSchemas';
 import { MetaService } from '../meta/meta.service';
 import { CacheService } from '../../services/cacheService';
 import { PushNotificationService } from '../../services/push-notification.service';
+import { AnalyticsService } from '../../services/analytics.service';
 
 interface TravelContext {
   id: string;
@@ -39,6 +40,7 @@ export class TravelExpenseService {
     private readonly cacheService: CacheService,
     private readonly eventEmitter: EventEmitter2,
     private readonly pushNotificationService: PushNotificationService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   private readonly EXPENSE_LIST_PREFIX = 'expense:list';
@@ -350,6 +352,19 @@ export class TravelExpenseService {
         payload.currency
       );
 
+      // Analytics 전송 (비동기)
+      this.analyticsService.trackEvent(
+        'expense_created',
+        {
+          travel_id: travelId,
+          expense_id: result.id,
+          amount: payload.amount,
+          currency: payload.currency.toUpperCase(),
+          participant_count: participantIds.length,
+        },
+        { userId },
+      ).catch(() => undefined);
+
       return result;
     } catch (error) {
       await client.query('ROLLBACK');
@@ -624,6 +639,19 @@ export class TravelExpenseService {
         payload.currency
       );
 
+      // Analytics 전송 (비동기)
+      this.analyticsService.trackEvent(
+        'expense_updated',
+        {
+          travel_id: travelId,
+          expense_id: expense.id,
+          amount: payload.amount,
+          currency: payload.currency.toUpperCase(),
+          participant_count: participantIds.length,
+        },
+        { userId },
+      ).catch(() => undefined);
+
       return result;
     } catch (error) {
       await client.query('ROLLBACK');
@@ -703,6 +731,16 @@ export class TravelExpenseService {
         expense.title,
         context.memberIds
       );
+
+      // Analytics 전송 (비동기)
+      this.analyticsService.trackEvent(
+        'expense_deleted',
+        {
+          travel_id: travelId,
+          expense_id: expenseId,
+        },
+        { userId },
+      ).catch(() => undefined);
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;

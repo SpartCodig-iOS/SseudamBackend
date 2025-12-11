@@ -25,6 +25,7 @@ import { buildAuthSessionResponse } from './auth-response.util';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator';
 import { LoginType } from '../../types/auth';
 import { DeviceTokenService } from '../../services/device-token.service';
+import { AnalyticsService } from '../../services/analytics.service';
 
 @ApiTags('Auth')
 @Controller('api/v1/auth')
@@ -33,6 +34,7 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly optimizedDeleteService: OptimizedDeleteService,
     private readonly deviceTokenService: DeviceTokenService,
+    private readonly analyticsService: AnalyticsService,
   ) {}
 
   @Post('signup')
@@ -75,6 +77,15 @@ export class AuthController {
         (payload as any).pendingKey,
         payload.deviceToken,
       ).catch(err => console.warn('Failed to bind device token:', err.message));
+    }
+
+    // Analytics: 회원가입 성공
+    if (result.user?.id) {
+      this.analyticsService.trackEvent(
+        'signup_success',
+        { provider: (payload as any).provider ?? 'email' },
+        { userId: result.user.id },
+      ).catch(() => undefined);
     }
 
     return success(buildAuthSessionResponse(result), 'Signup successful');
@@ -179,6 +190,13 @@ export class AuthController {
         });
       }
 
+      if (result.user?.id) {
+        this.analyticsService.trackEvent(
+          'login_success',
+          { provider: (payload as any).provider ?? 'email' },
+          { userId: result.user.id },
+        ).catch(() => undefined);
+      }
       return success(buildAuthSessionResponse(result), 'Login successful');
     }
 
@@ -193,6 +211,15 @@ export class AuthController {
       ).catch(err => {
         console.warn('Failed to bind device token:', err.message);
       });
+    }
+
+    // Analytics: 로그인 성공
+    if (result.user?.id) {
+      this.analyticsService.trackEvent(
+        'login_success',
+        { provider: (payload as any).provider ?? 'email' },
+        { userId: result.user.id },
+      ).catch(() => undefined);
     }
 
     return success(buildAuthSessionResponse(result), 'Login successful');

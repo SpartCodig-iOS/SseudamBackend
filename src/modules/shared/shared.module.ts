@@ -19,6 +19,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { DeviceTokenService } from '../../services/device-token.service';
 import { APNSService } from '../../services/apns.service';
 import { PushNotificationService } from '../../services/push-notification.service';
+import { AnalyticsService } from '../../services/analytics.service';
 
 @Global()
 @Module({
@@ -42,6 +43,7 @@ import { PushNotificationService } from '../../services/push-notification.servic
     DeviceTokenService,
     APNSService,
     PushNotificationService,
+    AnalyticsService,
     AuthGuard,
     RolesGuard,
     RateLimitGuard,
@@ -64,6 +66,7 @@ import { PushNotificationService } from '../../services/push-notification.servic
     DeviceTokenService,
     APNSService,
     PushNotificationService,
+    AnalyticsService,
     AuthGuard,
     RolesGuard,
     RateLimitGuard,
