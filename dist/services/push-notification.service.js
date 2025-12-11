@@ -15,6 +15,7 @@ const common_1 = require("@nestjs/common");
 const event_emitter_1 = require("@nestjs/event-emitter");
 const apns_service_1 = require("./apns.service");
 const device_token_service_1 = require("./device-token.service");
+const deeplink_1 = require("../types/deeplink");
 let PushNotificationService = PushNotificationService_1 = class PushNotificationService {
     constructor(apnsService, deviceTokenService, eventEmitter) {
         this.apnsService = apnsService;
@@ -100,7 +101,25 @@ let PushNotificationService = PushNotificationService_1 = class PushNotification
     async handleTravelMemberRemoved(event) {
         await this.sendNotificationToTravelMembers(event);
     }
-    // 실제 알림 전송 로직
+    // 딥링크 데이터 생성
+    createDeepLinkData(event) {
+        if ('expenseId' in event && event.expenseId) {
+            // 지출 관련 이벤트 - 지출 상세로 이동
+            return {
+                type: deeplink_1.DeepLinkType.EXPENSE_DETAIL,
+                travelId: event.travelId,
+                expenseId: event.expenseId,
+            };
+        }
+        else {
+            // 여행 관련 이벤트 - 여행 상세로 이동
+            return {
+                type: deeplink_1.DeepLinkType.TRAVEL_DETAIL,
+                travelId: event.travelId,
+            };
+        }
+    }
+    // 실제 알림 전송 로직 (딥링크 지원)
     async sendNotificationToTravelMembers(event) {
         try {
             // 작업자 본인은 제외하고 다른 멤버들에게만 알림 전송
@@ -124,20 +143,37 @@ let PushNotificationService = PushNotificationService_1 = class PushNotification
             const notificationContent = 'expenseTitle' in event
                 ? this.generateExpenseNotificationContent(event)
                 : this.generateTravelNotificationContent(event);
-            // 알림 데이터 추가 (딥링크용)
-            const notificationData = {
-                type: event.type,
-                travelId: event.travelId,
-                actorUserId: event.actorUserId,
-                deepLink: `sseudam://travel/${event.travelId}`,
+            // 딥링크 데이터 생성
+            const deeplinkData = this.createDeepLinkData(event);
+            // 푸시 알림 페이로드 생성
+            const pushPayload = {
+                title: notificationContent.title,
+                body: notificationContent.body,
+                data: {
+                    type: event.type,
+                    travelId: event.travelId,
+                    actorUserId: event.actorUserId,
+                    timestamp: new Date().toISOString(),
+                },
             };
-            // 배치 전송
-            const result = await this.apnsService.sendNotificationToMultiple(allDeviceTokens, notificationContent.title, notificationContent.body, notificationData);
-            this.logger.log(`Notification sent: ${result.success} success, ${result.failed} failed`, {
+            // 딥링크가 포함된 APNS 페이로드 생성
+            const apnsPayload = deeplink_1.DeepLinkUtils.createPushPayload(pushPayload, deeplinkData);
+            // 배치 전송 (새로운 딥링크 지원 메서드 사용)
+            const results = await Promise.allSettled(allDeviceTokens.map(deviceToken => this.apnsService.sendNotification({
+                deviceToken,
+                title: notificationContent.title,
+                body: notificationContent.body,
+                data: apnsPayload,
+            })));
+            // 결과 집계
+            const successCount = results.filter(r => r.status === 'fulfilled' && r.value).length;
+            const failedCount = results.length - successCount;
+            this.logger.log(`Notification sent with deeplinks: ${successCount} success, ${failedCount} failed`, {
                 eventType: event.type,
                 travelId: event.travelId,
                 targetMemberCount: targetMemberIds.length,
                 deviceTokenCount: allDeviceTokens.length,
+                deeplink: deeplink_1.DeepLinkUtils.generateDeepLink(deeplinkData),
             });
         }
         catch (error) {
@@ -149,10 +185,12 @@ let PushNotificationService = PushNotificationService_1 = class PushNotification
         }
     }
     // 수동으로 알림 발송하는 헬퍼 메서드들
-    async sendExpenseNotification(type, travelId, actorUserId, actorName, expenseTitle, memberIds, amount, currency) {
+    async sendExpenseNotification(type, travelId, expenseId, // 딥링크용 expenseId 추가
+    actorUserId, actorName, expenseTitle, memberIds, amount, currency) {
         this.eventEmitter.emit(`expense.${type.replace('expense_', '')}`, {
             type,
             travelId,
+            expenseId,
             actorUserId,
             actorName,
             expenseTitle,

@@ -144,23 +144,27 @@ export class VersionService {
       throw new ServiceUnavailableException('App version not found from App Store');
     }
 
+    // 최우선 순위: DB가 있으면 DB 값을 사용, 없으면 App Store 값 사용
+    const latestVersion = dbVersion?.latest_version ?? app?.version ?? '0.0.0';
+    const minSupported = dbVersion?.min_supported_version ?? env.appMinSupportedVersion ?? null;
+    const forceUpdate = forceUpdateOverride ?? dbVersion?.force_update ?? true;
+
     const data: AppVersionMeta = {
       bundleId: resolvedBundleId,
-      latestVersion: dbVersion?.latest_version ?? app?.version ?? '0.0.0',
-      releaseNotes: dbVersion?.release_notes ?? app?.releaseNotes ?? null,
+      latestVersion,
+      // releaseNotes는 App Store 우선, 없으면 DB 값 사용
+      releaseNotes: app?.releaseNotes ?? dbVersion?.release_notes ?? null,
       trackName: app?.trackName ?? null,
       minimumOsVersion: app?.minimumOsVersion ?? null,
-      lastUpdated: dbVersion?.updated_at ?? app?.currentVersionReleaseDate ?? null,
-      minSupportedVersion: dbVersion?.min_supported_version ?? env.appMinSupportedVersion ?? null,
-      forceUpdate: true, // forceUpdate 고정값으로 설정
+      // lastUpdated는 App Store 정보가 우선, 없으면 DB 업데이트 시간 사용
+      lastUpdated: app?.currentVersionReleaseDate ?? dbVersion?.updated_at ?? null,
+      minSupportedVersion: minSupported,
+      forceUpdate,
       currentVersion: currentVersion ?? null,
       shouldUpdate: false,
       message: null,
       appStoreUrl: app?.trackViewUrl ?? null,
     };
-
-    // forceUpdate는 항상 true로 고정
-    data.forceUpdate = true;
 
     if (currentVersion) {
       data.shouldUpdate = this.compareVersions(currentVersion, data.latestVersion) < 0;

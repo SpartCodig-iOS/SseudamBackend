@@ -273,9 +273,10 @@ let TravelExpenseService = class TravelExpenseService {
             };
             // 생성 후 캐시 무효화 (동기)로 즉시 반영
             await this.invalidateExpenseCaches(travelId);
-            // 지출 추가 알림 이벤트 발송
+            // 지출 추가 알림 이벤트 발송 (딥링크 포함)
             const currentUserName = this.getMemberName(context, userId) || '사용자';
-            await this.pushNotificationService.sendExpenseNotification('expense_added', travelId, userId, currentUserName, payload.title, context.memberIds, payload.amount, payload.currency);
+            await this.pushNotificationService.sendExpenseNotification('expense_added', travelId, result.id, // expenseId for deep link
+            userId, currentUserName, payload.title, context.memberIds, payload.amount, payload.currency);
             return result;
         }
         catch (error) {
@@ -476,9 +477,10 @@ let TravelExpenseService = class TravelExpenseService {
             };
             // 수정 후 캐시 무효화 (동기로 처리해 즉시 반영)
             await this.invalidateExpenseCaches(travelId, expenseId);
-            // 지출 수정 알림 이벤트 발송
+            // 지출 수정 알림 이벤트 발송 (딥링크 포함)
             const currentUserName = this.getMemberName(context, userId) || '사용자';
-            await this.pushNotificationService.sendExpenseNotification('expense_updated', travelId, userId, currentUserName, payload.title, context.memberIds, payload.amount, payload.currency);
+            await this.pushNotificationService.sendExpenseNotification('expense_updated', travelId, expenseId, // expenseId for deep link
+            userId, currentUserName, payload.title, context.memberIds, payload.amount, payload.currency);
             return result;
         }
         catch (error) {
@@ -528,9 +530,10 @@ let TravelExpenseService = class TravelExpenseService {
             await client.query('COMMIT');
             // 삭제 후 캐시 무효화 (동기로 처리해 즉시 반영)
             await this.invalidateExpenseCaches(travelId, expenseId);
-            // 지출 삭제 알림 이벤트 발송
+            // 지출 삭제 알림 이벤트 발송 (딥링크는 여행 상세로)
             const currentUserName = this.getMemberName(context, userId) || '사용자';
-            await this.pushNotificationService.sendExpenseNotification('expense_deleted', travelId, userId, currentUserName, expense.title, context.memberIds);
+            await this.pushNotificationService.sendExpenseNotification('expense_deleted', travelId, expenseId, // expenseId for completeness (deep link will go to travel detail since expense is deleted)
+            userId, currentUserName, expense.title, context.memberIds);
         }
         catch (error) {
             await client.query('ROLLBACK');

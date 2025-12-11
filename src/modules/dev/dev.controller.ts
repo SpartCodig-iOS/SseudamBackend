@@ -3,6 +3,8 @@ import { ApiTags, ApiOperation, ApiBody, ApiResponse, ApiExcludeController } fro
 import { JwtTokenService } from '../../services/jwtService';
 import { APNSService } from '../../services/apns.service';
 import { DeviceTokenService } from '../../services/device-token.service';
+import { PushNotificationService } from '../../services/push-notification.service';
+import { DeepLinkType, DeepLinkUtils } from '../../types/deeplink';
 import { env } from '../../config/env';
 import { success } from '../../types/api';
 import { UserRole } from '../../types/user';
@@ -15,6 +17,7 @@ export class DevController {
     private readonly jwtService: JwtTokenService,
     private readonly apnsService: APNSService,
     private readonly deviceTokenService: DeviceTokenService,
+    private readonly pushNotificationService: PushNotificationService,
   ) {}
 
   @Post('infinite-token')
@@ -274,6 +277,171 @@ export class DevController {
           error: errorMessage
         },
         'Failed to register test device token'
+      );
+    }
+  }
+
+  @Post('test-deeplink-notification')
+  @ApiOperation({
+    summary: '딥링크 포함 푸시 알림 테스트',
+    description: '딥링크가 포함된 푸시 알림을 테스트하는 API - 실제 푸시 알림 시스템이 딥링크를 제대로 생성하는지 확인'
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['deviceToken', 'deepLinkType'],
+      properties: {
+        deviceToken: {
+          type: 'string',
+          example: 'fe13ccdb7ea3fe314f0df403383b7d5d974dd0f946cd4b89b0f1fd7523dc9a07',
+          description: '실제 iOS 디바이스 토큰'
+        },
+        deepLinkType: {
+          type: 'string',
+          enum: ['expense_detail', 'travel_detail', 'travel_invite', 'settlement_result'],
+          example: 'expense_detail',
+          description: '테스트할 딥링크 타입'
+        },
+        travelId: {
+          type: 'string',
+          example: 'fbde676c-4cad-4f6d-bede-93c58565b301',
+          description: '여행 ID (expense_detail, travel_detail, settlement_result에 필요)'
+        },
+        expenseId: {
+          type: 'string',
+          example: 'dfd16288-6275-4cc0-ab52-f2fc143101ce',
+          description: '지출 ID (expense_detail에 필요)'
+        },
+        inviteCode: {
+          type: 'string',
+          example: 'a82ed7c6e3',
+          description: '초대 코드 (travel_invite에 필요)'
+        }
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: '딥링크 포함 푸시 알림 테스트 성공',
+    schema: {
+      type: 'object',
+      properties: {
+        code: { type: 'number', example: 200 },
+        message: { type: 'string', example: 'Deep link push notification test completed' },
+        data: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean', example: true },
+            deviceToken: { type: 'string', example: 'fe13ccdb...' },
+            deepLinkType: { type: 'string', example: 'expense_detail' },
+            generatedDeepLink: { type: 'string', example: 'sseudam://travel/123/expense/456' },
+            notificationPayload: { type: 'object' },
+            timestamp: { type: 'string', example: '2025-12-11T10:30:00.000Z' }
+          },
+        },
+      },
+    },
+  })
+  async testDeepLinkNotification(@Body() body: {
+    deviceToken: string;
+    deepLinkType: 'expense_detail' | 'travel_detail' | 'travel_invite' | 'settlement_result';
+    travelId?: string;
+    expenseId?: string;
+    inviteCode?: string;
+  }) {
+    try {
+      // 입력 검증
+      if (!body.deviceToken || body.deviceToken.length < 60) {
+        throw new BadRequestException('Invalid device token format');
+      }
+
+      // 딥링크 타입별 필수 파라미터 검증
+      switch (body.deepLinkType) {
+        case 'expense_detail':
+          if (!body.travelId || !body.expenseId) {
+            throw new BadRequestException('travelId and expenseId are required for expense_detail');
+          }
+          break;
+        case 'travel_detail':
+        case 'settlement_result':
+          if (!body.travelId) {
+            throw new BadRequestException('travelId is required for travel_detail and settlement_result');
+          }
+          break;
+        case 'travel_invite':
+          if (!body.inviteCode) {
+            throw new BadRequestException('inviteCode is required for travel_invite');
+          }
+          break;
+        default:
+          throw new BadRequestException('Invalid deepLinkType');
+      }
+
+      // 딥링크 데이터 생성
+      const deepLinkData = {
+        type: body.deepLinkType as DeepLinkType,
+        travelId: body.travelId,
+        expenseId: body.expenseId,
+        inviteCode: body.inviteCode
+      };
+
+      // 딥링크 URL 생성
+      const deepLinkUrl = DeepLinkUtils.generateDeepLink(deepLinkData);
+
+      // 푸시 알림 payload 생성 (딥링크 포함)
+      const pushPayload = {
+        title: '딥링크 테스트 알림',
+        body: `${body.deepLinkType} 딥링크가 포함된 테스트 푸시 알림입니다`,
+        data: {
+          type: 'deeplink_test',
+          testType: body.deepLinkType,
+          timestamp: new Date().toISOString()
+        }
+      };
+
+      // 딥링크가 포함된 APNS 페이로드 생성
+      const apnsPayload = DeepLinkUtils.createPushPayload(pushPayload, deepLinkData);
+
+      // APNS로 알림 전송
+      const result = await this.apnsService.sendNotificationWithResult({
+        deviceToken: body.deviceToken,
+        title: pushPayload.title,
+        body: pushPayload.body,
+        data: apnsPayload
+      });
+
+      return success(
+        {
+          success: result.success,
+          deviceToken: `${body.deviceToken.substring(0, 8)}...`,
+          deepLinkType: body.deepLinkType,
+          generatedDeepLink: deepLinkUrl,
+          notificationPayload: {
+            title: pushPayload.title,
+            body: pushPayload.body,
+            apsPayload: apnsPayload
+          },
+          apnsResult: {
+            success: result.success,
+            reason: result.reason
+          },
+          timestamp: new Date().toISOString()
+        },
+        'Deep link push notification test completed'
+      );
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+
+      return success(
+        {
+          success: false,
+          deviceToken: `${body.deviceToken.substring(0, 8)}...`,
+          deepLinkType: body.deepLinkType,
+          error: errorMessage,
+          timestamp: new Date().toISOString()
+        },
+        'Deep link push notification test failed'
       );
     }
   }

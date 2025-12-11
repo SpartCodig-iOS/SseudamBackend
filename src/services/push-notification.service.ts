@@ -2,11 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { APNSService } from './apns.service';
 import { DeviceTokenService } from './device-token.service';
+import { DeepLinkType, DeepLinkData, DeepLinkUtils, PushNotificationPayload } from '../types/deeplink';
 
 // 알림 이벤트 타입 정의
 export interface ExpenseNotificationEvent {
   type: 'expense_added' | 'expense_updated' | 'expense_deleted';
   travelId: string;
+  expenseId: string;   // 딥링크용 지출 ID 추가
   actorUserId: string; // 작업을 수행한 사용자 (알림에서 제외)
   actorName: string;   // 작업을 수행한 사용자 이름
   expenseTitle: string;
@@ -126,7 +128,25 @@ export class PushNotificationService {
     await this.sendNotificationToTravelMembers(event);
   }
 
-  // 실제 알림 전송 로직
+  // 딥링크 데이터 생성
+  private createDeepLinkData(event: ExpenseNotificationEvent | TravelNotificationEvent): DeepLinkData {
+    if ('expenseId' in event && event.expenseId) {
+      // 지출 관련 이벤트 - 지출 상세로 이동
+      return {
+        type: DeepLinkType.EXPENSE_DETAIL,
+        travelId: event.travelId,
+        expenseId: event.expenseId,
+      };
+    } else {
+      // 여행 관련 이벤트 - 여행 상세로 이동
+      return {
+        type: DeepLinkType.TRAVEL_DETAIL,
+        travelId: event.travelId,
+      };
+    }
+  }
+
+  // 실제 알림 전송 로직 (딥링크 지원)
   private async sendNotificationToTravelMembers(event: ExpenseNotificationEvent | TravelNotificationEvent) {
     try {
       // 작업자 본인은 제외하고 다른 멤버들에게만 알림 전송
@@ -156,27 +176,46 @@ export class PushNotificationService {
         ? this.generateExpenseNotificationContent(event)
         : this.generateTravelNotificationContent(event);
 
-      // 알림 데이터 추가 (딥링크용)
-      const notificationData = {
-        type: event.type,
-        travelId: event.travelId,
-        actorUserId: event.actorUserId,
-        deepLink: `sseudam://travel/${event.travelId}`,
+      // 딥링크 데이터 생성
+      const deeplinkData = this.createDeepLinkData(event);
+
+      // 푸시 알림 페이로드 생성
+      const pushPayload: PushNotificationPayload = {
+        title: notificationContent.title,
+        body: notificationContent.body,
+        data: {
+          type: event.type,
+          travelId: event.travelId,
+          actorUserId: event.actorUserId,
+          timestamp: new Date().toISOString(),
+        },
       };
 
-      // 배치 전송
-      const result = await this.apnsService.sendNotificationToMultiple(
-        allDeviceTokens,
-        notificationContent.title,
-        notificationContent.body,
-        notificationData
+      // 딥링크가 포함된 APNS 페이로드 생성
+      const apnsPayload = DeepLinkUtils.createPushPayload(pushPayload, deeplinkData);
+
+      // 배치 전송 (새로운 딥링크 지원 메서드 사용)
+      const results = await Promise.allSettled(
+        allDeviceTokens.map(deviceToken =>
+          this.apnsService.sendNotification({
+            deviceToken,
+            title: notificationContent.title,
+            body: notificationContent.body,
+            data: apnsPayload,
+          })
+        )
       );
 
-      this.logger.log(`Notification sent: ${result.success} success, ${result.failed} failed`, {
+      // 결과 집계
+      const successCount = results.filter(r => r.status === 'fulfilled' && r.value).length;
+      const failedCount = results.length - successCount;
+
+      this.logger.log(`Notification sent with deeplinks: ${successCount} success, ${failedCount} failed`, {
         eventType: event.type,
         travelId: event.travelId,
         targetMemberCount: targetMemberIds.length,
         deviceTokenCount: allDeviceTokens.length,
+        deeplink: DeepLinkUtils.generateDeepLink(deeplinkData),
       });
 
     } catch (error) {
@@ -192,6 +231,7 @@ export class PushNotificationService {
   async sendExpenseNotification(
     type: ExpenseNotificationEvent['type'],
     travelId: string,
+    expenseId: string,  // 딥링크용 expenseId 추가
     actorUserId: string,
     actorName: string,
     expenseTitle: string,
@@ -202,6 +242,7 @@ export class PushNotificationService {
     this.eventEmitter.emit(`expense.${type.replace('expense_', '')}`, {
       type,
       travelId,
+      expenseId,
       actorUserId,
       actorName,
       expenseTitle,
