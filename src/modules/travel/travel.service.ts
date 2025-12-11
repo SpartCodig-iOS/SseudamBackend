@@ -757,13 +757,13 @@ export class TravelService {
          owner_profile.name AS owner_name,
          ut.total_count
        FROM (
-          SELECT t.*,
-                 COALESCE(tm.role, mp.role, 'member') AS role,
-                 CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS computed_status,
-                 COUNT(*) OVER() AS total_count
-          FROM travels t
-          INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
-          LEFT JOIN profiles mp ON mp.id = tm.user_id
+         SELECT t.*,
+                COALESCE(tm.role, mp.role, 'member') AS role,
+                CASE WHEN t.end_date::date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS computed_status,
+                COUNT(*) OVER() AS total_count
+         FROM travels t
+         INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
+         LEFT JOIN profiles mp ON mp.id = tm.user_id
           WHERE 1 = 1
           ${statusCondition}
           ORDER BY t.created_at DESC
@@ -1212,7 +1212,7 @@ export class TravelService {
              base_currency = $8,
              base_exchange_rate = $9,
              country_currencies = $10,
-             status = CASE WHEN $5 < CURRENT_DATE THEN 'archived' ELSE 'active' END,
+             status = CASE WHEN to_date($5, 'YYYY-MM-DD') < CURRENT_DATE THEN 'archived' ELSE 'active' END,
              updated_at = NOW()
          WHERE id = $1 AND owner_id = $2
          RETURNING
