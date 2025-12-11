@@ -327,6 +327,23 @@ export class AuthController {
       },
     },
   })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        code: { type: 'number', example: 200 },
+        message: { type: 'string', example: 'Device token registered' },
+        data: {
+          type: 'object',
+          properties: {
+            deviceToken: { type: 'string', example: 'fe13ccdb...' },
+            pendingKey: { type: 'string', example: 'anon-uuid-123', nullable: true },
+            mode: { type: 'string', example: 'anonymous', description: 'anonymous | authenticated' },
+          },
+        },
+      },
+    },
+  })
   async registerDeviceToken(
     @Body('deviceToken') deviceTokenRaw: unknown,
     @Body('pendingKey') pendingKeyRaw: unknown,
@@ -341,15 +358,15 @@ export class AuthController {
     if (req.currentUser?.id) {
       // 인증된 경우: 바로 사용자에 매핑
       await this.deviceTokenService.upsertDeviceToken(req.currentUser.id, deviceToken);
+      return success({ deviceToken, pendingKey, mode: 'authenticated' }, 'Device token registered');
     } else {
       // 비인증: pendingKey가 있어야 매핑 가능
       if (!pendingKey) {
         throw new BadRequestException('pendingKey is required for anonymous registration');
       }
       await this.deviceTokenService.upsertAnonymousToken(pendingKey, deviceToken);
+      return success({ deviceToken, pendingKey, mode: 'anonymous' }, 'Device token registered');
     }
-
-    return success({}, 'Device token registered');
   }
 
 }
