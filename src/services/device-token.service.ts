@@ -45,17 +45,58 @@ export class DeviceTokenService {
     if (!token && !key) return;
     try {
       const pool = await getPool();
-      await pool.query(
-        `UPDATE device_tokens
-           SET user_id = $1,
-               pending_key = NULL,
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        const result = await client.query(
+          `UPDATE device_tokens
+             SET user_id = $1,
+                 pending_key = NULL,
+                 is_active = true,
+                 last_used_at = NOW(),
+                 updated_at = NOW()
+           WHERE ($2::text IS NOT NULL AND device_token = $2::text)
+              OR ($3::text IS NOT NULL AND pending_key = $3::text)`,
+          [userId, token ?? null, key ?? null],
+        );
+
+        // 매칭되는 행이 없고 deviceToken이 있으면 새로 삽입
+        if ((result.rowCount ?? 0) === 0 && token) {
+          await client.query(
+            `INSERT INTO device_tokens (user_id, device_token, platform, is_active, last_used_at, created_at, updated_at, pending_key)
+             VALUES ($1, $2, 'ios', true, NOW(), NOW(), NOW(), NULL)
+             ON CONFLICT (device_token)
+             DO UPDATE SET
+               user_id = EXCLUDED.user_id,
                is_active = true,
                last_used_at = NOW(),
-               updated_at = NOW()
-         WHERE ($2 IS NOT NULL AND device_token = $2)
-            OR ($3 IS NOT NULL AND pending_key = $3)`,
-        [userId, token || null, key || null],
-      );
+               updated_at = NOW(),
+               pending_key = NULL`,
+            [userId, token],
+          );
+        }
+
+        // 동일 사용자에 매핑된 다른 토큰은 비활성화 (최신 토큰만 활성화)
+        if (token) {
+          await client.query(
+            `UPDATE device_tokens
+               SET is_active = false,
+                   updated_at = NOW()
+             WHERE user_id = $1
+               AND device_token <> $2
+               AND is_active = true`,
+            [userId, token],
+          );
+        }
+
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
     } catch (error) {
       this.logger.error('Failed to bind pending tokens', {
         error: error instanceof Error ? error.message : String(error),
