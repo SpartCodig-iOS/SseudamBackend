@@ -107,6 +107,9 @@ export class ResponseTransformInterceptor implements NestInterceptor {
     }
 
     if (obj && typeof obj === 'object') {
+      if (obj instanceof Date) {
+        return obj.toISOString();
+      }
       const compacted: any = {};
       for (const [key, value] of Object.entries(obj)) {
         // null, undefined, 빈 문자열 제거

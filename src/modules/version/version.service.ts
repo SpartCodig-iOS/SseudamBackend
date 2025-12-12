@@ -25,6 +25,13 @@ export class VersionService {
   private readonly appVersionCacheTTL = 1000 * 60 * 5; // 5분
   private appVersionTableReady = false;
 
+  private toIsoString(input: any): string | null {
+    if (!input) return null;
+    const d = input instanceof Date ? input : new Date(input);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString();
+  }
+
   private async ensureAppVersionTable(): Promise<void> {
     if (this.appVersionTableReady) return;
     const pool = await getPool();
@@ -162,8 +169,8 @@ export class VersionService {
       : app?.releaseNotes ?? dbVersion?.release_notes ?? null;
 
     const lastUpdated = dbIsNewerOrEqual
-      ? dbVersion?.updated_at ?? app?.currentVersionReleaseDate ?? null
-      : app?.currentVersionReleaseDate ?? dbVersion?.updated_at ?? null;
+      ? this.toIsoString(dbVersion?.updated_at ?? app?.currentVersionReleaseDate ?? null)
+      : this.toIsoString(app?.currentVersionReleaseDate ?? dbVersion?.updated_at ?? null);
 
     const data: AppVersionMeta = {
       bundleId: resolvedBundleId,
