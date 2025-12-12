@@ -48,24 +48,24 @@ export class PushNotificationService {
     switch (event.type) {
       case 'expense_added':
         return {
-          title: '📱 새 지출이 추가되었습니다',
+          title: '새 지출이 추가되었습니다',
           body: `${event.actorName}님이 "${event.expenseTitle}"을 추가했습니다${
             event.amount && event.currency ? ` (${formatAmount(event.amount, event.currency)})` : ''
           }`,
         };
       case 'expense_updated':
         return {
-          title: '📱 지출이 수정되었습니다',
+          title: '지출이 수정되었습니다',
           body: `${event.actorName}님이 "${event.expenseTitle}"을 수정했습니다`,
         };
       case 'expense_deleted':
         return {
-          title: '📱 지출이 삭제되었습니다',
+          title: '지출이 삭제되었습니다',
           body: `${event.actorName}님이 "${event.expenseTitle}"을 삭제했습니다`,
         };
       default:
         return {
-          title: '📱 지출 변경 알림',
+          title: '지출 변경 알림',
           body: `${event.actorName}님이 지출 내역을 변경했습니다`,
         };
     }
@@ -75,22 +75,22 @@ export class PushNotificationService {
     switch (event.type) {
       case 'travel_updated':
         return {
-          title: '📱 여행 정보가 수정되었습니다',
+          title: '여행 정보가 수정되었습니다',
           body: `${event.actorName}님이 "${event.travelTitle}" 정보를 수정했습니다`,
         };
       case 'travel_member_added':
         return {
-          title: '📱 새 멤버가 추가되었습니다',
+          title: '새 멤버가 추가되었습니다',
           body: `"${event.travelTitle}"에 새 멤버가 추가되었습니다`,
         };
       case 'travel_member_removed':
         return {
-          title: '📱 멤버가 여행에서 나갔습니다',
+          title: '멤버가 여행에서 나갔습니다',
           body: `"${event.travelTitle}"에서 멤버가 나갔습니다`,
         };
       default:
         return {
-          title: '📱 여행 변경 알림',
+          title: '여행 변경 알림',
           body: `${event.actorName}님이 여행 정보를 변경했습니다`,
         };
     }
@@ -140,7 +140,7 @@ export class PushNotificationService {
     } else {
       // 여행 관련 이벤트 - 여행 상세로 이동
       return {
-        type: DeepLinkType.TRAVEL_DETAIL,
+        type: event.type === 'travel_updated' ? DeepLinkType.TRAVEL_SETTINGS : DeepLinkType.TRAVEL_DETAIL,
         travelId: event.travelId,
       };
     }
