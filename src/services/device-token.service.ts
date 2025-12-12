@@ -75,28 +75,54 @@ export class DeviceTokenService {
       return;
     }
 
+    const token = deviceToken.trim();
+
     try {
       const pool = await getPool();
 
-      // 기존 토큰이 있는지 확인하고 업데이트, 없으면 새로 추가
-      await pool.query(
-        `INSERT INTO device_tokens (user_id, device_token, platform, is_active, last_used_at, created_at, updated_at, pending_key)
-         VALUES ($1, $2, 'ios', true, NOW(), NOW(), NOW(), NULL)
-         ON CONFLICT (user_id, device_token)
-         DO UPDATE SET
-           is_active = true,
-           last_used_at = NOW(),
-           updated_at = NOW(),
-           pending_key = NULL`,
-        [userId, deviceToken.trim()]
-      );
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+
+        // device_token 기준으로 upsert (다른 사용자에 매핑되어 있어도 덮어씀)
+        await client.query(
+          `INSERT INTO device_tokens (user_id, device_token, platform, is_active, last_used_at, created_at, updated_at, pending_key)
+           VALUES ($1, $2, 'ios', true, NOW(), NOW(), NOW(), NULL)
+           ON CONFLICT (device_token)
+           DO UPDATE SET
+             user_id = EXCLUDED.user_id,
+             is_active = true,
+             last_used_at = NOW(),
+             updated_at = NOW(),
+             pending_key = NULL`,
+          [userId, token]
+        );
+
+        // 동일 사용자에 매핑된 이전 토큰은 비활성화
+        await client.query(
+          `UPDATE device_tokens
+             SET is_active = false,
+                 updated_at = NOW()
+           WHERE user_id = $1
+             AND device_token <> $2
+             AND is_active = true`,
+          [userId, token]
+        );
+
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
 
       this.logger.log(`Device token updated for user ${userId}`);
     } catch (error) {
       this.logger.error('Failed to upsert device token', {
         error: error instanceof Error ? error.message : String(error),
         userId,
-        deviceTokenPrefix: deviceToken.substring(0, 8),
+        deviceTokenPrefix: token.substring(0, 8),
       });
     }
   }
