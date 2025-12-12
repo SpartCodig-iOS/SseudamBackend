@@ -26,12 +26,16 @@ const auth_response_util_1 = require("./auth-response.util");
 const rate_limit_decorator_1 = require("../../common/decorators/rate-limit.decorator");
 const device_token_service_1 = require("../../services/device-token.service");
 const analytics_service_1 = require("../../services/analytics.service");
+const jwtService_1 = require("../../services/jwtService");
+const sessionService_1 = require("../../services/sessionService");
 let AuthController = class AuthController {
-    constructor(authService, optimizedDeleteService, deviceTokenService, analyticsService) {
+    constructor(authService, optimizedDeleteService, deviceTokenService, analyticsService, jwtTokenService, sessionService) {
         this.authService = authService;
         this.optimizedDeleteService = optimizedDeleteService;
         this.deviceTokenService = deviceTokenService;
         this.analyticsService = analyticsService;
+        this.jwtTokenService = jwtTokenService;
+        this.sessionService = sessionService;
     }
     async signup(body) {
         const payload = authSchemas_1.signupSchema.parse(body);
@@ -127,13 +131,14 @@ let AuthController = class AuthController {
             throw new common_1.BadRequestException('deviceToken is required');
         }
         const pendingKey = typeof pendingKeyRaw === 'string' ? pendingKeyRaw.trim() : undefined;
-        if (req.currentUser?.id) {
+        const resolvedUserId = req.currentUser?.id ?? (await this.resolveUserIdFromHeader(req));
+        if (resolvedUserId) {
             // 인증된 경우: 바로 사용자에 매핑
             if (pendingKey) {
                 // 로그인 전 등록된 토큰이 있으면 함께 사용자에 매핑
-                await this.deviceTokenService.bindPendingTokensToUser(req.currentUser.id, pendingKey, deviceToken);
+                await this.deviceTokenService.bindPendingTokensToUser(resolvedUserId, pendingKey, deviceToken);
             }
-            await this.deviceTokenService.upsertDeviceToken(req.currentUser.id, deviceToken);
+            await this.deviceTokenService.upsertDeviceToken(resolvedUserId, deviceToken);
             return (0, api_1.success)({ deviceToken, pendingKey, mode: 'authenticated' }, 'Device token registered');
         }
         else {
@@ -143,6 +148,31 @@ let AuthController = class AuthController {
             }
             await this.deviceTokenService.upsertAnonymousToken(pendingKey, deviceToken);
             return (0, api_1.success)({ deviceToken, pendingKey, mode: 'anonymous' }, 'Device token registered');
+        }
+    }
+    /**
+     * Authorization 헤더의 Bearer 토큰이 있으면 검증하여 userId를 반환
+     */
+    async resolveUserIdFromHeader(req) {
+        const authHeader = req.headers?.authorization ?? '';
+        if (!authHeader.toLowerCase().startsWith('bearer ')) {
+            return null;
+        }
+        const token = authHeader.slice(7).trim();
+        if (!token)
+            return null;
+        try {
+            const payload = this.jwtTokenService.verifyAccessToken(token);
+            if (!payload?.sub || !payload.sessionId)
+                return null;
+            // 세션이 유효한지 확인 (만료/취소된 세션이면 무시)
+            const session = await this.sessionService.getSession(payload.sessionId);
+            if (!session?.isActive)
+                return null;
+            return payload.sub;
+        }
+        catch {
+            return null;
         }
     }
 };
@@ -391,5 +421,7 @@ exports.AuthController = AuthController = __decorate([
     __metadata("design:paramtypes", [auth_service_1.AuthService,
         optimized_delete_service_1.OptimizedDeleteService,
         device_token_service_1.DeviceTokenService,
-        analytics_service_1.AnalyticsService])
+        analytics_service_1.AnalyticsService,
+        jwtService_1.JwtTokenService,
+        sessionService_1.SessionService])
 ], AuthController);

@@ -26,6 +26,8 @@ import { RateLimit } from '../../common/decorators/rate-limit.decorator';
 import { LoginType } from '../../types/auth';
 import { DeviceTokenService } from '../../services/device-token.service';
 import { AnalyticsService } from '../../services/analytics.service';
+import { JwtTokenService } from '../../services/jwtService';
+import { SessionService } from '../../services/sessionService';
 
 @ApiTags('Auth')
 @Controller('api/v1/auth')
@@ -35,6 +37,8 @@ export class AuthController {
     private readonly optimizedDeleteService: OptimizedDeleteService,
     private readonly deviceTokenService: DeviceTokenService,
     private readonly analyticsService: AnalyticsService,
+    private readonly jwtTokenService: JwtTokenService,
+    private readonly sessionService: SessionService,
   ) {}
 
   @Post('signup')
@@ -382,13 +386,15 @@ export class AuthController {
     }
     const pendingKey = typeof pendingKeyRaw === 'string' ? pendingKeyRaw.trim() : undefined;
 
-    if (req.currentUser?.id) {
+    const resolvedUserId = req.currentUser?.id ?? (await this.resolveUserIdFromHeader(req));
+
+    if (resolvedUserId) {
       // 인증된 경우: 바로 사용자에 매핑
       if (pendingKey) {
         // 로그인 전 등록된 토큰이 있으면 함께 사용자에 매핑
-        await this.deviceTokenService.bindPendingTokensToUser(req.currentUser.id, pendingKey, deviceToken);
+        await this.deviceTokenService.bindPendingTokensToUser(resolvedUserId, pendingKey, deviceToken);
       }
-      await this.deviceTokenService.upsertDeviceToken(req.currentUser.id, deviceToken);
+      await this.deviceTokenService.upsertDeviceToken(resolvedUserId, deviceToken);
       return success({ deviceToken, pendingKey, mode: 'authenticated' }, 'Device token registered');
     } else {
       // 비인증: pendingKey가 있어야 매핑 가능
@@ -400,4 +406,28 @@ export class AuthController {
     }
   }
 
+  /**
+   * Authorization 헤더의 Bearer 토큰이 있으면 검증하여 userId를 반환
+   */
+  private async resolveUserIdFromHeader(req: RequestWithUser): Promise<string | null> {
+    const authHeader = req.headers?.authorization ?? '';
+    if (!authHeader.toLowerCase().startsWith('bearer ')) {
+      return null;
+    }
+    const token = authHeader.slice(7).trim();
+    if (!token) return null;
+
+    try {
+      const payload = this.jwtTokenService.verifyAccessToken(token);
+      if (!payload?.sub || !payload.sessionId) return null;
+
+      // 세션이 유효한지 확인 (만료/취소된 세션이면 무시)
+      const session = await this.sessionService.getSession(payload.sessionId);
+      if (!session?.isActive) return null;
+
+      return payload.sub;
+    } catch {
+      return null;
+    }
+  }
 }
