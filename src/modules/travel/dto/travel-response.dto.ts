@@ -130,6 +130,13 @@ export class TravelExpenseDto {
 
   @ApiProperty({ type: () => TravelExpenseParticipantDto, isArray: true })
   participants!: TravelExpenseParticipantDto[];
+
+  @ApiProperty({
+    type: () => TravelExpenseParticipantDto,
+    isArray: true,
+    description: '해당 여행의 전체 멤버 (이후 participants를 대체 예정)',
+  })
+  travelMembers!: TravelExpenseParticipantDto[];
 }
 
 export class TravelInviteResponseDto {

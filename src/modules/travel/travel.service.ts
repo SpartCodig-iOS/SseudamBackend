@@ -84,6 +84,14 @@ export class TravelService {
     private readonly pushNotificationService: PushNotificationService,
   ) {}
 
+  private emitTravelMembershipChanged(travelId: string): void {
+    try {
+      this.eventEmitter.emit('travel.membership_changed', { travelId });
+    } catch (error) {
+      this.logger.warn('Failed to emit travel.membership_changed', { travelId, error: (error as Error)?.message });
+    }
+  }
+
   private async getCachedTravelList(key: string, rawKey = false): Promise<TravelSummary[] | null> {
     const cacheKey = rawKey ? key : `${key}`;
     // Redis 우선
@@ -1079,6 +1087,9 @@ export class TravelService {
       this.setMemberListCache(inviteRow.travel_id, travelSummary.members);
     }
 
+    // 여행 멤버 변경 이벤트 전파 (지출 컨텍스트 캐시 무효화 등)
+    this.emitTravelMembershipChanged(inviteRow.travel_id);
+
     // 새 멤버 추가 알림 이벤트 발송
     if (travelSummary.members && travelSummary.members.length > 0) {
       const pool = await getPool();
@@ -1161,9 +1172,11 @@ export class TravelService {
     // 다른 멤버들의 목록/멤버십 캐시도 무효화해 즉시 반영
     await this.invalidateTravelCachesForMembers(travelId);
     await this.invalidateMembersCacheForTravel(travelId);
+    this.emitTravelMembershipChanged(travelId);
 
     // 멤버 나가기 알림 이벤트 발송
-    if (memberIds.length > 0 && travelTitle) {
+    const targetMemberIds = memberIds.filter(id => id !== userId);
+    if (targetMemberIds.length > 0 && travelTitle) {
       const userNameResult = await pool.query(
         `SELECT name FROM profiles WHERE id = $1`,
         [userId]
@@ -1176,7 +1189,7 @@ export class TravelService {
         userId,
         currentUserName,
         travelTitle,
-        memberIds
+        targetMemberIds
       );
     }
 
@@ -1357,9 +1370,11 @@ export class TravelService {
     // 다른 멤버들의 여행 목록 캐시도 무효화 (멤버 정보가 변경되므로)
     await this.invalidateTravelCachesForMembers(travelId);
     await this.invalidateMembersCacheForTravel(travelId);
+    this.emitTravelMembershipChanged(travelId);
 
-    // 멤버 삭제 알림 이벤트 발송
-    if (memberIds.length > 0 && travelTitle) {
+    // 멤버 삭제 알림 이벤트 발송 (삭제된 멤버에게는 전송하지 않음)
+    const targetMemberIds = memberIds.filter(id => id !== memberId);
+    if (targetMemberIds.length > 0 && travelTitle) {
       const ownerNameResult = await pool.query(
         `SELECT name FROM profiles WHERE id = $1`,
         [ownerId]
@@ -1372,7 +1387,7 @@ export class TravelService {
         ownerId,
         ownerName,
         travelTitle,
-        memberIds
+        targetMemberIds
       );
     }
   }

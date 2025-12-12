@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { getPool } from '../../db/pool';
 import { CreateExpenseInput } from '../../validators/travelExpenseSchemas';
 import { MetaService } from '../meta/meta.service';
@@ -28,6 +28,10 @@ export interface TravelExpense {
   payerId: string;
   payerName: string | null;
   participants: Array<{
+    memberId: string;
+    name: string | null;
+  }>;
+  travelMembers: Array<{
     memberId: string;
     name: string | null;
   }>;
@@ -199,9 +203,19 @@ export class TravelExpenseService {
     }
     // 정산 요약 캐시도 무효화
     await this.cacheService.del(travelId, { prefix: 'settlement:summary' }).catch(() => undefined);
-    // 컨텍스트 캐시도 함께 무효화 (멤버 변경 가능성)
+    await this.invalidateContextCache(travelId);
+  }
+
+  private async invalidateContextCache(travelId: string): Promise<void> {
     this.contextCache.delete(travelId);
     await this.cacheService.del(travelId, { prefix: this.CONTEXT_PREFIX }).catch(() => undefined);
+  }
+
+  // 여행 멤버 변경 시 지출 컨텍스트 캐시를 강제로 무효화하여 나간 사용자에게 푸시가 가지 않도록 함
+  @OnEvent('travel.membership_changed', { async: true })
+  async handleTravelMembershipChanged(payload: { travelId: string }) {
+    if (!payload?.travelId) return;
+    await this.invalidateContextCache(payload.travelId);
   }
 
   private async getCachedExpenseList(cacheKey: string): Promise<TravelExpense[] | null> {
@@ -315,6 +329,10 @@ export class TravelExpenseService {
       await client.query('COMMIT');
 
       const payerName = this.getMemberName(context, payerId);
+      const travelMembers = context.memberIds.map((memberId) => ({
+        memberId,
+        name: this.getMemberName(context, memberId),
+      }));
       const participants = participantIds.map((memberId) => ({
         memberId,
         name: this.getMemberName(context, memberId),
@@ -333,6 +351,7 @@ export class TravelExpenseService {
         payerId: expense.payer_id,
         payerName,
         participants,
+        travelMembers,
       };
 
       // 생성 후 캐시 무효화 (동기)로 즉시 반영
@@ -410,7 +429,11 @@ export class TravelExpenseService {
 
     const cached = await this.getCachedExpenseList(cacheKey);
     if (cached) {
-      return cached;
+      const travelMembers = context.memberIds.map((memberId) => ({
+        memberId,
+        name: this.getMemberName(context, memberId),
+      }));
+      return cached.map((item) => item.travelMembers ? item : { ...item, travelMembers });
     }
 
     // 최적화: 모든 데이터를 한 번에 조회 (JOIN + JSON 집계) - 페이지네이션 없이 전체 반환
@@ -455,6 +478,11 @@ export class TravelExpenseService {
       queryParams,
     );
 
+    const travelMembers = context.memberIds.map((memberId) => ({
+      memberId,
+      name: this.getMemberName(context, memberId),
+    }));
+
     const items = await Promise.all(combinedResult.rows.map(async (row) => {
       const amount = Number(row.amount);
       const convertedAmount = await this.convertAmount(
@@ -477,6 +505,7 @@ export class TravelExpenseService {
         payerName: row.payer_name ?? null,
         authorId: row.author_id,
         participants: Array.isArray(row.participants) ? row.participants : [],
+        travelMembers,
       };
     }));
 
@@ -488,7 +517,7 @@ export class TravelExpenseService {
 
   /**
    * 지출을 수정합니다.
-   * 권한: 지출 작성자만 수정 가능
+   * 권한: 해당 여행의 멤버라면 모두 수정 가능
    */
   async updateExpense(
     travelId: string,
@@ -515,11 +544,6 @@ export class TravelExpenseService {
     const existingExpense = existingExpenseResult.rows[0];
     if (!existingExpense) {
       throw new NotFoundException('지출을 찾을 수 없습니다.');
-    }
-
-    // 3. 권한 확인: 지출 작성자만 수정 가능
-    if (existingExpense.author_id !== userId) {
-      throw new ForbiddenException('지출 작성자만 수정할 수 있습니다.');
     }
 
     const payerId = payload.payerId ?? userId;
@@ -602,6 +626,10 @@ export class TravelExpenseService {
       await client.query('COMMIT');
 
       const payerName = this.getMemberName(context, payerId);
+      const travelMembers = context.memberIds.map((memberId) => ({
+        memberId,
+        name: this.getMemberName(context, memberId),
+      }));
       const participants = participantIds.map((memberId) => ({
         memberId,
         name: this.getMemberName(context, memberId),
@@ -620,6 +648,7 @@ export class TravelExpenseService {
         payerId: expense.payer_id,
         payerName,
         participants,
+        travelMembers,
       };
 
       // 수정 후 캐시 무효화 (동기로 처리해 즉시 반영)
