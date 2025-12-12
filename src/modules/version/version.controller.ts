@@ -1,8 +1,9 @@
-import { BadRequestException, Controller, Get, HttpCode, HttpStatus, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Post, Query } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { success } from '../../types/api';
 import { VersionService } from './version.service';
 import { AppVersionDto } from './dto/app-version.dto';
+import { ManualAppVersionDto } from './dto/manual-app-version.dto';
 
 @ApiTags('Version')
 @Controller('api/v1/version')
@@ -44,5 +45,20 @@ export class VersionController {
     // bundleId는 하드코딩된 값 사용
     const version = await this.versionService.getAppVersion('io.sseudam.co', currentVersion, forceOverride);
     return success(version);
+  }
+
+  @Post()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '앱 버전 수동 업데이트 (관리용)' })
+  @ApiOkResponse({ schema: { example: { code: 200, message: 'Version updated', data: null } } })
+  async setAppVersion(@Body() body: ManualAppVersionDto) {
+    if (!body.latestVersion) {
+      throw new BadRequestException('latestVersion is required');
+    }
+    await this.versionService.setAppVersionManual({
+      latestVersion: body.latestVersion,
+      releaseNotes: body.releaseNotes ?? null,
+    });
+    return success(null, 'Version updated');
   }
 }

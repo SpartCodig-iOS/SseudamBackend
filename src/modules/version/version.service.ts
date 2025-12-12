@@ -234,4 +234,43 @@ export class VersionService {
       throw error;
     }
   }
+
+  async setAppVersionManual(payload: {
+    latestVersion: string;
+    releaseNotes?: string | null;
+  }): Promise<void> {
+    const bundleId = 'io.sseudam.co';
+    await this.ensureAppVersionTable();
+    const pool = await getPool();
+    const lastUpdated = this.toIsoString(new Date());
+    const minSupported = '17.0';
+    const forceUpdate = true;
+
+    await pool.query(
+      `INSERT INTO app_versions (bundle_id, latest_version, min_supported_version, force_update, release_notes, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (bundle_id)
+       DO UPDATE SET
+         latest_version = EXCLUDED.latest_version,
+         min_supported_version = COALESCE(EXCLUDED.min_supported_version, app_versions.min_supported_version),
+         force_update = EXCLUDED.force_update,
+         release_notes = EXCLUDED.release_notes,
+         updated_at = EXCLUDED.updated_at`,
+      [
+        bundleId,
+        payload.latestVersion,
+        minSupported,
+        forceUpdate,
+        payload.releaseNotes ?? null,
+        lastUpdated,
+      ],
+    );
+
+    // Clear cache for this bundle
+    for (const key of Array.from(this.appVersionCache.keys())) {
+      if (key.startsWith(`${bundleId}|`)) {
+        this.appVersionCache.delete(key);
+      }
+    }
+  }
 }

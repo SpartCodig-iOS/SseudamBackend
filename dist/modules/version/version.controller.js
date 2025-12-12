@@ -18,6 +18,7 @@ const swagger_1 = require("@nestjs/swagger");
 const api_1 = require("../../types/api");
 const version_service_1 = require("./version.service");
 const app_version_dto_1 = require("./dto/app-version.dto");
+const manual_app_version_dto_1 = require("./dto/manual-app-version.dto");
 let VersionController = class VersionController {
     constructor(versionService) {
         this.versionService = versionService;
@@ -39,6 +40,16 @@ let VersionController = class VersionController {
         // bundleId는 하드코딩된 값 사용
         const version = await this.versionService.getAppVersion('io.sseudam.co', currentVersion, forceOverride);
         return (0, api_1.success)(version);
+    }
+    async setAppVersion(body) {
+        if (!body.latestVersion) {
+            throw new common_1.BadRequestException('latestVersion is required');
+        }
+        await this.versionService.setAppVersionManual({
+            latestVersion: body.latestVersion,
+            releaseNotes: body.releaseNotes ?? null,
+        });
+        return (0, api_1.success)(null, 'Version updated');
     }
 };
 exports.VersionController = VersionController;
@@ -65,6 +76,16 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], VersionController.prototype, "getAppVersion", null);
+__decorate([
+    (0, common_1.Post)(),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({ summary: '앱 버전 수동 업데이트 (관리용)' }),
+    (0, swagger_1.ApiOkResponse)({ schema: { example: { code: 200, message: 'Version updated', data: null } } }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [manual_app_version_dto_1.ManualAppVersionDto]),
+    __metadata("design:returntype", Promise)
+], VersionController.prototype, "setAppVersion", null);
 exports.VersionController = VersionController = __decorate([
     (0, swagger_1.ApiTags)('Version'),
     (0, common_1.Controller)('api/v1/version'),
