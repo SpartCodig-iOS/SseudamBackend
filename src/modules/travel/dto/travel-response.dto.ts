@@ -89,6 +89,20 @@ export class TravelExpenseParticipantDto {
   name!: string | null;
 }
 
+export class TravelExpenseMemberDto {
+  @ApiProperty({ example: '8c4c3b33-...' })
+  userId!: string;
+
+  @ApiProperty({ example: '김철수', nullable: true })
+  name!: string | null;
+
+  @ApiProperty({ example: 'user@example.com', nullable: true })
+  email!: string | null;
+
+  @ApiProperty({ example: 'https://example.com/avatar.png', nullable: true })
+  avatarUrl!: string | null;
+}
+
 export class TravelExpenseDto {
   @ApiProperty({ example: 'd1a2e3f4-...' })
   id!: string;
@@ -122,21 +136,30 @@ export class TravelExpenseDto {
   @ApiProperty({ example: 'e11cc73b-052d-4740-8213-999c05bfc332' })
   authorId!: string;
 
-  @ApiProperty({ example: 'owner' })
-  payerId!: string;
+  @ApiProperty({ example: 'owner', required: false, description: '결제자 ID (생성/수정 응답에서는 포함될 수 있음)' })
+  payerId?: string;
 
   @ApiProperty({ example: '홍길동', nullable: true })
   payerName!: string | null;
+
+  @ApiProperty({
+    type: () => TravelExpenseMemberDto,
+    nullable: true,
+    required: false,
+    description: '결제자 상세 정보 (목록 응답에서 주로 반환)',
+  })
+  payer?: TravelExpenseMemberDto | null;
 
   @ApiProperty({ type: () => TravelExpenseParticipantDto, isArray: true })
   participants!: TravelExpenseParticipantDto[];
 
   @ApiProperty({
-    type: () => TravelExpenseParticipantDto,
+    type: () => TravelExpenseMemberDto,
     isArray: true,
-    description: '해당 여행의 전체 멤버 (이후 participants를 대체 예정)',
+    required: false,
+    description: '해당 여행의 전체 멤버 (목록 응답에서 주로 반환)',
   })
-  travelMembers!: TravelExpenseParticipantDto[];
+  expenseMembers?: TravelExpenseMemberDto[];
 }
 
 export class TravelInviteResponseDto {

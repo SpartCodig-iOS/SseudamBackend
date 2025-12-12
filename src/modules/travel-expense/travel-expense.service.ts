@@ -13,6 +13,8 @@ interface TravelContext {
   baseExchangeRate: number;
   memberIds: string[];
   memberNameMap: Map<string, string | null>;
+  memberEmailMap: Map<string, string | null>;
+  memberAvatarMap: Map<string, string | null>;
 }
 
 export interface TravelExpense {
@@ -25,16 +27,23 @@ export interface TravelExpense {
   expenseDate: string;
   category: string | null;
   authorId: string;
-  payerId: string;
+  payerId?: string;
   payerName: string | null;
-  participants: Array<{
-    memberId: string;
-    name: string | null;
-  }>;
-  travelMembers: Array<{
-    memberId: string;
-    name: string | null;
-  }>;
+  payer?: TravelExpenseMember | null;
+  participants: TravelExpenseParticipant[];
+  expenseMembers?: TravelExpenseMember[];
+}
+
+export interface TravelExpenseMember {
+  userId: string;
+  name: string | null;
+  email: string | null;
+  avatarUrl: string | null;
+}
+
+export interface TravelExpenseParticipant {
+  memberId: string;
+  name: string | null;
 }
 
 @Injectable()
@@ -100,7 +109,9 @@ export class TravelExpenseService {
          json_agg(
            json_build_object(
              'id', tm.user_id::text,
-             'name', p.name
+             'name', p.name,
+             'email', p.email,
+             'avatar_url', p.avatar_url
            )
          ) AS member_data
        FROM travels t
@@ -114,14 +125,18 @@ export class TravelExpenseService {
     if (!row) {
       throw new NotFoundException('여행을 찾을 수 없습니다.');
     }
-    const rawMembers: Array<{ id: string; name?: string | null }> = row.member_data ?? [];
+    const rawMembers: Array<{ id: string; name?: string | null; email?: string | null; avatar_url?: string | null }> = row.member_data ?? [];
     const memberIds = rawMembers.map((member) => member.id);
     if (!memberIds.includes(userId)) {
       throw new BadRequestException('해당 여행에 접근 권한이 없습니다.');
     }
     const memberNameMap = new Map<string, string | null>();
+    const memberEmailMap = new Map<string, string | null>();
+    const memberAvatarMap = new Map<string, string | null>();
     rawMembers.forEach((member) => {
       memberNameMap.set(member.id, member.name ?? null);
+      memberEmailMap.set(member.id, member.email ?? null);
+      memberAvatarMap.set(member.id, member.avatar_url ?? null);
     });
     const context: TravelContext = {
       id: row.id,
@@ -129,6 +144,8 @@ export class TravelExpenseService {
       baseExchangeRate: Number(row.base_exchange_rate ?? 0),
       memberIds,
       memberNameMap,
+      memberEmailMap,
+      memberAvatarMap,
     };
 
     this.contextCache.set(travelId, { data: context, expiresAt: Date.now() + this.CONTEXT_TTL_SECONDS * 1000 });
@@ -191,8 +208,32 @@ export class TravelExpenseService {
     }
   }
 
-  private getMemberName(context: TravelContext, memberId: string): string | null {
-    return context.memberNameMap.get(memberId) ?? null;
+  private getMemberProfile(context: TravelContext, memberId: string): TravelExpenseMember | null {
+    if (!context.memberIds.includes(memberId)) {
+      return null;
+    }
+    return {
+      userId: memberId,
+      name: context.memberNameMap.get(memberId) ?? null,
+      email: context.memberEmailMap.get(memberId) ?? null,
+      avatarUrl: context.memberAvatarMap.get(memberId) ?? null,
+    };
+  }
+
+  private normalizeMember(member: any): TravelExpenseMember | null {
+    const id = member?.userId ?? member?.memberId;
+    if (!id) return null;
+    return {
+      userId: id,
+      name: member.name ?? null,
+      email: member.email ?? null,
+      avatarUrl: member.avatarUrl ?? null,
+    };
+  }
+
+  private toParticipant(member: TravelExpenseMember | null): TravelExpenseParticipant | null {
+    if (!member) return null;
+    return { memberId: member.userId, name: member.name };
   }
 
   private async invalidateExpenseCaches(travelId: string, expenseId?: string): Promise<void> {
@@ -328,15 +369,11 @@ export class TravelExpenseService {
 
       await client.query('COMMIT');
 
-      const payerName = this.getMemberName(context, payerId);
-      const travelMembers = context.memberIds.map((memberId) => ({
-        memberId,
-        name: this.getMemberName(context, memberId),
-      }));
-      const participants = participantIds.map((memberId) => ({
-        memberId,
-        name: this.getMemberName(context, memberId),
-      }));
+      const payerProfile = this.getMemberProfile(context, payerId);
+      const expenseMembers = context.memberIds.map((memberId) => this.getMemberProfile(context, memberId)!);
+      const participants = participantIds
+        .map((memberId) => this.toParticipant(this.getMemberProfile(context, memberId)))
+        .filter(Boolean) as TravelExpenseParticipant[];
 
       const result: TravelExpense = {
         id: expense.id,
@@ -348,17 +385,17 @@ export class TravelExpenseService {
         expenseDate,
         category: expense.category,
         authorId: expense.author_id,
-        payerId: expense.payer_id,
-        payerName,
+        payerName: payerProfile?.name ?? null,
+        payer: payerProfile,
         participants,
-        travelMembers,
+        expenseMembers,
       };
 
       // 생성 후 캐시 무효화 (동기)로 즉시 반영
       await this.invalidateExpenseCaches(travelId);
 
       // 지출 추가 알림 이벤트 발송 (딥링크 포함)
-      const currentUserName = this.getMemberName(context, userId) || '사용자';
+      const currentUserName = this.getMemberProfile(context, userId)?.name || '사용자';
       await this.pushNotificationService.sendExpenseNotification(
         'expense_added',
         travelId,
@@ -429,11 +466,30 @@ export class TravelExpenseService {
 
     const cached = await this.getCachedExpenseList(cacheKey);
     if (cached) {
-      const travelMembers = context.memberIds.map((memberId) => ({
-        memberId,
-        name: this.getMemberName(context, memberId),
-      }));
-      return cached.map((item) => item.travelMembers ? item : { ...item, travelMembers });
+      const expenseMembers = context.memberIds.map((memberId) => this.getMemberProfile(context, memberId)!);
+      return cached.map((item) => {
+        const { payerId: _legacyPayerId, ...rest } = item as any;
+        const payerProfile =
+          this.normalizeMember(rest.payer) ??
+          this.getMemberProfile(context, (_legacyPayerId as string) || rest.payer?.memberId || rest.payer?.userId) ??
+          null;
+        const normalizedExpenseMembers = (rest.expenseMembers ?? rest.travelMembers ?? expenseMembers).map((m: any) =>
+          this.normalizeMember(m) ??
+          this.getMemberProfile(context, m?.memberId || m?.userId) ?? {
+            userId: m?.memberId || m?.userId,
+            name: m?.name ?? null,
+            email: null,
+            avatarUrl: null,
+          }
+        );
+        return {
+          ...rest,
+          payer: payerProfile,
+          payerName: rest.payerName ?? payerProfile?.name ?? null,
+          expenseMembers: normalizedExpenseMembers,
+          participants: rest.participants?.map((p: any) => this.toParticipant(this.getMemberProfile(context, p.memberId)) ?? p) ?? [],
+        };
+      });
     }
 
     // 최적화: 모든 데이터를 한 번에 조회 (JOIN + JSON 집계) - 페이지네이션 없이 전체 반환
@@ -451,6 +507,8 @@ export class TravelExpenseService {
           e.author_id::text,
           e.payer_id::text,
           COALESCE(e.display_name, payer.name) AS payer_name,
+          payer.email AS payer_email,
+          payer.avatar_url AS payer_avatar,
           ROW_NUMBER() OVER (ORDER BY e.expense_date::date DESC, e.created_at DESC) as row_num
         FROM travel_expenses e
         LEFT JOIN profiles payer ON payer.id = e.payer_id
@@ -462,7 +520,9 @@ export class TravelExpenseService {
           json_agg(
             json_build_object(
               'memberId', tep.member_id::text,
-              'name', COALESCE(tep.display_name, p.name)
+              'name', COALESCE(tep.display_name, p.name),
+              'email', p.email,
+              'avatarUrl', p.avatar_url
             )
             ORDER BY p.name
           ) FILTER (WHERE tep.member_id IS NOT NULL),
@@ -472,16 +532,13 @@ export class TravelExpenseService {
        LEFT JOIN travel_expense_participants tep ON tep.expense_id = el.id::uuid
        LEFT JOIN profiles p ON p.id = tep.member_id
        GROUP BY el.id, el.title, el.note, el.amount, el.currency, el.converted_amount,
-                el.expense_date, el.category, el.author_id, el.payer_id, el.payer_name,
+                el.expense_date, el.category, el.author_id, el.payer_id, el.payer_name, el.payer_email, el.payer_avatar,
                 el.row_num
        ORDER BY el.row_num`,
       queryParams,
     );
 
-    const travelMembers = context.memberIds.map((memberId) => ({
-      memberId,
-      name: this.getMemberName(context, memberId),
-    }));
+    const expenseMembers = context.memberIds.map((memberId) => this.getMemberProfile(context, memberId)!);
 
     const items = await Promise.all(combinedResult.rows.map(async (row) => {
       const amount = Number(row.amount);
@@ -490,6 +547,19 @@ export class TravelExpenseService {
         row.currency,
         'KRW',
         context.baseExchangeRate,
+      );
+      const payerProfile = this.getMemberProfile(context, row.payer_id) ?? {
+        userId: row.payer_id,
+        name: row.payer_name ?? null,
+        email: row.payer_email ?? null,
+        avatarUrl: row.payer_avatar ?? null,
+      };
+      const participantList = Array.isArray(row.participants) ? row.participants : [];
+      const participants = participantList.map((p: any) =>
+        this.toParticipant(this.getMemberProfile(context, p.memberId)) ?? {
+          memberId: p.memberId,
+          name: p.name ?? null,
+        }
       );
 
       return {
@@ -501,11 +571,11 @@ export class TravelExpenseService {
         convertedAmount,
         expenseDate: row.expense_date,
         category: row.category,
-        payerId: row.payer_id,
-        payerName: row.payer_name ?? null,
+        payerName: payerProfile?.name ?? null,
+        payer: payerProfile,
         authorId: row.author_id,
-        participants: Array.isArray(row.participants) ? row.participants : [],
-        travelMembers,
+        participants,
+        expenseMembers,
       };
     }));
 
@@ -625,15 +695,11 @@ export class TravelExpenseService {
 
       await client.query('COMMIT');
 
-      const payerName = this.getMemberName(context, payerId);
-      const travelMembers = context.memberIds.map((memberId) => ({
-        memberId,
-        name: this.getMemberName(context, memberId),
-      }));
-      const participants = participantIds.map((memberId) => ({
-        memberId,
-        name: this.getMemberName(context, memberId),
-      }));
+      const payerProfile = this.getMemberProfile(context, payerId);
+      const expenseMembers = context.memberIds.map((memberId) => this.getMemberProfile(context, memberId)!);
+      const participants = participantIds
+        .map((memberId) => this.toParticipant(this.getMemberProfile(context, memberId)))
+        .filter(Boolean) as TravelExpenseParticipant[];
 
       const result: TravelExpense = {
         id: expense.id,
@@ -645,17 +711,17 @@ export class TravelExpenseService {
         expenseDate,
         category: expense.category,
         authorId: expense.author_id,
-        payerId: expense.payer_id,
-        payerName,
+        payerName: payerProfile?.name ?? null,
+        payer: payerProfile,
         participants,
-        travelMembers,
+        expenseMembers,
       };
 
       // 수정 후 캐시 무효화 (동기로 처리해 즉시 반영)
       await this.invalidateExpenseCaches(travelId, expenseId);
 
       // 지출 수정 알림 이벤트 발송 (딥링크 포함)
-      const currentUserName = this.getMemberName(context, userId) || '사용자';
+      const currentUserName = this.getMemberProfile(context, userId)?.name || '사용자';
       await this.pushNotificationService.sendExpenseNotification(
         'expense_updated',
         travelId,
@@ -750,7 +816,7 @@ export class TravelExpenseService {
       await this.invalidateExpenseCaches(travelId, expenseId);
 
       // 지출 삭제 알림 이벤트 발송 (딥링크는 여행 상세로)
-      const currentUserName = this.getMemberName(context, userId) || '사용자';
+      const currentUserName = this.getMemberProfile(context, userId)?.name || '사용자';
       await this.pushNotificationService.sendExpenseNotification(
         'expense_deleted',
         travelId,

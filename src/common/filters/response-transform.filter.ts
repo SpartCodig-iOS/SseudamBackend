@@ -8,7 +8,7 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { Response } from 'express';
 
-const PRESERVE_NULL_KEYS = new Set(['avatarURL']);
+const PRESERVE_NULL_KEYS = new Set(['avatarURL', 'avatarUrl']);
 
 interface OptimizedResponse {
   code: number;

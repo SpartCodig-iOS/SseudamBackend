@@ -9,7 +9,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ResponseTransformInterceptor = void 0;
 const common_1 = require("@nestjs/common");
 const operators_1 = require("rxjs/operators");
-const PRESERVE_NULL_KEYS = new Set(['avatarURL']);
+const PRESERVE_NULL_KEYS = new Set(['avatarURL', 'avatarUrl']);
 let ResponseTransformInterceptor = class ResponseTransformInterceptor {
     intercept(context, next) {
         const response = context.switchToHttp().getResponse();

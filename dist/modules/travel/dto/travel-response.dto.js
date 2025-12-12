@@ -9,7 +9,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TravelInviteResponseDto = exports.TravelExpenseDto = exports.TravelExpenseParticipantDto = exports.TravelMemberDto = exports.TravelListResponseDto = exports.TravelSummaryDto = void 0;
+exports.TravelInviteResponseDto = exports.TravelExpenseDto = exports.TravelExpenseMemberDto = exports.TravelExpenseParticipantDto = exports.TravelMemberDto = exports.TravelListResponseDto = exports.TravelSummaryDto = void 0;
 const swagger_1 = require("@nestjs/swagger");
 class TravelSummaryDto {
 }
@@ -131,6 +131,25 @@ __decorate([
     (0, swagger_1.ApiProperty)({ example: '김철수', nullable: true }),
     __metadata("design:type", Object)
 ], TravelExpenseParticipantDto.prototype, "name", void 0);
+class TravelExpenseMemberDto {
+}
+exports.TravelExpenseMemberDto = TravelExpenseMemberDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '8c4c3b33-...' }),
+    __metadata("design:type", String)
+], TravelExpenseMemberDto.prototype, "userId", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '김철수', nullable: true }),
+    __metadata("design:type", Object)
+], TravelExpenseMemberDto.prototype, "name", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'user@example.com', nullable: true }),
+    __metadata("design:type", Object)
+], TravelExpenseMemberDto.prototype, "email", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'https://example.com/avatar.png', nullable: true }),
+    __metadata("design:type", Object)
+], TravelExpenseMemberDto.prototype, "avatarUrl", void 0);
 class TravelExpenseDto {
 }
 exports.TravelExpenseDto = TravelExpenseDto;
@@ -176,7 +195,7 @@ __decorate([
     __metadata("design:type", String)
 ], TravelExpenseDto.prototype, "authorId", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 'owner' }),
+    (0, swagger_1.ApiProperty)({ example: 'owner', required: false, description: '결제자 ID (생성/수정 응답에서는 포함될 수 있음)' }),
     __metadata("design:type", String)
 ], TravelExpenseDto.prototype, "payerId", void 0);
 __decorate([
@@ -184,9 +203,27 @@ __decorate([
     __metadata("design:type", Object)
 ], TravelExpenseDto.prototype, "payerName", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({
+        type: () => TravelExpenseMemberDto,
+        nullable: true,
+        required: false,
+        description: '결제자 상세 정보 (목록 응답에서 주로 반환)',
+    }),
+    __metadata("design:type", Object)
+], TravelExpenseDto.prototype, "payer", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ type: () => TravelExpenseParticipantDto, isArray: true }),
     __metadata("design:type", Array)
 ], TravelExpenseDto.prototype, "participants", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        type: () => TravelExpenseMemberDto,
+        isArray: true,
+        required: false,
+        description: '해당 여행의 전체 멤버 (목록 응답에서 주로 반환)',
+    }),
+    __metadata("design:type", Array)
+], TravelExpenseDto.prototype, "expenseMembers", void 0);
 class TravelInviteResponseDto {
 }
 exports.TravelInviteResponseDto = TravelInviteResponseDto;

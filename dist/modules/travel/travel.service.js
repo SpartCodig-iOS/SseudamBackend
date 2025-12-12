@@ -47,6 +47,14 @@ let TravelService = TravelService_1 = class TravelService {
         this.MEMBER_LIST_REDIS_PREFIX = 'travel:members';
         this.MEMBER_LIST_REDIS_TTL = 30; // 30초
     }
+    emitTravelMembershipChanged(travelId) {
+        try {
+            this.eventEmitter.emit('travel.membership_changed', { travelId });
+        }
+        catch (error) {
+            this.logger.warn('Failed to emit travel.membership_changed', { travelId, error: error?.message });
+        }
+    }
     async getCachedTravelList(key, rawKey = false) {
         const cacheKey = rawKey ? key : `${key}`;
         // Redis 우선
@@ -856,6 +864,8 @@ let TravelService = TravelService_1 = class TravelService {
         if (travelSummary.members) {
             this.setMemberListCache(inviteRow.travel_id, travelSummary.members);
         }
+        // 여행 멤버 변경 이벤트 전파 (지출 컨텍스트 캐시 무효화 등)
+        this.emitTravelMembershipChanged(inviteRow.travel_id);
         // 새 멤버 추가 알림 이벤트 발송
         if (travelSummary.members && travelSummary.members.length > 0) {
             const pool = await (0, pool_1.getPool)();
@@ -910,11 +920,13 @@ let TravelService = TravelService_1 = class TravelService {
         // 다른 멤버들의 목록/멤버십 캐시도 무효화해 즉시 반영
         await this.invalidateTravelCachesForMembers(travelId);
         await this.invalidateMembersCacheForTravel(travelId);
+        this.emitTravelMembershipChanged(travelId);
         // 멤버 나가기 알림 이벤트 발송
-        if (memberIds.length > 0 && travelTitle) {
+        const targetMemberIds = memberIds.filter(id => id !== userId);
+        if (targetMemberIds.length > 0 && travelTitle) {
             const userNameResult = await pool.query(`SELECT name FROM profiles WHERE id = $1`, [userId]);
             const currentUserName = userNameResult.rows[0]?.name || '멤버';
-            await this.pushNotificationService.sendTravelNotification('travel_member_removed', travelId, userId, currentUserName, travelTitle, memberIds);
+            await this.pushNotificationService.sendTravelNotification('travel_member_removed', travelId, userId, currentUserName, travelTitle, targetMemberIds);
         }
         return { deletedTravel: false };
     }
@@ -1041,11 +1053,13 @@ let TravelService = TravelService_1 = class TravelService {
         // 다른 멤버들의 여행 목록 캐시도 무효화 (멤버 정보가 변경되므로)
         await this.invalidateTravelCachesForMembers(travelId);
         await this.invalidateMembersCacheForTravel(travelId);
-        // 멤버 삭제 알림 이벤트 발송
-        if (memberIds.length > 0 && travelTitle) {
+        this.emitTravelMembershipChanged(travelId);
+        // 멤버 삭제 알림 이벤트 발송 (삭제된 멤버에게는 전송하지 않음)
+        const targetMemberIds = memberIds.filter(id => id !== memberId);
+        if (targetMemberIds.length > 0 && travelTitle) {
             const ownerNameResult = await pool.query(`SELECT name FROM profiles WHERE id = $1`, [ownerId]);
             const ownerName = ownerNameResult.rows[0]?.name || '호스트';
-            await this.pushNotificationService.sendTravelNotification('travel_member_removed', travelId, ownerId, ownerName, travelTitle, memberIds);
+            await this.pushNotificationService.sendTravelNotification('travel_member_removed', travelId, ownerId, ownerName, travelTitle, targetMemberIds);
         }
     }
     /**

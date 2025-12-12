@@ -7,6 +7,7 @@ var DeepLinkType;
     DeepLinkType["SETTLEMENT_RESULT"] = "settlement_result";
     DeepLinkType["TRAVEL_INVITE"] = "travel_invite";
     DeepLinkType["TRAVEL_DETAIL"] = "travel_detail";
+    DeepLinkType["TRAVEL_SETTINGS"] = "travel_settings";
 })(DeepLinkType || (exports.DeepLinkType = DeepLinkType = {}));
 class DeepLinkUtils {
     /**
@@ -36,6 +37,11 @@ class DeepLinkUtils {
                     throw new Error('travelId is required for travel detail deeplink');
                 }
                 return `${this.BASE_SCHEME}travel/${data.travelId}`;
+            case DeepLinkType.TRAVEL_SETTINGS:
+                if (!data.travelId) {
+                    throw new Error('travelId is required for travel settings deeplink');
+                }
+                return `${this.BASE_SCHEME}travel/${data.travelId}/settings`;
             default:
                 throw new Error(`Unsupported deeplink type: ${data.type}`);
         }
