@@ -196,7 +196,11 @@ let CacheService = CacheService_1 = class CacheService {
             }
         }
         // Fallback cache pattern cleanup
-        const fallbackKeys = Array.from(this.fallbackCache.keys()).filter(key => this.matchPattern(key, pattern));
+        const escaped = pattern
+            .replace(/[.+?^${}()|[\]\\]/g, '\\$&') // escape regex specials except *
+            .replace(/\*/g, '.*'); // * -> .*
+        const regex = new RegExp(`^${escaped}$`);
+        const fallbackKeys = Array.from(this.fallbackCache.keys()).filter(key => regex.test(key));
         fallbackKeys.forEach(key => this.fallbackCache.delete(key));
         return deletedCount + fallbackKeys.length;
     }

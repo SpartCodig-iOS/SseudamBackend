@@ -79,6 +79,9 @@ let ResponseTransformInterceptor = class ResponseTransformInterceptor {
             return obj.map(item => this.compactObject(item));
         }
         if (obj && typeof obj === 'object') {
+            if (obj instanceof Date) {
+                return obj.toISOString();
+            }
             const compacted = {};
             for (const [key, value] of Object.entries(obj)) {
                 // null, undefined, 빈 문자열 제거

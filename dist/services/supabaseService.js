@@ -339,10 +339,14 @@ let SupabaseService = SupabaseService_1 = class SupabaseService {
                 method: 'HEAD',
                 signal: controller.signal,
             });
-            return response.ok;
+            // 존재가 확실히 없을 때(404)만 false, 그 외(429/5xx/timeout)는 true로 취급해 불필요한 제거를 막음
+            if (response.status === 404)
+                return false;
+            return true;
         }
         catch {
-            return false;
+            // 네트워크/타임아웃 시에는 보수적으로 존재한다고 간주해 캐시된 URL을 지우지 않음
+            return true;
         }
         finally {
             clearTimeout(timeout);

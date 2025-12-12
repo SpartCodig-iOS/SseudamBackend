@@ -19,6 +19,14 @@ let VersionService = VersionService_1 = class VersionService {
         this.appVersionCacheTTL = 1000 * 60 * 5; // 5분
         this.appVersionTableReady = false;
     }
+    toIsoString(input) {
+        if (!input)
+            return null;
+        const d = input instanceof Date ? input : new Date(input);
+        if (Number.isNaN(d.getTime()))
+            return null;
+        return d.toISOString();
+    }
     async ensureAppVersionTable() {
         if (this.appVersionTableReady)
             return;
@@ -110,7 +118,8 @@ let VersionService = VersionService_1 = class VersionService {
         const dbVersion = await this.fetchDbVersion(resolvedBundleId);
         let app = null;
         try {
-            const url = `https://itunes.apple.com/lookup?bundleId=${encodeURIComponent(resolvedBundleId)}`;
+            // KR 스토어 기준으로 조회 (릴리즈 타이밍/노트 차이 방지)
+            const url = `https://itunes.apple.com/lookup?bundleId=${encodeURIComponent(resolvedBundleId)}&country=kr`;
             const response = await this.fetchWithTimeout(url, 2);
             const payload = (await response.json());
             app = payload?.results?.[0] ?? null;
@@ -124,19 +133,28 @@ let VersionService = VersionService_1 = class VersionService {
         if (!app && !dbVersion) {
             throw new common_1.ServiceUnavailableException('App version not found from App Store');
         }
+        const appStoreVersion = app?.version ?? null;
         // 최우선 순위: DB가 있으면 DB 값을 사용, 없으면 App Store 값 사용
-        const latestVersion = dbVersion?.latest_version ?? app?.version ?? '0.0.0';
+        const latestVersion = dbVersion?.latest_version ?? appStoreVersion ?? '0.0.0';
         const minSupported = dbVersion?.min_supported_version ?? env_1.env.appMinSupportedVersion ?? null;
         const forceUpdate = forceUpdateOverride ?? dbVersion?.force_update ?? true;
+        // releaseNotes/lastUpdated: DB가 더 최신 버전이면 DB 값을 우선 사용
+        const dbIsNewerOrEqual = dbVersion?.latest_version && appStoreVersion
+            ? this.compareVersions(dbVersion.latest_version, appStoreVersion) >= 0
+            : !!dbVersion?.latest_version;
+        const releaseNotes = dbIsNewerOrEqual
+            ? dbVersion?.release_notes ?? app?.releaseNotes ?? null
+            : app?.releaseNotes ?? dbVersion?.release_notes ?? null;
+        const lastUpdated = dbIsNewerOrEqual
+            ? this.toIsoString(dbVersion?.updated_at ?? app?.currentVersionReleaseDate ?? null)
+            : this.toIsoString(app?.currentVersionReleaseDate ?? dbVersion?.updated_at ?? null);
         const data = {
             bundleId: resolvedBundleId,
             latestVersion,
-            // releaseNotes는 App Store 우선, 없으면 DB 값 사용
-            releaseNotes: app?.releaseNotes ?? dbVersion?.release_notes ?? null,
+            releaseNotes,
             trackName: app?.trackName ?? null,
             minimumOsVersion: app?.minimumOsVersion ?? null,
-            // lastUpdated는 App Store 정보가 우선, 없으면 DB 업데이트 시간 사용
-            lastUpdated: app?.currentVersionReleaseDate ?? dbVersion?.updated_at ?? null,
+            lastUpdated,
             minSupportedVersion: minSupported,
             forceUpdate,
             currentVersion: currentVersion ?? null,
