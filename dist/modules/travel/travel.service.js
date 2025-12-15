@@ -665,7 +665,14 @@ let TravelService = TravelService_1 = class TravelService {
         };
     }
     generateInviteCode() {
-        return (0, crypto_1.randomBytes)(5).toString('hex');
+        // 6자 영문/숫자 조합 초대 코드 (URL-safe)
+        const charset = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        const bytes = (0, crypto_1.randomBytes)(6);
+        let code = '';
+        for (let i = 0; i < 6; i++) {
+            code += charset[bytes[i] % charset.length];
+        }
+        return code;
     }
     generateDeepLink(inviteCode) {
         // 카카오톡 공유용으로 웹 URL 형식 사용
