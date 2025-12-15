@@ -61,8 +61,8 @@ let DeviceTokenService = DeviceTokenService_1 = class DeviceTokenService {
                  is_active = true,
                  last_used_at = NOW(),
                  updated_at = NOW()
-           WHERE ($2 IS NOT NULL AND device_token = $2)
-              OR ($3 IS NOT NULL AND pending_key = $3)`, [userId, token || null, key || null]);
+           WHERE ($2::text IS NOT NULL AND device_token = $2::text)
+              OR ($3::text IS NOT NULL AND pending_key = $3::text)`, [userId, token ?? null, key ?? null]);
                 // 매칭되는 행이 없고 deviceToken이 있으면 새로 삽입
                 if ((result.rowCount ?? 0) === 0 && token) {
                     await client.query(`INSERT INTO device_tokens (user_id, device_token, platform, is_active, last_used_at, created_at, updated_at, pending_key)

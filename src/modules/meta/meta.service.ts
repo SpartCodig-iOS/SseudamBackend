@@ -42,7 +42,11 @@ export class MetaService {
   private readonly maxCacheSize = 1000; // 최대 캐시 크기
   private readonly fallbackRates: Record<string, Record<string, number>> = {
     KRW: { USD: 0.00075, JPY: 0.107, EUR: 0.00069, CNY: 0.0052 },
-    USD: { KRW: 1340, JPY: 143, EUR: 0.91, CNY: 7.1 },
+    USD: { KRW: 1340, JPY: 143, EUR: 0.91, CNY: 7.1, GYD: 209, GHS: 11.5, XAF: 559, BMD: 1, BSD: 1, PAB: 1 },
+    // USD 페그 통화들도 별도 베이스로 호출될 때 정상 값 반환
+    BMD: { USD: 1, KRW: 1340, JPY: 143, EUR: 0.91, CNY: 7.1, GYD: 209, GHS: 11.5, XAF: 559 },
+    BSD: { USD: 1, KRW: 1340, JPY: 143, EUR: 0.91, CNY: 7.1, GYD: 209, GHS: 11.5, XAF: 559 },
+    PAB: { USD: 1, KRW: 1340, JPY: 143, EUR: 0.91, CNY: 7.1, GYD: 209, GHS: 11.5, XAF: 559 },
     JPY: { KRW: 9.35, USD: 0.007, EUR: 0.0064, CNY: 0.05 },
     EUR: { USD: 1.1, KRW: 1470, JPY: 157, CNY: 7.8 },
     CNY: { USD: 0.141, KRW: 192, JPY: 20.1, EUR: 0.128 },
@@ -334,41 +338,73 @@ export class MetaService {
 
   private async requestExchangeRate(base: string, quote: string): Promise<CachedRate> {
     try {
-      const params = new URLSearchParams({ from: base, to: quote });
-      const response = await this.fetchWithTimeout(`https://api.frankfurter.app/latest?${params.toString()}`);
-
-      const payload = (await response.json()) as { date: string; rates: Record<string, number> };
-      const rateValue = payload.rates?.[quote];
-      if (typeof rateValue !== 'number') {
-        throw new ServiceUnavailableException('요청한 통화쌍 환율이 없습니다.');
-      }
-      return {
-        baseCurrency: base,
-        quoteCurrency: quote,
-        rate: rateValue,
-        date: payload.date,
-      };
-    } catch (error) {
-      if (!this.fallbackWarned) {
-        console.info('[MetaService] Using cached exchange rates (external API temporarily unavailable)');
-        this.fallbackWarned = true;
-      }
-      const fallbackRate = this.fallbackRates[base]?.[quote];
-      if (!fallbackRate) {
-        // 정의되지 않은 통화쌍도 1:1 임시 환율로 응답해 503을 피함
+      return await this.fetchFrankfurterRate(base, quote);
+    } catch (primaryError) {
+      // Frankfurter에서 지원하지 않는 통화쌍일 경우 보조 공급자로 재시도
+      try {
+        return await this.fetchOpenERApiRate(base, quote);
+      } catch (secondaryError) {
+        if (!this.fallbackWarned) {
+          console.info('[MetaService] Using cached exchange rates (external API temporarily unavailable)');
+          this.fallbackWarned = true;
+        }
+        const fallbackRate = this.fallbackRates[base]?.[quote];
+        if (!fallbackRate) {
+          // 정의되지 않은 통화쌍도 1:1 임시 환율로 응답해 503을 피함
+          return {
+            baseCurrency: base,
+            quoteCurrency: quote,
+            rate: 1,
+            date: new Date().toISOString().slice(0, 10),
+          };
+        }
         return {
           baseCurrency: base,
           quoteCurrency: quote,
-          rate: 1,
+          rate: fallbackRate,
           date: new Date().toISOString().slice(0, 10),
         };
       }
-      return {
-        baseCurrency: base,
-        quoteCurrency: quote,
-        rate: fallbackRate,
-        date: new Date().toISOString().slice(0, 10),
-      };
     }
+  }
+
+  private async fetchFrankfurterRate(base: string, quote: string): Promise<CachedRate> {
+    const params = new URLSearchParams({ from: base, to: quote });
+    const response = await this.fetchWithTimeout(`https://api.frankfurter.app/latest?${params.toString()}`);
+    const payload = (await response.json()) as { date: string; rates: Record<string, number> };
+    const rateValue = payload.rates?.[quote];
+    if (typeof rateValue !== 'number') {
+      throw new ServiceUnavailableException('요청한 통화쌍 환율이 없습니다.');
+    }
+    return {
+      baseCurrency: base,
+      quoteCurrency: quote,
+      rate: rateValue,
+      date: payload.date,
+    };
+  }
+
+  private async fetchOpenERApiRate(base: string, quote: string): Promise<CachedRate> {
+    const response = await this.fetchWithTimeout(`https://open.er-api.com/v6/latest/${base}`);
+    const payload = (await response.json()) as {
+      result: string;
+      time_last_update_utc?: string;
+      rates?: Record<string, number>;
+    };
+
+    if (payload.result !== 'success' || typeof payload.rates?.[quote] !== 'number') {
+      throw new ServiceUnavailableException('보조 환율 공급자 응답이 없습니다.');
+    }
+
+    const date = payload.time_last_update_utc
+      ? new Date(payload.time_last_update_utc).toISOString().slice(0, 10)
+      : new Date().toISOString().slice(0, 10);
+
+    return {
+      baseCurrency: base,
+      quoteCurrency: quote,
+      rate: payload.rates[quote],
+      date,
+    };
   }
 }
