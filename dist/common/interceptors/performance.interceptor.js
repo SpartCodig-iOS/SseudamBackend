@@ -59,6 +59,8 @@ let PerformanceInterceptor = PerformanceInterceptor_1 = class PerformanceInterce
                 });
             }
         }
+        const skipSlowLogEndpoints = ['/api/v1/meta/countries', '/api/v1/meta/exchange-rate'];
+        const skipSlowLog = method === 'GET' && skipSlowLogEndpoints.some(endpoint => url.includes(endpoint));
         return next.handle().pipe((0, operators_1.tap)((data) => {
             const endTime = process.hrtime.bigint();
             const duration = Number(endTime - startTime) / 1000000; // ms
@@ -69,7 +71,7 @@ let PerformanceInterceptor = PerformanceInterceptor_1 = class PerformanceInterce
                 });
             }
             const shouldLog = Math.random() <= this.logSampleRate;
-            if (duration > this.warnThresholdMs && shouldLog) {
+            if (!skipSlowLog && duration > this.warnThresholdMs && shouldLog) {
                 this.logger.warn('Slow request detected', {
                     method,
                     url,
@@ -78,7 +80,7 @@ let PerformanceInterceptor = PerformanceInterceptor_1 = class PerformanceInterce
                     timestamp: new Date().toISOString(),
                 });
             }
-            if (duration > this.errorThresholdMs && shouldLog) {
+            if (!skipSlowLog && duration > this.errorThresholdMs && shouldLog) {
                 const responseSize = data ? Buffer.byteLength(JSON.stringify(data), 'utf8') : 0;
                 const handlerTime = request.get('X-Handler-Time');
                 const dbTime = request.get('X-DB-Time');

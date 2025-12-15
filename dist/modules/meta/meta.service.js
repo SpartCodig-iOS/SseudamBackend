@@ -16,7 +16,7 @@ let MetaService = class MetaService {
         this.rateCacheTTL = 1000 * 60 * 10; // 10분
         this.countriesFetchPromise = null;
         this.ratePromiseCache = new Map();
-        this.networkTimeout = 5000; // 5초로 더 단축 (빠른 폴백)
+        this.networkTimeout = 1200; // 외부 환율 API 응답 대기 최대 1.2초로 단축
         this.maxCacheSize = 1000; // 최대 캐시 크기
         this.fallbackRates = {
             KRW: { USD: 0.00075, JPY: 0.107, EUR: 0.00069, CNY: 0.0052 },
@@ -273,36 +273,56 @@ let MetaService = class MetaService {
     }
     async requestExchangeRate(base, quote) {
         try {
-            return await this.fetchFrankfurterRate(base, quote);
+            // Frankfurter와 보조 공급자를 동시에 요청해 더 빨리 응답하는 쪽을 사용
+            const rate = await this.promiseAny([
+                this.fetchFrankfurterRate(base, quote),
+                this.fetchOpenERApiRate(base, quote),
+            ]);
+            return rate;
         }
         catch (primaryError) {
-            // Frankfurter에서 지원하지 않는 통화쌍일 경우 보조 공급자로 재시도
-            try {
-                return await this.fetchOpenERApiRate(base, quote);
+            if (!this.fallbackWarned) {
+                console.info('[MetaService] Using cached exchange rates (external API temporarily unavailable)');
+                this.fallbackWarned = true;
             }
-            catch (secondaryError) {
-                if (!this.fallbackWarned) {
-                    console.info('[MetaService] Using cached exchange rates (external API temporarily unavailable)');
-                    this.fallbackWarned = true;
-                }
-                const fallbackRate = this.fallbackRates[base]?.[quote];
-                if (!fallbackRate) {
-                    // 정의되지 않은 통화쌍도 1:1 임시 환율로 응답해 503을 피함
-                    return {
-                        baseCurrency: base,
-                        quoteCurrency: quote,
-                        rate: 1,
-                        date: new Date().toISOString().slice(0, 10),
-                    };
-                }
+            const fallbackRate = this.fallbackRates[base]?.[quote];
+            if (!fallbackRate) {
+                // 정의되지 않은 통화쌍도 1:1 임시 환율로 응답해 503을 피함
                 return {
                     baseCurrency: base,
                     quoteCurrency: quote,
-                    rate: fallbackRate,
+                    rate: 1,
                     date: new Date().toISOString().slice(0, 10),
                 };
             }
+            return {
+                baseCurrency: base,
+                quoteCurrency: quote,
+                rate: fallbackRate,
+                date: new Date().toISOString().slice(0, 10),
+            };
         }
+    }
+    // Promise.any를 ES2020 타겟에서도 사용하기 위한 간단한 폴리필
+    promiseAny(promises) {
+        return new Promise((resolve, reject) => {
+            let remaining = promises.length;
+            const errors = [];
+            if (remaining === 0) {
+                reject(new Error('No promises provided'));
+                return;
+            }
+            promises.forEach(promise => promise.then(resolve).catch(error => {
+                errors.push(error);
+                remaining -= 1;
+                if (remaining === 0) {
+                    const message = errors.length === 1
+                        ? String(errors[0])
+                        : `All promises were rejected (${errors.length})`;
+                    reject(new Error(message));
+                }
+            }));
+        });
     }
     async fetchFrankfurterRate(base, quote) {
         const params = new URLSearchParams({ from: base, to: quote });

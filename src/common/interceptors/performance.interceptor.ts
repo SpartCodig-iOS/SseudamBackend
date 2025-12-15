@@ -68,6 +68,9 @@ export class PerformanceInterceptor implements NestInterceptor {
       }
     }
 
+    const skipSlowLogEndpoints = ['/api/v1/meta/countries', '/api/v1/meta/exchange-rate'];
+    const skipSlowLog = method === 'GET' && skipSlowLogEndpoints.some(endpoint => url.includes(endpoint));
+
     return next.handle().pipe(
       tap((data) => {
         const endTime = process.hrtime.bigint();
@@ -82,7 +85,7 @@ export class PerformanceInterceptor implements NestInterceptor {
 
         const shouldLog = Math.random() <= this.logSampleRate;
 
-        if (duration > this.warnThresholdMs && shouldLog) {
+        if (!skipSlowLog && duration > this.warnThresholdMs && shouldLog) {
           this.logger.warn('Slow request detected', {
             method,
             url,
@@ -92,7 +95,7 @@ export class PerformanceInterceptor implements NestInterceptor {
           });
         }
 
-        if (duration > this.errorThresholdMs && shouldLog) {
+        if (!skipSlowLog && duration > this.errorThresholdMs && shouldLog) {
           const responseSize = data ? Buffer.byteLength(JSON.stringify(data), 'utf8') : 0;
           const handlerTime = request.get('X-Handler-Time');
           const dbTime = request.get('X-DB-Time');
