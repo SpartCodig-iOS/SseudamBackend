@@ -16,7 +16,7 @@ let MetaService = class MetaService {
         this.rateCacheTTL = 1000 * 60 * 10; // 10분
         this.countriesFetchPromise = null;
         this.ratePromiseCache = new Map();
-        this.networkTimeout = 1200; // 외부 환율 API 응답 대기 최대 1.2초로 단축
+        this.networkTimeout = 3000; // 외부 환율 API 응답 대기 최대 3초 (지연 허용 범위 확대)
         this.maxCacheSize = 1000; // 최대 캐시 크기
         this.fallbackRates = {
             KRW: { USD: 0.00075, JPY: 0.107, EUR: 0.00069, CNY: 0.0052 },

@@ -803,7 +803,14 @@ export class TravelService {
   }
 
   private generateInviteCode(): string {
-    return randomBytes(5).toString('hex');
+    // 6자 영문/숫자 조합 초대 코드 (URL-safe)
+    const charset = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    const bytes = randomBytes(6);
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+      code += charset[bytes[i] % charset.length];
+    }
+    return code;
   }
 
   private generateDeepLink(inviteCode: string): string {
