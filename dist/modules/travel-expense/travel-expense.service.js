@@ -17,13 +17,15 @@ const meta_service_1 = require("../meta/meta.service");
 const cacheService_1 = require("../../services/cacheService");
 const push_notification_service_1 = require("../../services/push-notification.service");
 const analytics_service_1 = require("../../services/analytics.service");
+const profile_service_1 = require("../profile/profile.service");
 let TravelExpenseService = class TravelExpenseService {
-    constructor(metaService, cacheService, eventEmitter, pushNotificationService, analyticsService) {
+    constructor(metaService, cacheService, eventEmitter, pushNotificationService, analyticsService, profileService) {
         this.metaService = metaService;
         this.cacheService = cacheService;
         this.eventEmitter = eventEmitter;
         this.pushNotificationService = pushNotificationService;
         this.analyticsService = analyticsService;
+        this.profileService = profileService;
         this.EXPENSE_LIST_PREFIX = 'expense:list';
         this.EXPENSE_DETAIL_PREFIX = 'expense:detail';
         this.EXPENSE_LIST_TTL_SECONDS = 120; // 2분
@@ -33,6 +35,41 @@ let TravelExpenseService = class TravelExpenseService {
         this.contextCache = new Map();
         this.conversionCache = new Map(); // currency->KRW 환율 캐시 (요청 단위)
         this.DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+    }
+    /**
+     * 🚀 경비 멤버 아바타 빠른 로딩 최적화
+     */
+    async optimizeExpenseMemberAvatars(rawMembers, memberAvatarMap) {
+        try {
+            // 아바타가 없는 멤버들만 필터링
+            const membersNeedingAvatars = rawMembers.filter(member => !member.avatar_url);
+            if (membersNeedingAvatars.length === 0) {
+                return;
+            }
+            // 병렬로 썸네일 아바타 빠른 조회 (50ms 초단축 타임아웃)
+            const avatarPromises = membersNeedingAvatars.map(async (member) => {
+                try {
+                    const thumbnailUrl = await this.profileService.fetchAvatarWithTimeout(member.id, 50);
+                    if (thumbnailUrl) {
+                        memberAvatarMap.set(member.id, thumbnailUrl);
+                    }
+                    else {
+                        // 실패시 백그라운드 워밍
+                        void this.profileService.warmAvatarFromStorage(member.id);
+                    }
+                }
+                catch {
+                    // 타임아웃이나 오류 시 백그라운드 워밍만 수행
+                    void this.profileService.warmAvatarFromStorage(member.id);
+                }
+            });
+            // 모든 아바타 조회를 병렬로 처리 (최대 50ms 대기)
+            await Promise.allSettled(avatarPromises);
+        }
+        catch (error) {
+            console.warn('Expense member avatar optimization failed:', error);
+            // 실패해도 경비 조회는 정상 진행
+        }
     }
     normalizeExpenseDate(input) {
         if (!input || !this.DATE_PATTERN.test(input)) {
@@ -102,6 +139,8 @@ let TravelExpenseService = class TravelExpenseService {
             memberEmailMap.set(member.id, member.email ?? null);
             memberAvatarMap.set(member.id, member.avatar_url ?? null);
         });
+        // 🚀 아바타 빠른 로딩 최적화
+        await this.optimizeExpenseMemberAvatars(rawMembers, memberAvatarMap);
         const context = {
             id: row.id,
             baseCurrency: row.base_currency || 'KRW',
@@ -655,5 +694,6 @@ exports.TravelExpenseService = TravelExpenseService = __decorate([
         cacheService_1.CacheService,
         event_emitter_1.EventEmitter2,
         push_notification_service_1.PushNotificationService,
-        analytics_service_1.AnalyticsService])
+        analytics_service_1.AnalyticsService,
+        profile_service_1.ProfileService])
 ], TravelExpenseService);

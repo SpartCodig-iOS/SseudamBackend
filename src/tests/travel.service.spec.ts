@@ -75,11 +75,17 @@ test('listTravels returns mapped and paginated travel summaries', async () => {
       sendExpenseNotification: async () => undefined,
     } as any;
 
+    const mockProfileService = {
+      fetchAvatarWithTimeout: async () => null,
+      warmAvatarFromStorage: async () => undefined,
+    } as any;
+
     const service = new TravelService(
       mockMetaService,
       mockCacheService,
       mockEventEmitter,
-      mockPushNotificationService
+      mockPushNotificationService,
+      mockProfileService
     );
     const result = await service.listTravels('user-1', { page: 2, limit: 1 });
 
@@ -195,11 +201,17 @@ test('updateTravel applies owner changes and returns refreshed summary', async (
       sendExpenseNotification: async () => undefined,
     } as any;
 
+    const mockProfileService = {
+      fetchAvatarWithTimeout: async () => null,
+      warmAvatarFromStorage: async () => undefined,
+    } as any;
+
     const service = new TravelService(
       mockMetaService,
       mockCacheService,
       mockEventEmitter,
-      mockPushNotificationService
+      mockPushNotificationService,
+      mockProfileService
     );
     const result = await service.updateTravel('travel-123', 'user-123', samplePayload);
 
@@ -261,11 +273,17 @@ test('deleteTravel verifies ownership and clears related records in a transactio
       sendExpenseNotification: async () => undefined,
     } as any;
 
+    const mockProfileService = {
+      fetchAvatarWithTimeout: async () => null,
+      warmAvatarFromStorage: async () => undefined,
+    } as any;
+
     const service = new TravelService(
       mockMetaService,
       mockCacheService,
       mockEventEmitter,
-      mockPushNotificationService
+      mockPushNotificationService,
+      mockProfileService
     );
     await service.deleteTravel('travel-abc', 'owner-999');
 

@@ -6,6 +6,7 @@ import { MetaService } from '../meta/meta.service';
 import { CacheService } from '../../services/cacheService';
 import { PushNotificationService } from '../../services/push-notification.service';
 import { AnalyticsService } from '../../services/analytics.service';
+import { ProfileService } from '../profile/profile.service';
 
 interface TravelContext {
   id: string;
@@ -54,7 +55,48 @@ export class TravelExpenseService {
     private readonly eventEmitter: EventEmitter2,
     private readonly pushNotificationService: PushNotificationService,
     private readonly analyticsService: AnalyticsService,
+    private readonly profileService: ProfileService,
   ) {}
+
+  /**
+   * 🚀 경비 멤버 아바타 빠른 로딩 최적화
+   */
+  private async optimizeExpenseMemberAvatars(
+    rawMembers: Array<{ id: string; avatar_url?: string | null }>,
+    memberAvatarMap: Map<string, string | null>
+  ): Promise<void> {
+    try {
+      // 아바타가 없는 멤버들만 필터링
+      const membersNeedingAvatars = rawMembers.filter(member => !member.avatar_url);
+
+      if (membersNeedingAvatars.length === 0) {
+        return;
+      }
+
+      // 병렬로 썸네일 아바타 빠른 조회 (50ms 초단축 타임아웃)
+      const avatarPromises = membersNeedingAvatars.map(async (member) => {
+        try {
+          const thumbnailUrl = await this.profileService.fetchAvatarWithTimeout(member.id, 50);
+          if (thumbnailUrl) {
+            memberAvatarMap.set(member.id, thumbnailUrl);
+          } else {
+            // 실패시 백그라운드 워밍
+            void this.profileService.warmAvatarFromStorage(member.id);
+          }
+        } catch {
+          // 타임아웃이나 오류 시 백그라운드 워밍만 수행
+          void this.profileService.warmAvatarFromStorage(member.id);
+        }
+      });
+
+      // 모든 아바타 조회를 병렬로 처리 (최대 50ms 대기)
+      await Promise.allSettled(avatarPromises);
+
+    } catch (error) {
+      console.warn('Expense member avatar optimization failed:', error);
+      // 실패해도 경비 조회는 정상 진행
+    }
+  }
 
   private readonly EXPENSE_LIST_PREFIX = 'expense:list';
   private readonly EXPENSE_DETAIL_PREFIX = 'expense:detail';
@@ -138,6 +180,9 @@ export class TravelExpenseService {
       memberEmailMap.set(member.id, member.email ?? null);
       memberAvatarMap.set(member.id, member.avatar_url ?? null);
     });
+
+    // 🚀 아바타 빠른 로딩 최적화
+    await this.optimizeExpenseMemberAvatars(rawMembers, memberAvatarMap);
     const context: TravelContext = {
       id: row.id,
       baseCurrency: row.base_currency || 'KRW',

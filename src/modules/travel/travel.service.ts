@@ -15,6 +15,7 @@ import { UserRecord } from '../../types/user';
 import { MetaService } from '../meta/meta.service';
 import { CacheService } from '../../services/cacheService';
 import { PushNotificationService } from '../../services/push-notification.service';
+import { ProfileService } from '../profile/profile.service';
 import { env } from '../../config/env';
 
 export interface TravelSummary {
@@ -82,6 +83,7 @@ export class TravelService {
     private readonly cacheService: CacheService = new CacheService(),
     private readonly eventEmitter: EventEmitter2,
     private readonly pushNotificationService: PushNotificationService,
+    private readonly profileService: ProfileService,
   ) {}
 
   private emitTravelMembershipChanged(travelId: string): void {
@@ -89,6 +91,48 @@ export class TravelService {
       this.eventEmitter.emit('travel.membership_changed', { travelId });
     } catch (error) {
       this.logger.warn('Failed to emit travel.membership_changed', { travelId, error: (error as Error)?.message });
+    }
+  }
+
+  /**
+   * 🚀 멤버 아바타 빠른 로딩 최적화
+   */
+  private async optimizeMemberAvatars(membersMap: Map<string, TravelMember[]>): Promise<void> {
+    try {
+      const allMembers: TravelMember[] = [];
+      for (const memberList of membersMap.values()) {
+        allMembers.push(...memberList);
+      }
+
+      // 아바타가 없는 멤버들만 필터링
+      const membersNeedingAvatars = allMembers.filter(member => !member.avatarUrl);
+
+      if (membersNeedingAvatars.length === 0) {
+        return;
+      }
+
+      // 병렬로 썸네일 아바타 빠른 조회 (50ms 초단축 타임아웃)
+      const avatarPromises = membersNeedingAvatars.map(async (member) => {
+        try {
+          const thumbnailUrl = await this.profileService.fetchAvatarWithTimeout(member.userId, 50);
+          if (thumbnailUrl) {
+            member.avatarUrl = thumbnailUrl;
+          } else {
+            // 실패시 백그라운드 워밍
+            void this.profileService.warmAvatarFromStorage(member.userId);
+          }
+        } catch {
+          // 타임아웃이나 오류 시 백그라운드 워밍만 수행
+          void this.profileService.warmAvatarFromStorage(member.userId);
+        }
+      });
+
+      // 모든 아바타 조회를 병렬로 처리 (최대 50ms 대기)
+      await Promise.allSettled(avatarPromises);
+
+    } catch (error) {
+      this.logger.warn('Avatar optimization failed:', error);
+      // 실패해도 멤버 조회는 정상 진행
     }
   }
 
@@ -377,6 +421,9 @@ export class TravelService {
         });
         membersMap.set(row.travel_id, list);
       }
+
+      // 🚀 아바타 빠른 로딩 최적화
+      await this.optimizeMemberAvatars(membersMap);
 
       const toCache = missingTravelIds
         .filter(id => membersMap.has(id))
