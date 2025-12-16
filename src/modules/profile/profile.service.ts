@@ -194,18 +194,21 @@ export class ProfileService {
     // 1. 메모리 캐시 확인 (가장 빠름)
     const cachedProfile = this.getCachedProfile(userId);
     if (cachedProfile) {
-      await this.syncGoogleAvatarIfNeeded(cachedProfile);
+      // 🚀 동기화를 백그라운드로 이동 (응답 지연 없음)
+      this.syncGoogleAvatarIfNeeded(cachedProfile).catch(() => undefined);
       return cachedProfile;
     }
 
     // 2. Redis 캐시 확인 (두 번째로 빠름)
     try {
       const redisProfile = await this.cacheService.get<UserRecord>(`profile:${userId}`);
-        if (redisProfile) {
-          const syncedProfile = await this.syncGoogleAvatarIfNeeded(redisProfile);
-          this.setCachedProfile(userId, syncedProfile);
-          return this.validateStorageAvatar(syncedProfile);
-        }
+      if (redisProfile) {
+        this.setCachedProfile(userId, redisProfile);
+        // 🚀 동기화를 백그라운드로 이동 (응답 지연 없음)
+        this.syncGoogleAvatarIfNeeded(redisProfile).catch(() => undefined);
+        this.validateStorageAvatar(redisProfile).catch(() => undefined);
+        return redisProfile;
+      }
     } catch (error) {
       // Redis 오류는 무시하고 계속 진행
       this.logger.warn(`Redis cache error for user ${userId}:`, error);
@@ -215,12 +218,15 @@ export class ProfileService {
     try {
       const dbProfile = await this.getProfileFromDB(userId);
       if (dbProfile) {
-        const syncedProfile = await this.syncGoogleAvatarIfNeeded(dbProfile);
+        // 캐시 저장을 비동기로 처리
         Promise.allSettled([
-          Promise.resolve(this.setCachedProfile(userId, syncedProfile)),
-          this.cacheService.set(`profile:${userId}`, syncedProfile, { ttl: 600 })
+          Promise.resolve(this.setCachedProfile(userId, dbProfile)),
+          this.cacheService.set(`profile:${userId}`, dbProfile, { ttl: 600 })
         ]);
-        return this.validateStorageAvatar(syncedProfile);
+        // 🚀 동기화를 백그라운드로 이동 (응답 지연 없음)
+        this.syncGoogleAvatarIfNeeded(dbProfile).catch(() => undefined);
+        this.validateStorageAvatar(dbProfile).catch(() => undefined);
+        return dbProfile;
       }
     } catch (error) {
       this.logger.warn(`DB query error for user ${userId}:`, error);

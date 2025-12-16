@@ -37,41 +37,29 @@ let ProfileController = class ProfileController {
         if (!req.currentUser) {
             throw new common_1.UnauthorizedException('Unauthorized');
         }
-        // 🚀 ULTRA FAST: 프로필과 이미지를 병렬로 빠르게 조회
-        const [profile, thumbnailUrl] = await Promise.allSettled([
-            this.profileService.getProfileQuick(req.currentUser.id, req.currentUser),
-            this.profileService.getAvatarThumbnail(req.currentUser.id) // 썸네일 우선 로딩
-        ]);
-        const userProfile = profile.status === 'fulfilled' ? profile.value : req.currentUser;
-        // 최적화된 아바타 URL 결정 (썸네일 → 기존 URL → 스토리지 조회)
-        let resolvedAvatar = null;
-        if (thumbnailUrl.status === 'fulfilled' && thumbnailUrl.value) {
-            // 1순위: 썸네일 (가장 빠름)
-            resolvedAvatar = thumbnailUrl.value;
-        }
-        else if (userProfile.avatar_url) {
-            // 2순위: 기존 아바타 URL
-            resolvedAvatar = userProfile.avatar_url;
-        }
-        else {
-            // 3순위: 빠른 스토리지 조회 (300ms 타임아웃으로 단축)
+        // 🚀 FAST: 프로필 빠른 조회 (캐시 우선)
+        const profile = await this.profileService.getProfileQuick(req.currentUser.id, req.currentUser);
+        // 🚀 FAST: 캐시 우선, 짧은 타임아웃으로 첫 로딩 지원
+        let resolvedAvatar = profile.avatar_url ?? req.currentUser.avatar_url ?? null;
+        // 아바타가 없을 때만 빠른 스토리지 조회 (100ms 초단축 타임아웃)
+        if (!resolvedAvatar) {
             try {
-                resolvedAvatar = await this.profileService.fetchAvatarWithTimeout(userProfile.id, 300);
+                resolvedAvatar = await this.profileService.fetchAvatarWithTimeout(profile.id, 100);
             }
             catch {
-                // 실패시 백그라운드 워밍만 수행
-                void this.profileService.warmAvatarFromStorage(userProfile.id);
+                // 실패시 백그라운드 워밍
+                void this.profileService.warmAvatarFromStorage(profile.id);
             }
         }
         return (0, api_1.success)({
-            id: userProfile.id,
-            userId: userProfile.username || userProfile.email?.split('@')[0] || req.currentUser.username || 'user',
-            email: userProfile.email || '',
-            name: userProfile.name,
-            avatarURL: resolvedAvatar, // 🚀 최적화된 이미지 URL (썸네일 우선)
-            role: userProfile.role || req.currentUser.role || 'user',
-            createdAt: formatDate(userProfile.created_at),
-            updatedAt: formatDate(userProfile.updated_at),
+            id: profile.id,
+            userId: profile.username || profile.email?.split('@')[0] || req.currentUser.username || 'user',
+            email: profile.email || '',
+            name: profile.name,
+            avatarURL: resolvedAvatar, // 🚀 빠른 아바타 (캐시 우선)
+            role: profile.role || req.currentUser.role || 'user',
+            createdAt: formatDate(profile.created_at),
+            updatedAt: formatDate(profile.updated_at),
             loginType: req.loginType ?? 'email'
         });
     }
@@ -90,7 +78,7 @@ __decorate([
     (0, common_1.Get)('me'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     (0, swagger_1.ApiBearerAuth)(),
-    (0, swagger_1.ApiOperation)({ summary: '🚀 ULTRA FAST: 현재 사용자 프로필 조회 (이미지 최적화)' }),
+    (0, swagger_1.ApiOperation)({ summary: '🚀 FAST: 현재 사용자 프로필 조회 (캐시 최적화)' }),
     (0, swagger_1.ApiOkResponse)({ type: profile_response_dto_1.ProfileResponseDto }),
     __param(0, (0, common_1.Req)()),
     __metadata("design:type", Function),
