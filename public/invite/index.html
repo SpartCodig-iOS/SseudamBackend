@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>쓰담 초대 링크</title>
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="쓰담 여행 초대">
+  <meta property="og:description" content="링크를 열면 쓰담 앱에서 바로 초대에 참여할 수 있어요.">
+  <meta property="og:image" content="https://sseudam.up.railway.app/logo.svg?v=20251203-2">
+  <meta property="og:image:type" content="image/svg+xml">
+  <meta property="og:image:width" content="158">
+  <meta property="og:image:height" content="52">
+  <meta property="og:site_name" content="쓰담">
+  <meta property="og:locale" content="ko_KR">
+  <meta property="og:url" content="https://sseudam.up.railway.app/invite?code=share">
+  <meta name="description" content="쓰담 앱으로 여행 초대에 참여하세요.">
+  <meta name="keywords" content="쓰담,여행,정산,초대,가계부">
+  <meta name="author" content="쓰담">
+  <link rel="canonical" href="https://sseudam.up.railway.app/invite">
+  <meta name="apple-itunes-app" content="app-id=6755368590, app-argument=https://sseudam.up.railway.app/invite">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="쓰담 여행 초대">
+  <meta name="twitter:description" content="링크를 열면 쓰담 앱에서 여행 정산을 바로 시작할 수 있어요.">
+  <meta name="twitter:image" content="https://sseudam.up.railway.app/logo.svg?v=20251203-2">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      display: flex;
+      min-height: 100vh;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 32px 20px;
+    }
+    .card {
+      background: linear-gradient(135deg, #0f172a 0%, #111827 60%, #0b1023 100%);
+      border: 1px solid #1e293b;
+      border-radius: 16px;
+      padding: 24px 28px;
+      max-width: 420px;
+      width: 100%;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+    }
+    .logo {
+      width: 120px;
+      margin: 0 auto 14px;
+      display: block;
+    }
+    .title {
+      font-size: 20px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+    .desc {
+      font-size: 15px;
+      color: #94a3b8;
+      margin-bottom: 14px;
+      line-height: 1.6;
+    }
+    .link {
+      color: #60a5fa;
+      text-decoration: none;
+      font-weight: 700;
+      display: inline-block;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img src="/logo.svg" alt="SseuDam" class="logo">
+    <div class="title">쓰담 초대 열기</div>
+    <div class="desc">앱이 자동으로 실행되지 않으면 아래 버튼을 눌러주세요.</div>
+    <a id="open-link" class="link" href="sseudam://open">앱에서 열기</a>
+  </div>
+
+  <script>
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const inviteCode = params.get('inviteCode') || params.get('code');
+      const targetUrl = params.get('targeturl');
+      const encodedTargetUrl = targetUrl ? encodeURIComponent(targetUrl) : null;
+      const deepLink = inviteCode
+        ? `sseudam://travel/join?inviteCode=${encodeURIComponent(inviteCode)}${encodedTargetUrl ? `&targeturl=${encodedTargetUrl}` : ''}`
+        : `sseudam://open${encodedTargetUrl ? `?targeturl=${encodedTargetUrl}` : ''}`;
+      const fallback = 'https://apps.apple.com/kr/app/%EC%93%B0%EB%8B%B4-ssedum/id6755368590';
+
+      const anchor = document.getElementById('open-link');
+      anchor.href = deepLink;
+      if (encodedTargetUrl) {
+        anchor.textContent = '앱에서 열기 (타겟 포함)';
+      }
+
+      // 시도 1: 즉시 앱 열기
+      window.location.href = deepLink;
+
+      // 시도 2: 앱 미설치/실패 시 스토어로 폴백
+      setTimeout(() => {
+        window.location.href = fallback;
+      }, 1200);
+    })();
+  </script>
+</body>
+</html>

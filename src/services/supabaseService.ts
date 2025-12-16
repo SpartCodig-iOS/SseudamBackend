@@ -5,6 +5,7 @@ import { LoginType } from '../types/auth';
 import { env } from '../config/env';
 import { getPool } from '../db/pool';
 import { OAuthTokenService } from './oauth-token.service';
+import { ImageProcessor } from '../utils/imageProcessor';
 
 @Injectable()
 export class SupabaseService {
@@ -485,76 +486,68 @@ export class SupabaseService {
     }
 
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 8000);
-      const response = await fetch(trimmedUrl, { signal: controller.signal });
-      clearTimeout(timeout);
-
-      if (!response.ok) {
-        // 원본 URL만 저장하고 종료 (기본 이미지 등 접근 불가)
-        const pool = await getPool();
-        await pool.query(
-          `UPDATE ${env.supabaseProfileTable}
-             SET avatar_url = $1,
-                 updated_at = NOW()
-           WHERE id = $2`,
-          [trimmedUrl, userId],
-        );
-        return trimmedUrl;
-      }
-
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      const contentType = response.headers.get('content-type') ?? undefined;
-      const kind = this.detectImageKind(trimmedUrl, contentType);
-
-      // png/jpeg 외 포맷은 건너뛰고 기존 URL 유지
-      if (!kind) {
-        this.logger.warn(`[mirrorProfileAvatar] Skip unsupported image type for user ${userId} (${contentType ?? 'unknown'})`);
-        const pool = await getPool();
-        await pool.query(
-          `UPDATE ${env.supabaseProfileTable}
-             SET avatar_url = $1,
-                 updated_at = NOW()
-           WHERE id = $2`,
-          [trimmedUrl, userId],
-        );
-        return trimmedUrl;
-      }
-
-      const ext = kind === 'png' ? 'png' : 'jpeg';
-      const resolvedContentType = kind === 'png' ? 'image/png' : 'image/jpeg';
-      const objectPath = `${userId}/${randomUUID()}.${ext}`;
+      // 이미지 다운로드 및 최적화 처리 (ImageProcessor 사용)
+      const imageVariants = await ImageProcessor.processFromUrl(trimmedUrl, userId);
 
       const client = this.getClient();
       await this.ensureAvatarBucket();
-      const upload = async () => client.storage.from(this.avatarBucket).upload(objectPath, buffer, {
-        contentType: resolvedContentType,
-        upsert: true,
+
+      // 모든 이미지 변형 병렬 업로드
+      const uploadPromises = imageVariants.map(async (variant) => {
+        const upload = async () => client.storage.from(this.avatarBucket).upload(variant.filename, variant.buffer, {
+          contentType: variant.contentType,
+          upsert: true,
+        });
+
+        let { error } = await upload();
+        if (error && error.message.toLowerCase().includes('bucket not found')) {
+          this.avatarBucketEnsured = false;
+          await this.ensureAvatarBucket();
+          ({ error } = await upload());
+        }
+
+        if (error) {
+          throw new Error(`upload failed (${variant.size}): ${error.message}`);
+        }
+
+        const publicUrl = `${env.supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${this.avatarBucket}/${variant.filename}`;
+        return {
+          size: variant.size,
+          url: publicUrl,
+          originalSize: variant.originalSize,
+          processedSize: variant.processedSize
+        };
       });
-      let { error } = await upload();
-      if (error && error.message.toLowerCase().includes('bucket not found')) {
-        this.avatarBucketEnsured = false;
-        await this.ensureAvatarBucket();
-        ({ error } = await upload());
-      }
-      if (error) {
-        throw new Error(`upload failed: ${error.message}`);
+
+      const uploadedVariants = await Promise.all(uploadPromises);
+
+      // 원본 크기 이미지 URL을 메인으로 설정
+      const originalVariant = uploadedVariants.find(v => v.size === 'original');
+      if (!originalVariant) {
+        throw new Error('원본 이미지 업로드에 실패했습니다.');
       }
 
-      const publicUrl = `${env.supabaseUrl.replace(/\/$/, '')}/storage/v1/object/public/${this.avatarBucket}/${objectPath}`;
+      // DB에 메인 아바타 URL 저장
       const pool = await getPool();
       await pool.query(
         `UPDATE ${env.supabaseProfileTable}
            SET avatar_url = $1,
                updated_at = NOW()
          WHERE id = $2`,
-        [publicUrl, userId],
+        [originalVariant.url, userId],
       );
 
-      return publicUrl;
+      const compressionRatio = Math.round((1 - originalVariant.processedSize / originalVariant.originalSize) * 100);
+      this.logger.log(
+        `Google 아바타 미러링 완료: ${originalVariant.originalSize}B → ${originalVariant.processedSize}B (${compressionRatio}% 압축)`
+      );
+
+      return originalVariant.url;
+
     } catch (error) {
       this.logger.warn(`[mirrorProfileAvatar] Failed for user ${userId} from ${trimmedUrl}`, error as Error);
+
+      // 실패 시 원본 URL 저장 (폴백)
       try {
         const pool = await getPool();
         await pool.query(
@@ -564,10 +557,11 @@ export class SupabaseService {
            WHERE id = $2`,
           [trimmedUrl, userId],
         );
+        return trimmedUrl;
       } catch {
-        // ignore
+        // 최종적으로 실패하면 null 반환
+        return null;
       }
-      return trimmedUrl;
     }
   }
 

@@ -89,7 +89,7 @@
       const deepLink = inviteCode
         ? `sseudam://travel/join?inviteCode=${encodeURIComponent(inviteCode)}${encodedTargetUrl ? `&targeturl=${encodedTargetUrl}` : ''}`
         : `sseudam://open${encodedTargetUrl ? `?targeturl=${encodedTargetUrl}` : ''}`;
-      const fallback = 'https://apps.apple.com/app/id6755368590';
+      const fallback = 'https://apps.apple.com/kr/app/%EC%93%B0%EB%8B%B4-ssedum/id6755368590';
 
       const anchor = document.getElementById('open-link');
       anchor.href = deepLink;

@@ -15,9 +15,9 @@ const common_1 = require("@nestjs/common");
 const pool_1 = require("../../db/pool");
 const supabase_js_1 = require("@supabase/supabase-js");
 const env_1 = require("../../config/env");
-const crypto_1 = require("crypto");
 const cacheService_1 = require("../../services/cacheService");
 const supabaseService_1 = require("../../services/supabaseService");
+const imageProcessor_1 = require("../../utils/imageProcessor");
 require("multer");
 let ProfileService = ProfileService_1 = class ProfileService {
     constructor(cacheService, supabaseService) {
@@ -28,8 +28,11 @@ let ProfileService = ProfileService_1 = class ProfileService {
         this.avatarBucket = 'profileimages';
         this.avatarBucketEnsured = false;
         this.storageAvatarCache = new Map();
+        this.imageVariantsCache = new Map();
         this.STORAGE_AVATAR_TTL = 5 * 60 * 1000; // 5분 캐시
+        this.IMAGE_VARIANTS_TTL = 15 * 60 * 1000; // 15분 캐시 (더 오래)
         this.AVATAR_CACHE_PREFIX = 'avatar';
+        this.AVATAR_VARIANTS_PREFIX = 'avatar_variants';
         this.AVATAR_FETCH_TIMEOUT_MS = 1200; // 아바타 동기 조회 타임아웃 (초기 조회 실패 방지)
         // 프로필 캐시: 10분 TTL, 최대 1000개
         this.profileCache = new Map();
@@ -81,6 +84,39 @@ let ProfileService = ProfileService_1 = class ProfileService {
                 this.storageAvatarCache.delete(firstKey);
         }
     }
+    getCachedImageVariants(userId) {
+        const cached = this.imageVariantsCache.get(userId);
+        if (!cached)
+            return null;
+        if (Date.now() > cached.expiresAt) {
+            this.imageVariantsCache.delete(userId);
+            return null;
+        }
+        return cached.variants;
+    }
+    setCachedImageVariants(userId, variants) {
+        this.imageVariantsCache.set(userId, {
+            variants,
+            expiresAt: Date.now() + this.IMAGE_VARIANTS_TTL
+        });
+        if (this.imageVariantsCache.size > 1000) {
+            const firstKey = this.imageVariantsCache.keys().next().value;
+            if (firstKey)
+                this.imageVariantsCache.delete(firstKey);
+        }
+    }
+    /**
+     * 이미지 변형들을 캐시에 저장 (메모리 + Redis)
+     */
+    cacheImageVariants(userId, variants) {
+        // 메모리 캐시
+        this.setCachedImageVariants(userId, variants);
+        // Redis 캐시 (비동기)
+        this.cacheService.set(userId, variants, {
+            prefix: this.AVATAR_VARIANTS_PREFIX,
+            ttl: 900 // 15분
+        }).catch(() => undefined);
+    }
     async ensureAvatarBucket() {
         if (this.avatarBucketEnsured)
             return;
@@ -103,32 +139,40 @@ let ProfileService = ProfileService_1 = class ProfileService {
         this.avatarBucketEnsured = true;
     }
     async getProfile(userId) {
-        // 캐시에서 먼저 확인
+        // 1. 캐시에서 먼저 확인 (가장 빠름)
         const cachedProfile = this.getCachedProfile(userId);
         if (cachedProfile) {
-            const syncedProfile = await this.syncGoogleAvatarIfNeeded(cachedProfile);
-            return this.validateStorageAvatar(syncedProfile);
+            // 동기 처리를 비동기로 변경하여 응답 시간 단축
+            this.syncGoogleAvatarIfNeeded(cachedProfile).catch(() => undefined);
+            this.validateStorageAvatar(cachedProfile).catch(() => undefined);
+            return cachedProfile;
         }
-        // DB 조회와 Redis 캐시 조회를 병렬로 처리
+        // 2. DB 조회와 Redis 캐시 조회를 병렬로 처리
         const [dbResult, redisProfile] = await Promise.allSettled([
             this.getProfileFromDB(userId),
             this.cacheService.get(`profile:${userId}`)
         ]);
-        // Redis 캐시에서 찾았다면 반환
+        // 3. Redis 캐시에서 찾았다면 반환
         if (redisProfile.status === 'fulfilled' && redisProfile.value) {
-            const syncedProfile = await this.syncGoogleAvatarIfNeeded(redisProfile.value);
-            this.setCachedProfile(userId, syncedProfile);
-            return this.validateStorageAvatar(syncedProfile);
+            const profile = redisProfile.value;
+            this.setCachedProfile(userId, profile);
+            // 백그라운드에서 동기화 처리 (응답 시간에 영향 없음)
+            this.syncGoogleAvatarIfNeeded(profile).catch(() => undefined);
+            this.validateStorageAvatar(profile).catch(() => undefined);
+            return profile;
         }
-        // DB에서 조회한 결과 처리
+        // 4. DB에서 조회한 결과 처리
         if (dbResult.status === 'fulfilled' && dbResult.value) {
-            const profile = await this.syncGoogleAvatarIfNeeded(dbResult.value);
+            const profile = dbResult.value;
             // 메모리 캐시와 Redis 캐시에 동시에 저장 (비동기)
             Promise.allSettled([
                 Promise.resolve(this.setCachedProfile(userId, profile)),
                 this.cacheService.set(`profile:${userId}`, profile, { ttl: 600 }) // 10분
             ]);
-            return this.validateStorageAvatar(profile);
+            // 백그라운드에서 동기화 처리 (응답 시간에 영향 없음)
+            this.syncGoogleAvatarIfNeeded(profile).catch(() => undefined);
+            this.validateStorageAvatar(profile).catch(() => undefined);
+            return profile;
         }
         return null;
     }
@@ -342,7 +386,6 @@ let ProfileService = ProfileService_1 = class ProfileService {
     }
     async uploadToSupabase(userId, file) {
         // 파일 유형 및 크기 검증
-        const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
         const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
         if (!file) {
             throw new common_1.BadRequestException('파일이 업로드되지 않았습니다.');
@@ -350,30 +393,119 @@ let ProfileService = ProfileService_1 = class ProfileService {
         if (!ALLOWED_TYPES.includes(file.mimetype)) {
             throw new common_1.BadRequestException('지원되지 않는 파일 형식입니다. JPEG, PNG, GIF, WebP만 허용됩니다.');
         }
-        if (file.size > MAX_FILE_SIZE) {
-            throw new common_1.BadRequestException('파일 크기가 너무 큽니다. 최대 5MB까지 허용됩니다.');
-        }
-        const filename = `${userId}/${(0, crypto_1.randomUUID)()}-${file.originalname}`;
-        const bucket = this.avatarBucket;
-        await this.ensureAvatarBucket();
-        const upload = async () => this.storageClient.storage
-            .from(bucket)
-            .upload(filename, file.buffer, {
-            contentType: file.mimetype,
-            upsert: true,
-        });
-        let { error } = await upload();
-        if (error && error.message.toLowerCase().includes('bucket not found')) {
-            this.avatarBucketEnsured = false;
+        try {
+            // 이미지 최적화 처리 - 여러 크기 버전 생성
+            const imageVariants = await imageProcessor_1.ImageProcessor.processImageVariants(file.buffer, file.originalname, userId);
             await this.ensureAvatarBucket();
-            ({ error } = await upload());
+            // 모든 이미지 변형 업로드 (병렬 처리)
+            const uploadPromises = imageVariants.map(async (variant) => {
+                const upload = async () => this.storageClient.storage
+                    .from(this.avatarBucket)
+                    .upload(variant.filename, variant.buffer, {
+                    contentType: variant.contentType,
+                    upsert: true,
+                });
+                let { error } = await upload();
+                if (error && error.message.toLowerCase().includes('bucket not found')) {
+                    this.avatarBucketEnsured = false;
+                    await this.ensureAvatarBucket();
+                    ({ error } = await upload());
+                }
+                if (error) {
+                    throw new common_1.BadRequestException(`이미지 업로드 실패 (${variant.size}): ${error.message}`);
+                }
+                const { data } = this.storageClient.storage.from(this.avatarBucket).getPublicUrl(variant.filename);
+                return {
+                    size: variant.size,
+                    url: data.publicUrl,
+                    originalSize: variant.originalSize,
+                    processedSize: variant.processedSize
+                };
+            });
+            const uploadedVariants = await Promise.all(uploadPromises);
+            // 원본 크기 이미지 URL을 메인 아바타로 반환 (기존 호환성 유지)
+            const originalVariant = uploadedVariants.find(v => v.size === 'original');
+            if (!originalVariant) {
+                throw new common_1.BadRequestException('원본 이미지 업로드에 실패했습니다.');
+            }
+            // 캐시에 모든 변형 저장 (빠른 로딩용)
+            this.cacheImageVariants(userId, uploadedVariants);
+            const compressionRatio = Math.round((1 - originalVariant.processedSize / originalVariant.originalSize) * 100);
+            this.logger.log(`이미지 최적화 완료: ${originalVariant.originalSize}B → ${originalVariant.processedSize}B (${compressionRatio}% 압축)`);
+            return originalVariant.url;
         }
-        if (error) {
-            throw new common_1.BadRequestException(`이미지 업로드 실패: ${error.message}`);
+        catch (error) {
+            if (error instanceof common_1.BadRequestException) {
+                throw error;
+            }
+            throw new common_1.BadRequestException(`이미지 처리 실패: ${error.message}`);
         }
-        const { data } = this.storageClient.storage.from(bucket).getPublicUrl(filename);
-        const publicUrl = data.publicUrl;
-        return publicUrl;
+    }
+    /**
+     * 🚀 ULTRA FAST: 썸네일 이미지 우선 조회 (150x150, WebP)
+     */
+    async getAvatarThumbnail(userId) {
+        try {
+            // 1. 캐시에서 이미지 변형들 확인
+            const cachedVariants = this.getCachedImageVariants(userId);
+            if (cachedVariants) {
+                const thumbnail = cachedVariants.find(v => v.size === 'thumbnail');
+                if (thumbnail)
+                    return thumbnail.url;
+            }
+            // 2. Redis에서 변형들 조회
+            try {
+                const redisVariants = await this.cacheService.get(userId, { prefix: this.AVATAR_VARIANTS_PREFIX });
+                if (redisVariants) {
+                    this.setCachedImageVariants(userId, redisVariants);
+                    const thumbnail = redisVariants.find(v => v.size === 'thumbnail');
+                    if (thumbnail)
+                        return thumbnail.url;
+                }
+            }
+            catch (error) {
+                this.logger.warn(`Redis variants cache miss for ${userId}:`, error);
+            }
+            // 3. 일반 아바타 조회로 폴백
+            return this.getAvatarUrlOnly(userId);
+        }
+        catch (error) {
+            this.logger.warn(`Thumbnail lookup failed for user ${userId}:`, error);
+            return null;
+        }
+    }
+    /**
+     * 🚀 FAST: 중간 크기 이미지 조회 (400px, WebP)
+     */
+    async getAvatarMedium(userId) {
+        try {
+            // 1. 캐시에서 이미지 변형들 확인
+            const cachedVariants = this.getCachedImageVariants(userId);
+            if (cachedVariants) {
+                const medium = cachedVariants.find(v => v.size === 'medium');
+                if (medium)
+                    return medium.url;
+            }
+            // 2. Redis에서 변형들 조회
+            try {
+                const redisVariants = await this.cacheService.get(userId, { prefix: this.AVATAR_VARIANTS_PREFIX });
+                if (redisVariants) {
+                    this.setCachedImageVariants(userId, redisVariants);
+                    const medium = redisVariants.find(v => v.size === 'medium');
+                    if (medium)
+                        return medium.url;
+                }
+            }
+            catch (error) {
+                this.logger.warn(`Redis variants cache miss for ${userId}:`, error);
+            }
+            // 3. 일반 아바타 조회로 폴백
+            return this.getAvatarUrlOnly(userId);
+        }
+        catch (error) {
+            this.logger.warn(`Medium avatar lookup failed for user ${userId}:`, error);
+            return null;
+        }
     }
     /**
      * 🚀 FAST: avatar URL만 빠르게 조회 (캐시 우선)
