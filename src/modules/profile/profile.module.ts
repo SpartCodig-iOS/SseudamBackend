@@ -7,5 +7,6 @@ import { SupabaseService } from '../../services/supabaseService';
 @Module({
   controllers: [ProfileController],
   providers: [ProfileService, CacheService, SupabaseService],
+  exports: [ProfileService],
 })
 export class ProfileModule {}

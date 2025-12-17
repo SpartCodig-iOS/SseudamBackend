@@ -19,5 +19,6 @@ exports.ProfileModule = ProfileModule = __decorate([
     (0, common_1.Module)({
         controllers: [profile_controller_1.ProfileController],
         providers: [profile_service_1.ProfileService, cacheService_1.CacheService, supabaseService_1.SupabaseService],
+        exports: [profile_service_1.ProfileService],
     })
 ], ProfileModule);
