@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Logger, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -32,6 +32,8 @@ import { SessionService } from '../../services/sessionService';
 @ApiTags('Auth')
 @Controller('api/v1/auth')
 export class AuthController {
+  private readonly logger = new Logger(AuthController.name);
+
   constructor(
     private readonly authService: AuthService,
     private readonly optimizedDeleteService: OptimizedDeleteService,
@@ -380,6 +382,7 @@ export class AuthController {
     @Body('pendingKey') pendingKeyRaw: unknown,
     @Req() req: RequestWithUser,
   ) {
+    const startTime = Date.now();
     const deviceToken = typeof deviceTokenRaw === 'string' ? deviceTokenRaw.trim() : '';
     if (!deviceToken) {
       throw new BadRequestException('deviceToken is required');
@@ -387,23 +390,39 @@ export class AuthController {
     const pendingKey = typeof pendingKeyRaw === 'string' ? pendingKeyRaw.trim() : undefined;
 
     const resolvedUserId = req.currentUser?.id ?? (await this.resolveUserIdFromHeader(req));
-
-    if (resolvedUserId) {
-      // 인증된 경우: 바로 사용자에 매핑
-      if (pendingKey) {
-        // 로그인 전 등록된 토큰이 있으면 함께 사용자에 매핑
-        await this.deviceTokenService.bindPendingTokensToUser(resolvedUserId, pendingKey, deviceToken);
-      }
-      await this.deviceTokenService.upsertDeviceToken(resolvedUserId, deviceToken);
-      return success({ deviceToken, pendingKey, mode: 'authenticated' }, 'Device token registered');
-    } else {
-      // 비인증: pendingKey가 있어야 매핑 가능
-      if (!pendingKey) {
-        throw new BadRequestException('pendingKey is required for anonymous registration');
-      }
-      await this.deviceTokenService.upsertAnonymousToken(pendingKey, deviceToken);
-      return success({ deviceToken, pendingKey, mode: 'anonymous' }, 'Device token registered');
+    if (!resolvedUserId && !pendingKey) {
+      throw new BadRequestException('pendingKey is required for anonymous registration');
     }
+    const mode: 'authenticated' | 'anonymous' = resolvedUserId ? 'authenticated' : 'anonymous';
+
+    // 메인 작업은 백그라운드로 돌리고 최대 200ms만 대기해서 빠른 응답
+    const workPromise = (async () => {
+      if (resolvedUserId) {
+        if (pendingKey) {
+          await this.deviceTokenService.bindPendingTokensToUser(resolvedUserId, pendingKey, deviceToken);
+        }
+        await this.deviceTokenService.upsertDeviceToken(resolvedUserId, deviceToken);
+      } else {
+        await this.deviceTokenService.upsertAnonymousToken(pendingKey, deviceToken);
+      }
+    })();
+
+    const loggingPromise = workPromise
+      .then(() => {
+        this.logger.debug(
+          `[device-token] mode=${mode} ${resolvedUserId ? `user=${resolvedUserId}` : `pendingKey=${pendingKey}`} tokenPrefix=${deviceToken.slice(0, 8)} elapsed=${Date.now() - startTime}ms`,
+        );
+      })
+      .catch((error) => {
+        this.logger.warn(
+          `[device-token] background work failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      });
+
+    const quickTimeout = new Promise((resolve) => setTimeout(resolve, 200));
+    await Promise.race([loggingPromise, quickTimeout]);
+
+    return success({ deviceToken, pendingKey, mode }, 'Device token registered');
   }
 
   /**
