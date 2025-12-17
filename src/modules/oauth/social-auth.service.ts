@@ -1288,11 +1288,11 @@ export class SocialAuthService {
     const cacheKey = `profile_exists:${userId}`;
 
     try {
-      // 1. Redis에서 먼저 확인 (TTL 10분)
-      const cached = await this.cacheService.get<boolean>(cacheKey);
-      if (cached !== null) {
-        return cached;
-      }
+      // 🔍 DEBUG: 캐시 스킵하고 직접 DB 조회 (임시)
+      // const cached = await this.cacheService.get<boolean>(cacheKey);
+      // if (cached !== null) {
+      //   return cached;
+      // }
 
       // 2. DB에서 빠른 확인 (EXISTS 쿼리)
       const { getPool } = await import('../../db/pool');
@@ -1303,6 +1303,9 @@ export class SocialAuthService {
       );
 
       const exists = Boolean(result.rows[0]?.exists);
+
+      // 🔍 DEBUG: 실제 결과 로그
+      console.log(`🔍 fastProfileCheck: userId=${userId}, exists=${exists}`);
 
       // 3. Redis에 즉시 캐싱 (30분 TTL로 늘려서 재사용률 향상)
       await this.cacheService.set(cacheKey, exists, { ttl: 1800 });
