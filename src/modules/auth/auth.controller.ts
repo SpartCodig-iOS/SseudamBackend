@@ -403,7 +403,7 @@ export class AuthController {
         }
         await this.deviceTokenService.upsertDeviceToken(resolvedUserId, deviceToken);
       } else {
-        await this.deviceTokenService.upsertAnonymousToken(pendingKey, deviceToken);
+        await this.deviceTokenService.upsertAnonymousToken(pendingKey as string, deviceToken);
       }
     })();
 

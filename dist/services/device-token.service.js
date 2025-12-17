@@ -18,6 +18,7 @@ let DeviceTokenService = DeviceTokenService_1 = class DeviceTokenService {
      * 비로그인 상태 토큰 등록: pendingKey 기준으로 저장/업데이트
      */
     async upsertAnonymousToken(pendingKey, deviceToken) {
+        const start = Date.now();
         const token = deviceToken?.trim() ?? '';
         const key = pendingKey?.trim() ?? '';
         if (!token || token.length < 10 || !key) {
@@ -27,13 +28,17 @@ let DeviceTokenService = DeviceTokenService_1 = class DeviceTokenService {
         try {
             const pool = await (0, pool_1.getPool)();
             await pool.query(`INSERT INTO device_tokens (user_id, pending_key, device_token, platform, is_active, last_used_at, created_at, updated_at)
-         VALUES (NULL, $1, $2, 'ios', true, NOW(), NOW(), NOW())
-         ON CONFLICT (device_token)
-         DO UPDATE SET
+           VALUES (NULL, $1, $2, 'ios', true, NOW(), NOW(), NOW())
+           ON CONFLICT (device_token)
+           DO UPDATE SET
            pending_key = EXCLUDED.pending_key,
            is_active = true,
-           last_used_at = NOW(),
-           updated_at = NOW()`, [key, token]);
+            last_used_at = NOW(),
+            updated_at = NOW()`, [key, token]);
+            const duration = Date.now() - start;
+            if (duration > 300) {
+                this.logger.warn(`[perf] upsertAnonymousToken slow: ${duration}ms (pendingKey=${key})`);
+            }
         }
         catch (error) {
             this.logger.error('Failed to upsert anonymous device token', {
@@ -107,6 +112,7 @@ let DeviceTokenService = DeviceTokenService_1 = class DeviceTokenService {
      * 새로운 토큰이면 추가합니다.
      */
     async upsertDeviceToken(userId, deviceToken) {
+        const start = Date.now();
         if (!deviceToken || deviceToken.trim().length < 10) {
             this.logger.warn(`Invalid deviceToken provided for user ${userId}`);
             return;
@@ -142,6 +148,10 @@ let DeviceTokenService = DeviceTokenService_1 = class DeviceTokenService {
             }
             finally {
                 client.release();
+            }
+            const duration = Date.now() - start;
+            if (duration > 300) {
+                this.logger.warn(`[perf] upsertDeviceToken slow: ${duration}ms (user=${userId}, tokenPrefix=${token.substring(0, 8)})`);
             }
             this.logger.log(`Device token updated for user ${userId}`);
         }

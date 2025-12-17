@@ -11,6 +11,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 var __param = (this && this.__param) || function (paramIndex, decorator) {
     return function (target, key) { decorator(target, key, paramIndex); }
 };
+var AuthController_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuthController = void 0;
 const common_1 = require("@nestjs/common");
@@ -28,7 +29,7 @@ const device_token_service_1 = require("../../services/device-token.service");
 const analytics_service_1 = require("../../services/analytics.service");
 const jwtService_1 = require("../../services/jwtService");
 const sessionService_1 = require("../../services/sessionService");
-let AuthController = class AuthController {
+let AuthController = AuthController_1 = class AuthController {
     constructor(authService, optimizedDeleteService, deviceTokenService, analyticsService, jwtTokenService, sessionService) {
         this.authService = authService;
         this.optimizedDeleteService = optimizedDeleteService;
@@ -36,6 +37,7 @@ let AuthController = class AuthController {
         this.analyticsService = analyticsService;
         this.jwtTokenService = jwtTokenService;
         this.sessionService = sessionService;
+        this.logger = new common_1.Logger(AuthController_1.name);
     }
     async signup(body) {
         const payload = authSchemas_1.signupSchema.parse(body);
@@ -126,29 +128,39 @@ let AuthController = class AuthController {
         return (0, api_1.success)(result, 'Logout successful');
     }
     async registerDeviceToken(deviceTokenRaw, pendingKeyRaw, req) {
+        const startTime = Date.now();
         const deviceToken = typeof deviceTokenRaw === 'string' ? deviceTokenRaw.trim() : '';
         if (!deviceToken) {
             throw new common_1.BadRequestException('deviceToken is required');
         }
         const pendingKey = typeof pendingKeyRaw === 'string' ? pendingKeyRaw.trim() : undefined;
         const resolvedUserId = req.currentUser?.id ?? (await this.resolveUserIdFromHeader(req));
-        if (resolvedUserId) {
-            // 인증된 경우: 바로 사용자에 매핑
-            if (pendingKey) {
-                // 로그인 전 등록된 토큰이 있으면 함께 사용자에 매핑
-                await this.deviceTokenService.bindPendingTokensToUser(resolvedUserId, pendingKey, deviceToken);
-            }
-            await this.deviceTokenService.upsertDeviceToken(resolvedUserId, deviceToken);
-            return (0, api_1.success)({ deviceToken, pendingKey, mode: 'authenticated' }, 'Device token registered');
+        if (!resolvedUserId && !pendingKey) {
+            throw new common_1.BadRequestException('pendingKey is required for anonymous registration');
         }
-        else {
-            // 비인증: pendingKey가 있어야 매핑 가능
-            if (!pendingKey) {
-                throw new common_1.BadRequestException('pendingKey is required for anonymous registration');
+        const mode = resolvedUserId ? 'authenticated' : 'anonymous';
+        // 메인 작업은 백그라운드로 돌리고 최대 200ms만 대기해서 빠른 응답
+        const workPromise = (async () => {
+            if (resolvedUserId) {
+                if (pendingKey) {
+                    await this.deviceTokenService.bindPendingTokensToUser(resolvedUserId, pendingKey, deviceToken);
+                }
+                await this.deviceTokenService.upsertDeviceToken(resolvedUserId, deviceToken);
             }
-            await this.deviceTokenService.upsertAnonymousToken(pendingKey, deviceToken);
-            return (0, api_1.success)({ deviceToken, pendingKey, mode: 'anonymous' }, 'Device token registered');
-        }
+            else {
+                await this.deviceTokenService.upsertAnonymousToken(pendingKey, deviceToken);
+            }
+        })();
+        const loggingPromise = workPromise
+            .then(() => {
+            this.logger.debug(`[device-token] mode=${mode} ${resolvedUserId ? `user=${resolvedUserId}` : `pendingKey=${pendingKey}`} tokenPrefix=${deviceToken.slice(0, 8)} elapsed=${Date.now() - startTime}ms`);
+        })
+            .catch((error) => {
+            this.logger.warn(`[device-token] background work failed: ${error instanceof Error ? error.message : String(error)}`);
+        });
+        const quickTimeout = new Promise((resolve) => setTimeout(resolve, 200));
+        await Promise.race([loggingPromise, quickTimeout]);
+        return (0, api_1.success)({ deviceToken, pendingKey, mode }, 'Device token registered');
     }
     /**
      * Authorization 헤더의 Bearer 토큰이 있으면 검증하여 userId를 반환
@@ -415,7 +427,7 @@ __decorate([
     __metadata("design:paramtypes", [Object, Object, Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "registerDeviceToken", null);
-exports.AuthController = AuthController = __decorate([
+exports.AuthController = AuthController = AuthController_1 = __decorate([
     (0, swagger_1.ApiTags)('Auth'),
     (0, common_1.Controller)('api/v1/auth'),
     __metadata("design:paramtypes", [auth_service_1.AuthService,
