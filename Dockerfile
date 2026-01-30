@@ -11,7 +11,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Use npm ci with cache mount for better performance
-RUN --mount=type=cache,target=/root/.npm \
+RUN --mount=type=cache,id=npm,target=/root/.npm \
     npm ci --prefer-offline --no-audit
 
 # Copy source files
@@ -20,7 +20,7 @@ COPY src ./src
 COPY public ./public
 
 # Build with cache mount
-RUN --mount=type=cache,target=node_modules/.cache \
+RUN --mount=type=cache,id=node_cache,target=node_modules/.cache \
     npm run build
 
 # --- Runtime stage --------------------------------------------------------
@@ -35,7 +35,7 @@ WORKDIR /app
 
 # Install only production dependencies with cache
 COPY package*.json ./
-RUN --mount=type=cache,target=/root/.npm \
+RUN --mount=type=cache,id=npm_prod,target=/root/.npm \
     npm ci --omit=dev --prefer-offline --no-audit && \
     npm cache clean --force
 
