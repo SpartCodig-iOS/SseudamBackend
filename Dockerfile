@@ -1,27 +1,21 @@
+# Railway Fallback Dockerfile (Cache Mount 없이)
 # syntax=docker/dockerfile:1
 # --- Build stage -----------------------------------------------------------
 FROM node:20-bullseye AS builder
-
-# Enable BuildKit inline cache
-ARG BUILDKIT_INLINE_CACHE=1
 
 WORKDIR /app
 
 # Install dependencies first (better layer caching)
 COPY package*.json ./
-
-# Use npm ci with cache mount for better performance
-RUN --mount=type=cache,id=buildcache-npm,target=/root/.npm \
-    npm ci --no-audit
+RUN npm ci --no-audit
 
 # Copy source files
 COPY tsconfig.json ./
 COPY src ./src
 COPY public ./public
 
-# Build with cache mount
-RUN --mount=type=cache,id=buildcache-node,target=node_modules/.cache \
-    npm run build
+# Build
+RUN npm run build
 
 # --- Runtime stage --------------------------------------------------------
 FROM node:20-alpine AS runtime
@@ -33,10 +27,9 @@ RUN addgroup -g 1001 -S nodejs && \
 ENV NODE_ENV=production
 WORKDIR /app
 
-# Install only production dependencies with cache
+# Install only production dependencies
 COPY package*.json ./
-RUN --mount=type=cache,id=buildcache-npm-prod,target=/root/.npm \
-    npm ci --omit=dev --no-audit && \
+RUN npm ci --omit=dev --no-audit && \
     npm cache clean --force
 
 # Copy build artifacts and static assets
