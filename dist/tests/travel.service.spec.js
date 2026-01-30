@@ -49,6 +49,8 @@ const samplePayload = {
     baseCurrency: 'JPY',
     baseExchangeRate: 111.11,
     countryCurrencies: ['JPY'],
+    budget: undefined,
+    budgetCurrency: undefined,
 };
 (0, node_test_1.default)('listTravels returns mapped and paginated travel summaries', async () => {
     const responses = [
@@ -111,7 +113,12 @@ const samplePayload = {
             fetchAvatarWithTimeout: async () => null,
             warmAvatarFromStorage: async () => undefined,
         };
-        const service = new travel_service_1.TravelService(mockMetaService, mockCacheService, mockEventEmitter, mockPushNotificationService, mockProfileService);
+        const mockQueueEventService = {
+            emitTravelCreated: async () => undefined,
+            emitMemberInvited: async () => undefined,
+            emitExpenseAdded: async () => undefined,
+        };
+        const service = new travel_service_1.TravelService(mockMetaService, mockCacheService, mockEventEmitter, mockPushNotificationService, mockProfileService, mockQueueEventService);
         const result = await service.listTravels('user-1', { page: 2, limit: 1 });
         strict_1.default.equal(result.total, 2);
         strict_1.default.equal(result.page, 2);
@@ -221,7 +228,12 @@ const samplePayload = {
             fetchAvatarWithTimeout: async () => null,
             warmAvatarFromStorage: async () => undefined,
         };
-        const service = new travel_service_1.TravelService(mockMetaService, mockCacheService, mockEventEmitter, mockPushNotificationService, mockProfileService);
+        const mockQueueEventService = {
+            emitTravelCreated: async () => undefined,
+            emitMemberInvited: async () => undefined,
+            emitExpenseAdded: async () => undefined,
+        };
+        const service = new travel_service_1.TravelService(mockMetaService, mockCacheService, mockEventEmitter, mockPushNotificationService, mockProfileService, mockQueueEventService);
         const result = await service.updateTravel('travel-123', 'user-123', samplePayload);
         strict_1.default.equal(updateArgs[0], 'travel-123');
         strict_1.default.equal(updateArgs[1], 'user-123');
@@ -280,7 +292,12 @@ const samplePayload = {
             fetchAvatarWithTimeout: async () => null,
             warmAvatarFromStorage: async () => undefined,
         };
-        const service = new travel_service_1.TravelService(mockMetaService, mockCacheService, mockEventEmitter, mockPushNotificationService, mockProfileService);
+        const mockQueueEventService = {
+            emitTravelCreated: async () => undefined,
+            emitMemberInvited: async () => undefined,
+            emitExpenseAdded: async () => undefined,
+        };
+        const service = new travel_service_1.TravelService(mockMetaService, mockCacheService, mockEventEmitter, mockPushNotificationService, mockProfileService, mockQueueEventService);
         await service.deleteTravel('travel-abc', 'owner-999');
         strict_1.default.equal(poolQuery.mock.callCount(), 1, 'ownership should be checked once');
         strict_1.default.equal(mockPool.connect.mock.callCount(), 1, 'transaction client should be acquired');

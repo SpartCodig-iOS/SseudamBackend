@@ -7,6 +7,7 @@ import { CacheService } from '../../services/cacheService';
 import { PushNotificationService } from '../../services/push-notification.service';
 import { AnalyticsService } from '../../services/analytics.service';
 import { ProfileService } from '../profile/profile.service';
+import { QueueEventService } from '../queue/services/queue-event.service';
 
 interface TravelContext {
   id: string;
@@ -56,6 +57,7 @@ export class TravelExpenseService {
     private readonly pushNotificationService: PushNotificationService,
     private readonly analyticsService: AnalyticsService,
     private readonly profileService: ProfileService,
+    private readonly queueEventService: QueueEventService, // 🎯 Redis Bull Queue 서비스 추가
   ) {}
 
   /**
@@ -465,6 +467,22 @@ export class TravelExpenseService {
         },
         { userId },
       ).catch(() => undefined);
+
+      // 🎯 백그라운드 경비 추가 이벤트 발송 (기존 동작에 영향 없음)
+      this.queueEventService.emitExpenseAdded({
+        travelId,
+        expenseId: result.id,
+        title: payload.title,
+        amount: payload.amount,
+        currency: payload.currency,
+        convertedAmount,
+        payerId: payerId,
+        payerName: context.memberNameMap.get(payerId) || '알 수 없는 사용자',
+        participantIds: participantIds,
+      }).catch(error => {
+        // Queue 실패해도 API는 정상 응답
+        console.warn(`Failed to emit expense added event: ${error.message}`);
+      });
 
       return result;
     } catch (error) {

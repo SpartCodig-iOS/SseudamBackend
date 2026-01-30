@@ -82,12 +82,19 @@ test('listTravels returns mapped and paginated travel summaries', async () => {
       warmAvatarFromStorage: async () => undefined,
     } as any;
 
+    const mockQueueEventService = {
+      emitTravelCreated: async () => undefined,
+      emitMemberInvited: async () => undefined,
+      emitExpenseAdded: async () => undefined,
+    } as any;
+
     const service = new TravelService(
       mockMetaService,
       mockCacheService,
       mockEventEmitter,
       mockPushNotificationService,
-      mockProfileService
+      mockProfileService,
+      mockQueueEventService
     );
     const result = await service.listTravels('user-1', { page: 2, limit: 1 });
 
@@ -208,12 +215,19 @@ test('updateTravel applies owner changes and returns refreshed summary', async (
       warmAvatarFromStorage: async () => undefined,
     } as any;
 
+    const mockQueueEventService = {
+      emitTravelCreated: async () => undefined,
+      emitMemberInvited: async () => undefined,
+      emitExpenseAdded: async () => undefined,
+    } as any;
+
     const service = new TravelService(
       mockMetaService,
       mockCacheService,
       mockEventEmitter,
       mockPushNotificationService,
-      mockProfileService
+      mockProfileService,
+      mockQueueEventService
     );
     const result = await service.updateTravel('travel-123', 'user-123', samplePayload);
 
@@ -280,12 +294,19 @@ test('deleteTravel verifies ownership and clears related records in a transactio
       warmAvatarFromStorage: async () => undefined,
     } as any;
 
+    const mockQueueEventService = {
+      emitTravelCreated: async () => undefined,
+      emitMemberInvited: async () => undefined,
+      emitExpenseAdded: async () => undefined,
+    } as any;
+
     const service = new TravelService(
       mockMetaService,
       mockCacheService,
       mockEventEmitter,
       mockPushNotificationService,
-      mockProfileService
+      mockProfileService,
+      mockQueueEventService
     );
     await service.deleteTravel('travel-abc', 'owner-999');
 

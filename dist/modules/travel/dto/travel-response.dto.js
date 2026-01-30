@@ -55,6 +55,14 @@ __decorate([
     __metadata("design:type", Number)
 ], TravelSummaryDto.prototype, "baseExchangeRate", void 0);
 __decorate([
+    (0, swagger_1.ApiProperty)({ example: 50000000, nullable: true, required: false, description: '여행 예산 (minor units, 예: 센트, 원)' }),
+    __metadata("design:type", Number)
+], TravelSummaryDto.prototype, "budget", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'KRW', nullable: true, required: false, description: '예산 통화 (ISO 4217 코드)' }),
+    __metadata("design:type", String)
+], TravelSummaryDto.prototype, "budgetCurrency", void 0);
+__decorate([
     (0, swagger_1.ApiProperty)({ example: 'ab12cd34', nullable: true, required: false }),
     __metadata("design:type", String)
 ], TravelSummaryDto.prototype, "inviteCode", void 0);

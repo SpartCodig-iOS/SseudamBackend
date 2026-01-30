@@ -5,9 +5,10 @@ import { OptimizedTravelService } from './optimized-travel.service';
 import { MetaModule } from '../meta/meta.module';
 import { ProfileModule } from '../profile/profile.module';
 import { CacheService } from '../../services/cacheService';
+import { QueueModule } from '../queue/queue.module';
 
 @Module({
-  imports: [MetaModule, ProfileModule],
+  imports: [MetaModule, ProfileModule, QueueModule],
   controllers: [TravelController],
   providers: [TravelService, OptimizedTravelService, CacheService],
   exports: [TravelService, OptimizedTravelService],

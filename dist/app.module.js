@@ -27,6 +27,7 @@ const home_module_1 = require("./home/home.module");
 const dev_module_1 = require("./modules/dev/dev.module");
 const version_module_1 = require("./modules/version/version.module");
 const universal_links_module_1 = require("./modules/universal-links/universal-links.module");
+const queue_module_1 = require("./modules/queue/queue.module");
 let AppModule = class AppModule {
     configure(consumer) {
         consumer.apply(requestLogger_1.RequestLoggerMiddleware).forRoutes('*');
@@ -50,6 +51,7 @@ exports.AppModule = AppModule = __decorate([
             dev_module_1.DevModule,
             version_module_1.VersionModule,
             universal_links_module_1.UniversalLinksModule,
+            queue_module_1.QueueModule, // 🎯 Redis Bull Queue 비동기 처리
         ],
         providers: [
             {

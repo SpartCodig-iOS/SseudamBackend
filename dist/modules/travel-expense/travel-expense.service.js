@@ -18,14 +18,16 @@ const cacheService_1 = require("../../services/cacheService");
 const push_notification_service_1 = require("../../services/push-notification.service");
 const analytics_service_1 = require("../../services/analytics.service");
 const profile_service_1 = require("../profile/profile.service");
+const queue_event_service_1 = require("../queue/services/queue-event.service");
 let TravelExpenseService = class TravelExpenseService {
-    constructor(metaService, cacheService, eventEmitter, pushNotificationService, analyticsService, profileService) {
+    constructor(metaService, cacheService, eventEmitter, pushNotificationService, analyticsService, profileService, queueEventService) {
         this.metaService = metaService;
         this.cacheService = cacheService;
         this.eventEmitter = eventEmitter;
         this.pushNotificationService = pushNotificationService;
         this.analyticsService = analyticsService;
         this.profileService = profileService;
+        this.queueEventService = queueEventService;
         this.EXPENSE_LIST_PREFIX = 'expense:list';
         this.EXPENSE_DETAIL_PREFIX = 'expense:detail';
         this.EXPENSE_LIST_TTL_SECONDS = 120; // 2분
@@ -367,6 +369,21 @@ let TravelExpenseService = class TravelExpenseService {
                 currency: payload.currency.toUpperCase(),
                 participant_count: participantIds.length,
             }, { userId }).catch(() => undefined);
+            // 🎯 백그라운드 경비 추가 이벤트 발송 (기존 동작에 영향 없음)
+            this.queueEventService.emitExpenseAdded({
+                travelId,
+                expenseId: result.id,
+                title: payload.title,
+                amount: payload.amount,
+                currency: payload.currency,
+                convertedAmount,
+                payerId: payerId,
+                payerName: context.memberNameMap.get(payerId) || '알 수 없는 사용자',
+                participantIds: participantIds,
+            }).catch(error => {
+                // Queue 실패해도 API는 정상 응답
+                console.warn(`Failed to emit expense added event: ${error.message}`);
+            });
             return result;
         }
         catch (error) {
@@ -695,5 +712,6 @@ exports.TravelExpenseService = TravelExpenseService = __decorate([
         event_emitter_1.EventEmitter2,
         push_notification_service_1.PushNotificationService,
         analytics_service_1.AnalyticsService,
-        profile_service_1.ProfileService])
+        profile_service_1.ProfileService,
+        queue_event_service_1.QueueEventService])
 ], TravelExpenseService);

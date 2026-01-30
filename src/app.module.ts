@@ -18,6 +18,7 @@ import { HomeModule } from './home/home.module';
 import { DevModule } from './modules/dev/dev.module';
 import { VersionModule } from './modules/version/version.module';
 import { UniversalLinksModule } from './modules/universal-links/universal-links.module';
+import { QueueModule } from './modules/queue/queue.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { UniversalLinksModule } from './modules/universal-links/universal-links.
     DevModule,
     VersionModule,
     UniversalLinksModule,
+    QueueModule, // 🎯 Redis Bull Queue 비동기 처리
   ],
   providers: [
     {

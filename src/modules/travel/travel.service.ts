@@ -17,6 +17,7 @@ import { CacheService } from '../../services/cacheService';
 import { PushNotificationService } from '../../services/push-notification.service';
 import { ProfileService } from '../profile/profile.service';
 import { env } from '../../config/env';
+import { QueueEventService } from '../queue/services/queue-event.service';
 
 export interface TravelSummary {
   id: string;
@@ -86,6 +87,7 @@ export class TravelService {
     private readonly eventEmitter: EventEmitter2,
     private readonly pushNotificationService: PushNotificationService,
     private readonly profileService: ProfileService,
+    private readonly queueEventService: QueueEventService, // 🎯 Redis Bull Queue 서비스 추가
   ) {}
 
   private emitTravelMembershipChanged(travelId: string): void {
@@ -777,6 +779,18 @@ export class TravelService {
       this.setCachedTravelDetail(travel.id, travel);
       this.setMemberListCache(travel.id, travel.members ?? []);
 
+      // 🎯 백그라운드 이벤트 발송 (기존 동작에 영향 없음)
+      this.queueEventService.emitTravelCreated({
+        travelId: travel.id,
+        title: travel.title,
+        ownerId: currentUser.id,
+        ownerName: currentUser.name ?? currentUser.email ?? '알 수 없는 사용자',
+        memberIds: [currentUser.id], // 처음엔 생성자만
+      }).catch(error => {
+        // Queue 실패해도 API는 정상 응답
+        this.logger.warn(`Failed to emit travel created event: ${error.message}`);
+      });
+
       return travel;
     } catch (error) {
       this.logger.error('Failed to create travel', error as Error);
@@ -1172,6 +1186,19 @@ export class TravelService {
         travelSummary.title,
         memberIds
       );
+
+      // 🎯 백그라운드 멤버 초대 이벤트 발송 (기존 동작에 영향 없음)
+      this.queueEventService.emitMemberInvited({
+        travelId: inviteRow.travel_id,
+        travelTitle: travelSummary.title,
+        invitedUserId: userId,
+        invitedByUserId: travelSummary.members?.find(m => m.role === 'owner')?.userId || '',
+        invitedByName: travelSummary.ownerName || '호스트',
+        inviteCode: inviteCode,
+      }).catch(error => {
+        // Queue 실패해도 API는 정상 응답
+        this.logger.warn(`Failed to emit member invited event: ${error.message}`);
+      });
     }
 
     return this.reorderMembersForUser(travelSummary, userId);

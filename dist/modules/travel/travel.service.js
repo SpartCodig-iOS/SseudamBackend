@@ -20,13 +20,15 @@ const cacheService_1 = require("../../services/cacheService");
 const push_notification_service_1 = require("../../services/push-notification.service");
 const profile_service_1 = require("../profile/profile.service");
 const env_1 = require("../../config/env");
+const queue_event_service_1 = require("../queue/services/queue-event.service");
 let TravelService = TravelService_1 = class TravelService {
-    constructor(metaService, cacheService = new cacheService_1.CacheService(), eventEmitter, pushNotificationService, profileService) {
+    constructor(metaService, cacheService = new cacheService_1.CacheService(), eventEmitter, pushNotificationService, profileService, queueEventService) {
         this.metaService = metaService;
         this.cacheService = cacheService;
         this.eventEmitter = eventEmitter;
         this.pushNotificationService = pushNotificationService;
         this.profileService = profileService;
+        this.queueEventService = queueEventService;
         this.logger = new common_1.Logger(TravelService_1.name);
         this.countryCurrencyCache = new Map();
         this.countryCurrencyLoaded = false;
@@ -384,6 +386,8 @@ let TravelService = TravelService_1 = class TravelService {
           t.country_currencies,
           t.base_currency,
           t.base_exchange_rate,
+          t.budget,
+          t.budget_currency,
          ti.invite_code,
          CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS status,
          t.created_at::text,
@@ -426,6 +430,8 @@ let TravelService = TravelService_1 = class TravelService {
             baseExchangeRate: row.base_exchange_rate ? Number(row.base_exchange_rate) : 0,
             destinationCurrency,
             countryCurrencies: Array.isArray(row.country_currencies) ? row.country_currencies : [],
+            budget: row.budget ? Number(row.budget) : undefined,
+            budgetCurrency: row.budget_currency ?? undefined,
             inviteCode,
             deepLink,
             status: row.status,
@@ -554,8 +560,8 @@ let TravelService = TravelService_1 = class TravelService {
                 // inviteCode 자동 생성
                 const inviteCode = this.generateInviteCode();
                 const insertResult = await client.query(`WITH new_travel AS (
-             INSERT INTO travels (owner_id, title, start_date, end_date, country_code, country_name_kr, base_currency, base_exchange_rate, country_currencies, status)
-             VALUES ($1, $2, to_date($3, 'YYYY-MM-DD'), to_date($4, 'YYYY-MM-DD'), $5, $6, $7, $8, $9, CASE WHEN to_date($4, 'YYYY-MM-DD') < CURRENT_DATE THEN 'archived' ELSE 'active' END)
+             INSERT INTO travels (owner_id, title, start_date, end_date, country_code, country_name_kr, base_currency, base_exchange_rate, country_currencies, budget, budget_currency, status)
+             VALUES ($1, $2, to_date($3, 'YYYY-MM-DD'), to_date($4, 'YYYY-MM-DD'), $5, $6, $7, $8, $9, $10, $11, CASE WHEN to_date($4, 'YYYY-MM-DD') < CURRENT_DATE THEN 'archived' ELSE 'active' END)
              RETURNING id,
                        title,
                        start_date::date::text,
@@ -565,6 +571,8 @@ let TravelService = TravelService_1 = class TravelService {
                        base_currency,
                        base_exchange_rate,
                        country_currencies,
+                       budget,
+                       budget_currency,
                        status,
                        created_at
            ),
@@ -578,7 +586,7 @@ let TravelService = TravelService_1 = class TravelService {
            ),
            travel_invite AS (
              INSERT INTO travel_invites (travel_id, invite_code, created_by, status, expires_at, max_uses)
-           SELECT new_travel.id, $10, $1, 'active', NULL, NULL
+           SELECT new_travel.id, $12, $1, 'active', NULL, NULL
             FROM new_travel
             ON CONFLICT (invite_code) DO UPDATE SET invite_code = excluded.invite_code,
                                                      status = 'active',
@@ -609,6 +617,8 @@ let TravelService = TravelService_1 = class TravelService {
                     payload.baseCurrency,
                     payload.baseExchangeRate,
                     payload.countryCurrencies,
+                    payload.budget ?? null,
+                    payload.budgetCurrency ?? null,
                     inviteCode,
                 ]);
                 const travelRow = insertResult.rows[0];
@@ -640,6 +650,17 @@ let TravelService = TravelService_1 = class TravelService {
             this.invalidateUserTravelCache(currentUser.id);
             this.setCachedTravelDetail(travel.id, travel);
             this.setMemberListCache(travel.id, travel.members ?? []);
+            // 🎯 백그라운드 이벤트 발송 (기존 동작에 영향 없음)
+            this.queueEventService.emitTravelCreated({
+                travelId: travel.id,
+                title: travel.title,
+                ownerId: currentUser.id,
+                ownerName: currentUser.name ?? currentUser.email ?? '알 수 없는 사용자',
+                memberIds: [currentUser.id], // 처음엔 생성자만
+            }).catch(error => {
+                // Queue 실패해도 API는 정상 응답
+                this.logger.warn(`Failed to emit travel created event: ${error.message}`);
+            });
             return travel;
         }
         catch (error) {
@@ -923,6 +944,18 @@ let TravelService = TravelService_1 = class TravelService {
             const currentUserName = userNameResult.rows[0]?.name || '새 멤버';
             const memberIds = travelSummary.members.map(m => m.userId);
             await this.pushNotificationService.sendTravelNotification('travel_member_added', inviteRow.travel_id, userId, currentUserName, travelSummary.title, memberIds);
+            // 🎯 백그라운드 멤버 초대 이벤트 발송 (기존 동작에 영향 없음)
+            this.queueEventService.emitMemberInvited({
+                travelId: inviteRow.travel_id,
+                travelTitle: travelSummary.title,
+                invitedUserId: userId,
+                invitedByUserId: travelSummary.members?.find(m => m.role === 'owner')?.userId || '',
+                invitedByName: travelSummary.ownerName || '호스트',
+                inviteCode: inviteCode,
+            }).catch(error => {
+                // Queue 실패해도 API는 정상 응답
+                this.logger.warn(`Failed to emit member invited event: ${error.message}`);
+            });
         }
         return this.reorderMembersForUser(travelSummary, userId);
     }
@@ -1000,6 +1033,8 @@ let TravelService = TravelService_1 = class TravelService {
              base_currency = $8,
              base_exchange_rate = $9,
              country_currencies = $10,
+             budget = $11,
+             budget_currency = $12,
              status = CASE WHEN to_date($5, 'YYYY-MM-DD') < CURRENT_DATE THEN 'archived' ELSE 'active' END,
              updated_at = NOW()
          WHERE id = $1 AND owner_id = $2
@@ -1013,6 +1048,8 @@ let TravelService = TravelService_1 = class TravelService {
            base_currency,
            base_exchange_rate,
            country_currencies,
+           budget,
+           budget_currency,
            invite_code,
            status,
            created_at::text`, [
@@ -1026,6 +1063,8 @@ let TravelService = TravelService_1 = class TravelService {
                 payload.baseCurrency,
                 payload.baseExchangeRate,
                 payload.countryCurrencies,
+                payload.budget ?? null,
+                payload.budgetCurrency ?? null,
             ]);
             const row = result.rows[0];
             if (row) {
@@ -1196,5 +1235,6 @@ exports.TravelService = TravelService = TravelService_1 = __decorate([
         cacheService_1.CacheService,
         event_emitter_1.EventEmitter2,
         push_notification_service_1.PushNotificationService,
-        profile_service_1.ProfileService])
+        profile_service_1.ProfileService,
+        queue_event_service_1.QueueEventService])
 ], TravelService);
