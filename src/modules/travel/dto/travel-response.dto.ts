@@ -31,6 +31,12 @@ export class TravelSummaryDto {
   @ApiProperty({ example: 0.0091 })
   baseExchangeRate!: number;
 
+  @ApiProperty({ example: 50000000, nullable: true, required: false, description: '여행 예산 (minor units, 예: 센트, 원)' })
+  budget?: number;
+
+  @ApiProperty({ example: 'KRW', nullable: true, required: false, description: '예산 통화 (ISO 4217 코드)' })
+  budgetCurrency?: string;
+
   @ApiProperty({ example: 'ab12cd34', nullable: true, required: false })
   inviteCode?: string;
 

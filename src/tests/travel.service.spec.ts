@@ -12,6 +12,8 @@ const samplePayload = {
   baseCurrency: 'JPY',
   baseExchangeRate: 111.11,
   countryCurrencies: ['JPY'],
+  budget: undefined,
+  budgetCurrency: undefined,
 };
 
 test('listTravels returns mapped and paginated travel summaries', async () => {

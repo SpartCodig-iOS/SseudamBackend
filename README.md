@@ -64,7 +64,9 @@ cp .env.example .env
 PORT=8081
 NODE_ENV=development
 
-# 데이터베이스
+# 데이터베이스 (Railway를 기본으로 사용)
+RAILWAY_DATABASE_URL=postgresql://username:password@host:port/database
+# DATABASE_URL을 쓰는 코드/도구가 있다면 동일 값으로 맞춰 주세요.
 DATABASE_URL=postgresql://username:password@host:port/database
 
 # Supabase
@@ -153,7 +155,9 @@ PATCH /api/v1/profile/me          # 프로필 수정 (이미지 업로드 포함
 #### 📊 메타 정보
 ```http
 GET /api/v1/meta/countries        # 국가/통화 정보
-GET /api/v1/meta/exchange-rate?base=KRW&quote=USD&baseAmount=5000    # 실시간 환율
+GET /api/v1/meta/exchange-rate?base=KRW&quote=USD&baseAmount=5000    # 실시간 환율(10분 캐시)
+  - Frankfurter + open.er-api 병렬 조회, 더 빠른 쪽 사용
+  - 캐시·폴백: 외부 API 실패 시 캐시된 값 또는 기본 환율 사용 (페그 통화 포함)
 ```
 
 ---

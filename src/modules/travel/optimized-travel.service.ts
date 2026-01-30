@@ -24,6 +24,8 @@ interface OptimizedTravelSummary {
   baseExchangeRate: number;
   destinationCurrency: string;
   countryCurrencies: string[];
+  budget?: number; // 예산 (minor units)
+  budgetCurrency?: string; // 예산 통화 (ISO 4217)
   inviteCode?: string;
   status: string;
   role: string;
@@ -173,6 +175,8 @@ export class OptimizedTravelService {
              t.country_currencies,
              t.base_currency,
              t.base_exchange_rate,
+             t.budget,
+             t.budget_currency,
              ti.invite_code,
              CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS status,
              tm.role,
@@ -215,6 +219,8 @@ export class OptimizedTravelService {
            t.country_currencies,
            t.base_currency,
            t.base_exchange_rate,
+           t.budget,
+           t.budget_currency,
            ti.invite_code,
            CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS status,
            tm.role,
@@ -298,6 +304,8 @@ export class OptimizedTravelService {
       baseExchangeRate: parseFloat(row.base_exchange_rate),
       destinationCurrency,
       countryCurrencies: Array.isArray(row.country_currencies) ? row.country_currencies : [],
+      budget: row.budget ? Number(row.budget) : undefined,
+      budgetCurrency: row.budget_currency ?? undefined,
       inviteCode: row.invite_code,
       status: row.status,
       role: row.role,

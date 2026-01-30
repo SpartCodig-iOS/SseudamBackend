@@ -3,6 +3,19 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # Multi-platform support for production
+      platforms:
+        - linux/amd64
+        - linux/arm64
+      # GitHub Actions cache for production
+      cache_from:
+        - type=gha
+        - type=registry,ref=ghcr.io/your-username/sseudam-backend:cache
+      cache_to:
+        - type=gha,mode=max
+        - type=registry,ref=ghcr.io/your-username/sseudam-backend:cache,mode=max
+      args:
+        BUILDKIT_INLINE_CACHE: 1
     ports:
       - "8080:8080"
     env_file:
@@ -10,15 +23,15 @@ services:
     environment:
       NODE_ENV: production
       PORT: 8080
-    # Resource limits
+    # Resource limits for production
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 512M
+          cpus: '2.0'
+          memory: 1G
         reservations:
-          cpus: '0.25'
-          memory: 256M
+          cpus: '0.5'
+          memory: 512M
     # Health check
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]

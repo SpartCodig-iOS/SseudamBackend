@@ -222,7 +222,19 @@
       "Bash(\"https://sseudam.up.railway.app/api/v1/travels/cf1280cf-f89e-4bb6-971a-15217ce19338/members\")",
       "Bash(NODE_ENV=development PORT=8090 npm start:*)",
       "Bash(PORT=8082 npm run dev:*)",
-      "Bash(echo \"NODE_ENV: $NODE_ENV\")"
+      "Bash(echo \"NODE_ENV: $NODE_ENV\")",
+      "Bash('http://localhost:8082/api/v1/dev/test-push-notification' )",
+      "Bash(node delete-user.js)",
+      "Bash(docker buildx:*)",
+      "Bash(chmod:*)",
+      "Bash(docker context:*)",
+      "Bash(docker compose up:*)",
+      "Bash(make build-prod-local:*)",
+      "Bash(docker compose restart:*)",
+      "Bash(docker version:*)",
+      "Bash(osascript:*)",
+      "Bash(make:*)",
+      "Bash(docker logs:*)"
     ],
     "deny": [],
     "ask": []

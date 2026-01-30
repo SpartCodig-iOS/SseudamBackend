@@ -110,6 +110,16 @@ export class TravelController {
             description: '해당 여행 국가에서 사용하는 통화 리스트 (ISO 4217 코드)',
             items: { type: 'string', minLength: 3, maxLength: 3 },
           },
+          budget: {
+            type: 'number',
+            example: 50000000,
+            description: '🔹 여행 예산 (minor units, 예: 센트, 원) - 완전 선택사항! 설정하지 않아도 됩니다.',
+          },
+          budgetCurrency: {
+            type: 'string',
+            example: 'KRW',
+            description: '🔹 예산 통화 (ISO 4217 코드) - 예산 설정시에만 함께 입력',
+          },
         },
       },
   })
@@ -151,6 +161,16 @@ export class TravelController {
             example: ['JPY', 'USD'],
             description: '여행 국가에서 사용하는 통화 리스트 (ISO 4217 코드)',
             items: { type: 'string', minLength: 3, maxLength: 3 },
+          },
+          budget: {
+            type: 'number',
+            example: 50000000,
+            description: '🔹 여행 예산 (minor units, 예: 센트, 원) - 완전 선택사항! 설정하지 않아도 됩니다.',
+          },
+          budgetCurrency: {
+            type: 'string',
+            example: 'KRW',
+            description: '🔹 예산 통화 (ISO 4217 코드) - 예산 설정시에만 함께 입력',
           },
         },
       },

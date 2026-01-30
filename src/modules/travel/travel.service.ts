@@ -29,6 +29,8 @@ export interface TravelSummary {
   baseExchangeRate: number;
   destinationCurrency: string;
   countryCurrencies: string[];
+  budget?: number; // 예산 (minor units, 예: 센트, 원)
+  budgetCurrency?: string; // 예산 통화 (ISO 4217)
   inviteCode?: string;
   deepLink?: string;
   status: string;
@@ -483,6 +485,8 @@ export class TravelService {
           t.country_currencies,
           t.base_currency,
           t.base_exchange_rate,
+          t.budget,
+          t.budget_currency,
          ti.invite_code,
          CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS status,
          t.created_at::text,
@@ -531,6 +535,8 @@ export class TravelService {
       baseExchangeRate: row.base_exchange_rate ? Number(row.base_exchange_rate) : 0,
       destinationCurrency,
       countryCurrencies: Array.isArray(row.country_currencies) ? row.country_currencies : [],
+      budget: row.budget ? Number(row.budget) : undefined,
+      budgetCurrency: row.budget_currency ?? undefined,
       inviteCode,
       deepLink,
       status: row.status,
@@ -672,8 +678,8 @@ export class TravelService {
 
         const insertResult = await client.query(
           `WITH new_travel AS (
-             INSERT INTO travels (owner_id, title, start_date, end_date, country_code, country_name_kr, base_currency, base_exchange_rate, country_currencies, status)
-             VALUES ($1, $2, to_date($3, 'YYYY-MM-DD'), to_date($4, 'YYYY-MM-DD'), $5, $6, $7, $8, $9, CASE WHEN to_date($4, 'YYYY-MM-DD') < CURRENT_DATE THEN 'archived' ELSE 'active' END)
+             INSERT INTO travels (owner_id, title, start_date, end_date, country_code, country_name_kr, base_currency, base_exchange_rate, country_currencies, budget, budget_currency, status)
+             VALUES ($1, $2, to_date($3, 'YYYY-MM-DD'), to_date($4, 'YYYY-MM-DD'), $5, $6, $7, $8, $9, $10, $11, CASE WHEN to_date($4, 'YYYY-MM-DD') < CURRENT_DATE THEN 'archived' ELSE 'active' END)
              RETURNING id,
                        title,
                        start_date::date::text,
@@ -683,6 +689,8 @@ export class TravelService {
                        base_currency,
                        base_exchange_rate,
                        country_currencies,
+                       budget,
+                       budget_currency,
                        status,
                        created_at
            ),
@@ -696,7 +704,7 @@ export class TravelService {
            ),
            travel_invite AS (
              INSERT INTO travel_invites (travel_id, invite_code, created_by, status, expires_at, max_uses)
-           SELECT new_travel.id, $10, $1, 'active', NULL, NULL
+           SELECT new_travel.id, $12, $1, 'active', NULL, NULL
             FROM new_travel
             ON CONFLICT (invite_code) DO UPDATE SET invite_code = excluded.invite_code,
                                                      status = 'active',
@@ -728,6 +736,8 @@ export class TravelService {
             payload.baseCurrency,
             payload.baseExchangeRate,
             payload.countryCurrencies,
+            payload.budget ?? null,
+            payload.budgetCurrency ?? null,
             inviteCode,
           ]
         );
@@ -1279,6 +1289,8 @@ export class TravelService {
              base_currency = $8,
              base_exchange_rate = $9,
              country_currencies = $10,
+             budget = $11,
+             budget_currency = $12,
              status = CASE WHEN to_date($5, 'YYYY-MM-DD') < CURRENT_DATE THEN 'archived' ELSE 'active' END,
              updated_at = NOW()
          WHERE id = $1 AND owner_id = $2
@@ -1292,6 +1304,8 @@ export class TravelService {
            base_currency,
            base_exchange_rate,
            country_currencies,
+           budget,
+           budget_currency,
            invite_code,
            status,
            created_at::text`,
@@ -1306,6 +1320,8 @@ export class TravelService {
           payload.baseCurrency,
           payload.baseExchangeRate,
           payload.countryCurrencies,
+          payload.budget ?? null,
+          payload.budgetCurrency ?? null,
         ],
       );
       const row = result.rows[0];
