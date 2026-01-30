@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # --- Build stage -----------------------------------------------------------
-FROM --platform=$BUILDPLATFORM node:20-bullseye AS builder
+FROM node:20-bullseye AS builder
 
 # Enable BuildKit inline cache
 ARG BUILDKIT_INLINE_CACHE=1
@@ -12,7 +12,7 @@ COPY package*.json ./
 
 # Use npm ci with cache mount for better performance
 RUN --mount=type=cache,id=npm,target=/root/.npm \
-    npm ci --prefer-offline --no-audit
+    npm ci --no-audit
 
 # Copy source files
 COPY tsconfig.json ./
@@ -36,7 +36,7 @@ WORKDIR /app
 # Install only production dependencies with cache
 COPY package*.json ./
 RUN --mount=type=cache,id=npm_prod,target=/root/.npm \
-    npm ci --omit=dev --prefer-offline --no-audit && \
+    npm ci --omit=dev --no-audit && \
     npm cache clean --force
 
 # Copy build artifacts and static assets
