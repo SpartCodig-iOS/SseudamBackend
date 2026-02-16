@@ -67,7 +67,7 @@ export const env = {
   databaseName: process.env.DATABASE_NAME ?? null,
   databaseRequireTLS: process.env.DATABASE_REQUIRE_TLS ? truthy(process.env.DATABASE_REQUIRE_TLS) : null,
   databaseRejectUnauthorized: truthy(process.env.DATABASE_SSL_REJECT_UNAUTHORIZED) ?? false,
-  databaseForceIPv4: truthy(process.env.DATABASE_FORCE_IPV4) ?? false,
+  databaseForceIPv4: truthy(process.env.DATABASE_FORCE_IPv4) ?? false,
   jwtSecret: process.env.JWT_SECRET ?? 'secret',
   accessTokenTTL: optionalNumber(process.env.ACCESS_TOKEN_TTL_SECONDS, 60 * 60 * 24) ?? 60 * 60 * 24,
   refreshTokenTTL: optionalNumber(process.env.REFRESH_TOKEN_TTL_SECONDS, 60 * 60 * 24 * 60) ?? 60 * 60 * 24 * 60,
