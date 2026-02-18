@@ -52,6 +52,9 @@ export class JwtTokenService {
   }
 
   generateTokenPair(user: UserRecord, loginType: LoginType | undefined, sessionId: string): TokenPair {
+    console.log(`🔍 ENV DEBUG - ACCESS_TOKEN_TTL_SECONDS: ${process.env.ACCESS_TOKEN_TTL_SECONDS}`);
+    console.log(`🔍 ENV DEBUG - Parsed accessTokenTTL: ${env.accessTokenTTL} seconds (${env.accessTokenTTL/3600} hours)`);
+
     const accessExpiresAt = new Date(Date.now() + secondsToMs(env.accessTokenTTL));
     const refreshExpiresAt = new Date(Date.now() + secondsToMs(env.refreshTokenTTL));
 

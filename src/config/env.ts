@@ -1,4 +1,17 @@
-import 'dotenv/config';
+import * as dotenv from 'dotenv';
+import path from 'path';
+
+// .env 파일 명시적 로드
+const envPath = path.resolve(process.cwd(), '.env');
+const result = dotenv.config({ path: envPath });
+
+console.log('🔍 [ENV DEBUG] dotenv result:', result.error ? result.error.message : 'success');
+console.log('🔍 [ENV DEBUG] .env path:', envPath);
+console.log('🔍 [ENV DEBUG] Raw environment variables:');
+console.log('ACCESS_TOKEN_TTL_SECONDS:', process.env.ACCESS_TOKEN_TTL_SECONDS);
+console.log('REFRESH_TOKEN_TTL_SECONDS:', process.env.REFRESH_TOKEN_TTL_SECONDS);
+console.log('NODE_ENV:', process.env.NODE_ENV);
+console.log('PWD:', process.env.PWD);
 
 const truthy = (value?: string): boolean => {
   if (!value) return false;
@@ -6,9 +19,15 @@ const truthy = (value?: string): boolean => {
 };
 
 const optionalNumber = (value?: string, fallback?: number): number | undefined => {
-  if (!value) return fallback;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  console.log(`🔍 [optionalNumber] input: "${value}", fallback: ${fallback}`);
+  if (!value || value.trim() === '') {
+    console.log(`🔍 [optionalNumber] using fallback: ${fallback}`);
+    return fallback;
+  }
+  const parsed = Number(value.trim());
+  const result = Number.isFinite(parsed) ? parsed : fallback;
+  console.log(`🔍 [optionalNumber] parsed: ${parsed}, result: ${result}`);
+  return result;
 };
 
 const decodeSupabaseRef = (serviceRoleKey?: string): string | null => {

@@ -270,6 +270,7 @@ export class AuthController {
   })
   async refresh(@Body() body: unknown) {
     const payload = refreshSchema.parse(body);
+    this.logger.debug(`🔄 Token refresh attempt - refreshToken: ${payload.refreshToken?.substring(0, 20)}...`);
     const result = await this.authService.refresh(payload.refreshToken);
 
     return success(
