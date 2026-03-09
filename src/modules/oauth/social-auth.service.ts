@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import { Injectable, ServiceUnavailableException, UnauthorizedException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import jwt from 'jsonwebtoken';
 import { LoginType } from '../../types/auth';
 import { UserRecord } from '../../types/user';
@@ -9,7 +11,6 @@ import { CacheService } from '../../services/cacheService';
 import { AuthService, AuthSessionPayload } from '../auth/auth.service';
 import { fromSupabaseUser } from '../../utils/mappers';
 import { env } from '../../config/env';
-import { getPool } from '../../db/pool';
 import { BackgroundJobService } from '../../services/background-job.service';
 
 export interface SocialLookupResult {
@@ -58,6 +59,8 @@ export class SocialAuthService {
   private readonly NETWORK_TIMEOUT = 8000; // 8초
 
   constructor(
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
     private readonly supabaseService: SupabaseService,
     private readonly oauthTokenService: OAuthTokenService,
     private readonly cacheService: CacheService,
@@ -283,12 +286,11 @@ export class SocialAuthService {
     }
 
     try {
-      const pool = await getPool();
-      const result = await pool.query(
+      const rows = await this.dataSource.query(
         `SELECT 1 FROM profiles WHERE id = $1 LIMIT 1`,
         [userId],
       );
-      const exists = Boolean(result.rows[0]);
+      const exists = Boolean(rows[0]);
       this.profileExistenceCache.set(userId, {
         exists,
         expiresAt: Date.now() + this.PROFILE_EXISTS_TTL,
@@ -438,8 +440,7 @@ export class SocialAuthService {
 
     this.dbWarmupPromise = (async () => {
       try {
-        const pool = await getPool();
-        await pool.query('SELECT 1');
+        await this.dataSource.query('SELECT 1');
         return true;
       } catch (error) {
         this.logger.warn('DB warmup skipped due to error', error as Error);
@@ -1288,26 +1289,21 @@ export class SocialAuthService {
     const cacheKey = `profile_exists:${userId}`;
 
     try {
-      // 🔍 DEBUG: 캐시 스킵하고 직접 DB 조회 (임시)
-      // const cached = await this.cacheService.get<boolean>(cacheKey);
-      // if (cached !== null) {
-      //   return cached;
-      // }
+      // 1. Redis 캐시 우선 확인
+      const cached = await this.cacheService.get<boolean>(cacheKey);
+      if (cached !== null) {
+        return cached;
+      }
 
       // 2. DB에서 빠른 확인 (EXISTS 쿼리)
-      const { getPool } = await import('../../db/pool');
-      const pool = await getPool();
-      const result = await pool.query(
+      const rows = await this.dataSource.query(
         'SELECT EXISTS(SELECT 1 FROM profiles WHERE id = $1) as exists',
-        [userId]
+        [userId],
       );
 
-      const exists = Boolean(result.rows[0]?.exists);
+      const exists = Boolean(rows[0]?.exists);
 
-      // 🔍 DEBUG: 실제 결과 로그
-      console.log(`🔍 fastProfileCheck: userId=${userId}, exists=${exists}`);
-
-      // 3. Redis에 즉시 캐싱 (30분 TTL로 늘려서 재사용률 향상)
+      // 3. Redis에 캐싱 (30분 TTL)
       await this.cacheService.set(cacheKey, exists, { ttl: 1800 });
 
       return exists;

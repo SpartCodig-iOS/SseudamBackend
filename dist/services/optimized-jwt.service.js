@@ -141,8 +141,8 @@ let OptimizedJwtTokenService = OptimizedJwtTokenService_1 = class OptimizedJwtTo
             this.generateAccessTokenAsync(user, sessionId, loginType),
             this.generateRefreshTokenAsync(user, sessionId),
         ]);
-        const accessTokenExpiresAt = new Date(Date.now() + secondsToMs(3600)); // 1시간
-        const refreshTokenExpiresAt = new Date(Date.now() + secondsToMs(86400 * 60)); // 60일
+        const accessTokenExpiresAt = new Date(Date.now() + secondsToMs(env_1.env.accessTokenTTL));
+        const refreshTokenExpiresAt = new Date(Date.now() + secondsToMs(env_1.env.refreshTokenTTL));
         return {
             accessToken,
             accessTokenExpiresAt,

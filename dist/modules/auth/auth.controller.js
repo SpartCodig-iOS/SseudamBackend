@@ -29,14 +29,18 @@ const device_token_service_1 = require("../../services/device-token.service");
 const analytics_service_1 = require("../../services/analytics.service");
 const jwtService_1 = require("../../services/jwtService");
 const sessionService_1 = require("../../services/sessionService");
+const enhanced_jwt_service_1 = require("../../services/enhanced-jwt.service");
+const jwt_blacklist_service_1 = require("../../services/jwt-blacklist.service");
 let AuthController = AuthController_1 = class AuthController {
-    constructor(authService, optimizedDeleteService, deviceTokenService, analyticsService, jwtTokenService, sessionService) {
+    constructor(authService, optimizedDeleteService, deviceTokenService, analyticsService, jwtTokenService, sessionService, enhancedJwtService, jwtBlacklistService) {
         this.authService = authService;
         this.optimizedDeleteService = optimizedDeleteService;
         this.deviceTokenService = deviceTokenService;
         this.analyticsService = analyticsService;
         this.jwtTokenService = jwtTokenService;
         this.sessionService = sessionService;
+        this.enhancedJwtService = enhancedJwtService;
+        this.jwtBlacklistService = jwtBlacklistService;
         this.logger = new common_1.Logger(AuthController_1.name);
     }
     async signup(body) {
@@ -99,6 +103,7 @@ let AuthController = AuthController_1 = class AuthController {
     }
     async refresh(body) {
         const payload = authSchemas_1.refreshSchema.parse(body);
+        this.logger.debug(`🔄 Token refresh attempt - refreshToken: ${payload.refreshToken?.substring(0, 20)}...`);
         const result = await this.authService.refresh(payload.refreshToken);
         return (0, api_1.success)({
             accessToken: result.tokenPair.accessToken,
@@ -126,6 +131,83 @@ let AuthController = AuthController_1 = class AuthController {
         const payload = authSchemas_1.logoutSchema.parse(body);
         const result = await this.authService.logoutBySessionId(payload.sessionId);
         return (0, api_1.success)(result, 'Logout successful');
+    }
+    async logoutJwt(req) {
+        try {
+            const authHeader = req.headers.authorization;
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                throw new common_1.UnauthorizedException('Bearer token is required');
+            }
+            const token = authHeader.substring(7); // Remove 'Bearer '
+            // JWT 토큰을 blacklist에 추가
+            const invalidated = await this.enhancedJwtService.invalidateToken(token, 'logout');
+            if (!invalidated) {
+                throw new common_1.BadRequestException('Failed to invalidate token');
+            }
+            // 토큰에서 정보 추출 (디코딩만, 검증 X)
+            const decodedToken = this.enhancedJwtService.decodeToken(token);
+            const tokenId = decodedToken?.tokenId || 'unknown';
+            this.logger.log(`JWT token invalidated via logout: ${tokenId} - User: ${req.currentUser?.id}`);
+            return (0, api_1.success)({
+                invalidated: true,
+                tokenId,
+                message: 'Token has been added to blacklist and is no longer valid'
+            }, 'JWT token invalidated successfully');
+        }
+        catch (error) {
+            this.logger.error(`JWT logout error: ${error instanceof Error ? error.message : String(error)}`, error instanceof Error ? error.stack : undefined);
+            if (error instanceof common_1.UnauthorizedException || error instanceof common_1.BadRequestException) {
+                throw error;
+            }
+            throw new common_1.BadRequestException('Failed to process JWT logout');
+        }
+    }
+    async refreshJwt(body) {
+        try {
+            const { refreshToken } = body;
+            if (!refreshToken) {
+                throw new common_1.BadRequestException('Refresh token is required');
+            }
+            // Enhanced JWT 서비스로 토큰 새로고침
+            const newTokenPair = await this.enhancedJwtService.refreshTokens(refreshToken);
+            if (!newTokenPair) {
+                throw new common_1.UnauthorizedException('Invalid or expired refresh token');
+            }
+            this.logger.log(`JWT tokens refreshed: ${newTokenPair.tokenId}`);
+            return (0, api_1.success)({
+                accessToken: newTokenPair.accessToken,
+                refreshToken: newTokenPair.refreshToken,
+                accessTokenTTL: newTokenPair.accessTokenTTL,
+                refreshTokenTTL: newTokenPair.refreshTokenTTL,
+                tokenId: newTokenPair.tokenId,
+            }, 'Tokens refreshed successfully');
+        }
+        catch (error) {
+            this.logger.error(`JWT refresh error: ${error instanceof Error ? error.message : String(error)}`, error instanceof Error ? error.stack : undefined);
+            if (error instanceof common_1.UnauthorizedException || error instanceof common_1.BadRequestException) {
+                throw error;
+            }
+            throw new common_1.BadRequestException('Failed to refresh tokens');
+        }
+    }
+    async invalidateAllUserTokens(req, body) {
+        try {
+            const { reason = 'security' } = body;
+            const userId = req.currentUser.id;
+            // 사용자의 모든 토큰 무효화
+            const invalidatedCount = await this.enhancedJwtService.invalidateAllUserTokens(userId, reason);
+            this.logger.warn(`All tokens invalidated for user ${userId} - Count: ${invalidatedCount} - Reason: ${reason}`);
+            return (0, api_1.success)({
+                invalidatedCount,
+                userId,
+                reason,
+                message: `${invalidatedCount} tokens have been invalidated`
+            }, 'All user tokens invalidated successfully');
+        }
+        catch (error) {
+            this.logger.error(`Invalidate all tokens error: ${error instanceof Error ? error.message : String(error)}`, error instanceof Error ? error.stack : undefined);
+            throw new common_1.BadRequestException('Failed to invalidate tokens');
+        }
     }
     async registerDeviceToken(deviceTokenRaw, pendingKeyRaw, req) {
         const startTime = Date.now();
@@ -381,6 +463,113 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "logout", null);
 __decorate([
+    (0, common_1.Post)('logout-jwt'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, common_1.UseGuards)(auth_guard_1.AuthGuard),
+    (0, swagger_1.ApiBearerAuth)(),
+    (0, swagger_1.ApiOperation)({
+        summary: 'JWT 토큰 기반 로그아웃 (Enhanced Blacklist)',
+        description: 'JWT 토큰을 blacklist에 추가하여 즉시 무효화합니다.'
+    }),
+    (0, swagger_1.ApiOkResponse)({
+        description: '로그아웃 성공',
+        schema: {
+            type: 'object',
+            properties: {
+                code: { type: 'number', example: 200 },
+                message: { type: 'string', example: 'JWT token invalidated successfully' },
+                data: {
+                    type: 'object',
+                    properties: {
+                        invalidated: { type: 'boolean', example: true },
+                        tokenId: { type: 'string', example: 'uuid-token-id' },
+                    },
+                },
+            },
+        },
+    }),
+    (0, swagger_1.ApiUnauthorizedResponse)({ description: '인증되지 않은 요청' }),
+    __param(0, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "logoutJwt", null);
+__decorate([
+    (0, common_1.Post)('refresh-jwt'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, common_1.UseGuards)(rate_limit_guard_1.RateLimitGuard),
+    (0, rate_limit_decorator_1.RateLimit)({ limit: 20, windowMs: 60 * 1000, keyPrefix: 'auth:refresh-jwt' }),
+    (0, swagger_1.ApiOperation)({
+        summary: 'JWT 토큰 새로고침 (Enhanced Blacklist)',
+        description: 'Refresh token을 사용하여 새로운 Access/Refresh 토큰 쌍을 발급합니다. 기존 토큰들은 blacklist에 추가됩니다.'
+    }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            required: ['refreshToken'],
+            properties: {
+                refreshToken: { type: 'string', description: 'Refresh Token' },
+            },
+        },
+    }),
+    (0, swagger_1.ApiOkResponse)({
+        description: '토큰 새로고침 성공',
+        type: auth_response_dto_1.RefreshResponseDto,
+    }),
+    (0, swagger_1.ApiBadRequestResponse)({ description: '잘못된 요청' }),
+    (0, swagger_1.ApiUnauthorizedResponse)({ description: '유효하지 않은 refresh token' }),
+    __param(0, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "refreshJwt", null);
+__decorate([
+    (0, common_1.Post)('invalidate-all-tokens'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, common_1.UseGuards)(auth_guard_1.AuthGuard),
+    (0, swagger_1.ApiBearerAuth)(),
+    (0, swagger_1.ApiOperation)({
+        summary: '사용자의 모든 JWT 토큰 무효화',
+        description: '보안 사고나 계정 탈퇴 시 사용자의 모든 토큰을 blacklist에 추가하여 무효화합니다.'
+    }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            properties: {
+                reason: {
+                    type: 'string',
+                    enum: ['logout', 'security', 'admin'],
+                    default: 'security',
+                    description: '무효화 사유'
+                },
+            },
+        },
+    }),
+    (0, swagger_1.ApiOkResponse)({
+        description: '모든 토큰 무효화 성공',
+        schema: {
+            type: 'object',
+            properties: {
+                code: { type: 'number', example: 200 },
+                message: { type: 'string', example: 'All user tokens invalidated successfully' },
+                data: {
+                    type: 'object',
+                    properties: {
+                        invalidatedCount: { type: 'number', example: 5 },
+                        userId: { type: 'string', example: 'uuid-user-id' },
+                        reason: { type: 'string', example: 'security' },
+                    },
+                },
+            },
+        },
+    }),
+    __param(0, (0, common_1.Req)()),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [Object, Object]),
+    __metadata("design:returntype", Promise)
+], AuthController.prototype, "invalidateAllUserTokens", null);
+__decorate([
     (0, common_1.Post)('device-token'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
     (0, swagger_1.ApiOperation)({ summary: '디바이스 토큰 등록/업데이트 (인증/비인증 모두 가능)' }),
@@ -435,5 +624,7 @@ exports.AuthController = AuthController = AuthController_1 = __decorate([
         device_token_service_1.DeviceTokenService,
         analytics_service_1.AnalyticsService,
         jwtService_1.JwtTokenService,
-        sessionService_1.SessionService])
+        sessionService_1.SessionService,
+        enhanced_jwt_service_1.EnhancedJwtService,
+        jwt_blacklist_service_1.JwtBlacklistService])
 ], AuthController);

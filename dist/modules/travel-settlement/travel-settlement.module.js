@@ -11,11 +11,13 @@ const common_1 = require("@nestjs/common");
 const travel_settlement_controller_1 = require("./travel-settlement.controller");
 const travel_settlement_service_1 = require("./travel-settlement.service");
 const cacheService_1 = require("../../services/cacheService");
+const database_module_1 = require("../database/database.module");
 let TravelSettlementModule = class TravelSettlementModule {
 };
 exports.TravelSettlementModule = TravelSettlementModule;
 exports.TravelSettlementModule = TravelSettlementModule = __decorate([
     (0, common_1.Module)({
+        imports: [database_module_1.DatabaseModule],
         controllers: [travel_settlement_controller_1.TravelSettlementController],
         providers: [travel_settlement_service_1.TravelSettlementService, cacheService_1.CacheService],
         exports: [travel_settlement_service_1.TravelSettlementService],

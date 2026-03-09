@@ -8,11 +8,15 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
 var ProfileService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ProfileService = void 0;
 const common_1 = require("@nestjs/common");
-const pool_1 = require("../../db/pool");
+const typeorm_1 = require("@nestjs/typeorm");
+const typeorm_2 = require("typeorm");
 const supabase_js_1 = require("@supabase/supabase-js");
 const env_1 = require("../../config/env");
 const cacheService_1 = require("../../services/cacheService");
@@ -20,7 +24,8 @@ const supabaseService_1 = require("../../services/supabaseService");
 const imageProcessor_1 = require("../../utils/imageProcessor");
 require("multer");
 let ProfileService = ProfileService_1 = class ProfileService {
-    constructor(cacheService, supabaseService) {
+    constructor(dataSource, cacheService, supabaseService) {
+        this.dataSource = dataSource;
         this.cacheService = cacheService;
         this.supabaseService = supabaseService;
         this.logger = new common_1.Logger(ProfileService_1.name);
@@ -289,8 +294,7 @@ let ProfileService = ProfileService_1 = class ProfileService {
         return profile;
     }
     async getProfileFromDB(userId) {
-        const pool = await (0, pool_1.getPool)();
-        const result = await pool.query(`SELECT
+        const rows = await this.dataSource.query(`SELECT
          id::text,
          email,
          name,
@@ -302,7 +306,7 @@ let ProfileService = ProfileService_1 = class ProfileService {
        FROM profiles
        WHERE id = $1
        LIMIT 1`, [userId]);
-        const row = result.rows[0];
+        const row = rows[0];
         if (!row)
             return null;
         return {
@@ -341,8 +345,7 @@ let ProfileService = ProfileService_1 = class ProfileService {
         if (file) {
             avatarURL = await this.uploadToSupabase(userId, file);
         }
-        const pool = await (0, pool_1.getPool)();
-        const result = await pool.query(`UPDATE profiles
+        const rows = await this.dataSource.query(`UPDATE profiles
        SET
          name = COALESCE($2, name),
          avatar_url = COALESCE($3, avatar_url),
@@ -357,7 +360,7 @@ let ProfileService = ProfileService_1 = class ProfileService {
          role,
          created_at,
          updated_at`, [userId, payload.name ?? null, avatarURL]);
-        const row = result.rows[0];
+        const row = rows[0];
         const updated = {
             id: row.id,
             email: row.email,
@@ -540,9 +543,8 @@ let ProfileService = ProfileService_1 = class ProfileService {
                 return cachedStorage;
             }
             // 4. DB에서 avatar_url만 조회 (최소한의 쿼리)
-            const pool = await (0, pool_1.getPool)();
-            const result = await pool.query(`SELECT avatar_url FROM profiles WHERE id = $1 LIMIT 1`, [userId]);
-            const dbAvatar = result.rows[0]?.avatar_url;
+            const avatarRows = await this.dataSource.query(`SELECT avatar_url FROM profiles WHERE id = $1 LIMIT 1`, [userId]);
+            const dbAvatar = avatarRows[0]?.avatar_url;
             if (dbAvatar) {
                 // Redis/메모리에 캐시해 다음 호출 가속화
                 this.setCachedStorageAvatar(userId, dbAvatar);
@@ -592,8 +594,7 @@ let ProfileService = ProfileService_1 = class ProfileService {
             this.cacheService.set(userId, storageAvatar, { prefix: this.AVATAR_CACHE_PREFIX, ttl: 300 }).catch(() => undefined);
             this.setCachedStorageAvatar(userId, storageAvatar);
             // DB에도 저장 (실패 시 무시)
-            const pool = await (0, pool_1.getPool)();
-            pool.query(`UPDATE profiles SET avatar_url = $2, updated_at = NOW() WHERE id = $1`, [userId, storageAvatar]).catch(err => this.logger.warn(`[warmAvatarFromStorage] Persist failed for ${userId}: ${err.message}`));
+            this.dataSource.query(`UPDATE profiles SET avatar_url = $2, updated_at = NOW() WHERE id = $1`, [userId, storageAvatar]).catch((err) => this.logger.warn(`[warmAvatarFromStorage] Persist failed for ${userId}: ${err.message}`));
         }
         catch (error) {
             this.logger.warn(`[warmAvatarFromStorage] Failed for ${userId}`, error);
@@ -649,6 +650,8 @@ let ProfileService = ProfileService_1 = class ProfileService {
 exports.ProfileService = ProfileService;
 exports.ProfileService = ProfileService = ProfileService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [cacheService_1.CacheService,
+    __param(0, (0, typeorm_1.InjectDataSource)()),
+    __metadata("design:paramtypes", [typeorm_2.DataSource,
+        cacheService_1.CacheService,
         supabaseService_1.SupabaseService])
 ], ProfileService);

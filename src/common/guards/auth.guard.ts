@@ -2,6 +2,7 @@ import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from
 import { RequestWithUser } from '../../types/request';
 import { LoginType } from '../../types/auth';
 import { JwtTokenService } from '../../services/jwtService';
+import { EnhancedJwtService } from '../../services/enhanced-jwt.service';
 import { SupabaseService } from '../../services/supabaseService';
 import { fromSupabaseUser } from '../../utils/mappers';
 import { UserRecord } from '../../types/user';
@@ -30,6 +31,7 @@ export class AuthGuard implements CanActivate {
 
   constructor(
     private readonly jwtTokenService: JwtTokenService,
+    private readonly enhancedJwtService: EnhancedJwtService,
     private readonly supabaseService: SupabaseService,
     private readonly sessionService: SessionService,
     private readonly cacheService: CacheService,
@@ -42,9 +44,21 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('Missing bearer token');
     }
 
+    // 🔐 Enhanced JWT 검증 (Blacklist 체크 포함)
+    const enhancedUser = await this.tryEnhancedJwt(token);
+    if (enhancedUser) {
+      // Enhanced JWT로 검증 성공 (blacklist 체크 완료)
+      this.setCachedUser(token, enhancedUser.user);
+      void this.setRedisCachedUser(token, { user: enhancedUser.user, loginType: enhancedUser.loginType });
+      request.currentUser = enhancedUser.user;
+      request.loginType = enhancedUser.loginType;
+      return true;
+    }
+
+    // ⚡ Fallback: 기존 JWT 검증 (Legacy)
     const localUser = this.tryLocalJwt(token);
     if (localUser) {
-      // ⚡ LIGHTNING-FAST: 모든 DB/세션 체크 스킵하고 JWT만으로 즉시 응답
+      // LIGHTNING-FAST: 모든 DB/세션 체크 스킵하고 JWT만으로 즉시 응답
       this.setCachedUser(token, localUser.user);
       void this.setRedisCachedUser(token, { user: localUser.user, loginType: localUser.loginType });
       request.currentUser = localUser.user;
@@ -152,6 +166,38 @@ export class AuthGuard implements CanActivate {
     }
   }
 
+  /**
+   * Enhanced JWT 검증 (Blacklist 체크 포함)
+   */
+  private async tryEnhancedJwt(token: string): Promise<LocalAuthResult | null> {
+    try {
+      // Enhanced JWT 서비스로 검증 (blacklist 체크 포함)
+      const payload = await this.enhancedJwtService.verifyAccessToken(token);
+      if (payload?.sub && payload?.email && payload.sessionId) {
+        const issuedAt = payload.iat ? new Date(payload.iat * 1000) : new Date();
+        const user: UserRecord = {
+          id: payload.sub,
+          email: payload.email,
+          name: payload.name ?? null,
+          avatar_url: null,
+          username: payload.email.split('@')[0] || payload.sub,
+          password_hash: '',
+          role: (payload.role as any) ?? 'user',
+          created_at: issuedAt,
+          updated_at: issuedAt,
+        };
+        return { user, loginType: payload.loginType, sessionId: payload.sessionId };
+      }
+      return null;
+    } catch (error) {
+      // Enhanced JWT 검증 실패 (blacklist에 있거나 유효하지 않은 토큰)
+      return null;
+    }
+  }
+
+  /**
+   * 기존 JWT 검증 (Legacy, Blacklist 체크 없음)
+   */
   private tryLocalJwt(token: string): LocalAuthResult | null {
     try {
       const payload = this.jwtTokenService.verifyAccessToken(token);
@@ -164,7 +210,7 @@ export class AuthGuard implements CanActivate {
           avatar_url: null,
           username: payload.email.split('@')[0] || payload.sub,
           password_hash: '',
-          role: payload.role ?? 'user',
+          role: (payload.role as any) ?? 'user',
           created_at: issuedAt,
           updated_at: issuedAt,
         };
@@ -212,19 +258,6 @@ export class AuthGuard implements CanActivate {
         [user.id],
       );
       const dbRole = result.rows[0]?.role as string | undefined;
-
-      // 프로필이 없으면 자동 생성 (특히 테스트 사용자의 경우)
-      if (!dbRole && user.id === 'e11cc73b-052d-4740-8213-999c05bfc332') {
-        await pool.query(
-          `INSERT INTO profiles (id, email, name, role, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, NOW(), NOW())
-           ON CONFLICT (id) DO NOTHING`,
-          [user.id, user.email, user.name, user.role ?? 'user']
-        );
-        const finalRole = user.role ?? 'user';
-        this.roleCache.set(user.id, { role: finalRole, timestamp: Date.now() });
-        return { ...user, role: finalRole as UserRecord['role'] };
-      }
 
       const finalRole = dbRole ?? user.role ?? 'user';
       // 역할을 캐시에 저장

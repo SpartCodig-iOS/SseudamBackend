@@ -8,15 +8,20 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
 var OptimizedTravelService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OptimizedTravelService = void 0;
 const common_1 = require("@nestjs/common");
-const pool_1 = require("../../db/pool");
+const typeorm_1 = require("@nestjs/typeorm");
+const typeorm_2 = require("typeorm");
 const cacheService_1 = require("../../services/cacheService");
 const meta_service_1 = require("../meta/meta.service");
 let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelService {
-    constructor(cacheService, metaService) {
+    constructor(dataSource, cacheService, metaService) {
+        this.dataSource = dataSource;
         this.cacheService = cacheService;
         this.metaService = metaService;
         this.logger = new common_1.Logger(OptimizedTravelService_1.name);
@@ -94,14 +99,13 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
             this.logger.warn(`Travel list cache read failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
         try {
-            const pool = await (0, pool_1.getPool)();
             // 병렬로 총 개수와 목록 조회
-            const [totalResult, listResult] = await Promise.all([
-                this.getTotalTravelsCount(pool, userId, status),
-                this.getTravelsList(pool, userId, limit, offset, includeMembers, status, sort),
+            const [totalRows, listRows] = await Promise.all([
+                this.getTotalTravelsCount(userId, status),
+                this.getTravelsList(userId, limit, offset, includeMembers, status, sort),
             ]);
-            const total = totalResult.rows[0]?.total ?? 0;
-            const items = listResult.rows.map(this.transformTravelRow);
+            const total = totalRows[0]?.total ?? 0;
+            const items = listRows.map(this.transformTravelRow);
             const result = {
                 total,
                 page,
@@ -124,20 +128,20 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
             throw error;
         }
     }
-    async getTotalTravelsCount(pool, userId, status) {
+    async getTotalTravelsCount(userId, status) {
         const statusCondition = this.buildStatusCondition(status, 't');
-        return pool.query(`SELECT COUNT(*)::int AS total
+        return this.dataSource.query(`SELECT COUNT(*)::int AS total
        FROM travel_members tm
        INNER JOIN travels t ON t.id = tm.travel_id
        WHERE tm.user_id = $1
        ${statusCondition}`, [userId]);
     }
-    async getTravelsList(pool, userId, limit, offset, includeMembers, status, sort) {
+    async getTravelsList(userId, limit, offset, includeMembers, status, sort) {
         const statusCondition = this.buildStatusCondition(status, 't');
         const orderClause = this.buildOrderClause(sort);
         if (includeMembers) {
             // 멤버 정보 포함 (최적화된 쿼리)
-            return pool.query(`SELECT
+            return this.dataSource.query(`SELECT
              t.id::text AS id,
              t.title,
              to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date,
@@ -179,7 +183,7 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
         }
         else {
             // 멤버 정보 없이 빠른 조회 (성능 최적화: DB에서 status 계산)
-            return pool.query(`SELECT
+            return this.dataSource.query(`SELECT
            t.id::text AS id,
            t.title,
            to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date,
@@ -222,32 +226,9 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
                 return 'ORDER BY t.created_at DESC';
         }
     }
-    // 공통 트랜잭션 래퍼 (타임아웃 포함)
+    // 공통 트랜잭션 래퍼 (TypeORM DataSource 방식)
     async withTransaction(callback) {
-        const pool = await (0, pool_1.getPool)();
-        const client = await pool.connect();
-        const timer = setTimeout(() => {
-            try {
-                client.release();
-            }
-            catch {
-                /* ignore */
-            }
-        }, this.transactionTimeoutMs);
-        try {
-            await client.query('BEGIN');
-            const result = await callback(client);
-            await client.query('COMMIT');
-            return result;
-        }
-        catch (error) {
-            await client.query('ROLLBACK');
-            throw error;
-        }
-        finally {
-            clearTimeout(timer);
-            client.release();
-        }
+        return this.dataSource.transaction(callback);
     }
     buildStatusCondition(status, alias) {
         if (status === 'active') {
@@ -272,8 +253,7 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
         catch (error) {
             this.logger.warn(`Travel detail cache read failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
-        const pool = await (0, pool_1.getPool)();
-        const result = await pool.query(`SELECT
+        const result = await this.dataSource.query(`SELECT
           t.id::text AS id,
           t.title,
           to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date,
@@ -283,6 +263,8 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
           t.country_currencies,
           t.base_currency,
          t.base_exchange_rate,
+         t.budget,
+         t.budget_currency,
          t.invite_code,
          t.status,
          t.created_at::text,
@@ -306,10 +288,10 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
          WHERE tm2.travel_id = t.id
        ) AS members ON TRUE
        WHERE t.id = $1`, [travelId, userId]);
-        if (result.rows.length === 0) {
+        if (!result || result.length === 0) {
             return null;
         }
-        const travel = this.transformTravelRow(result.rows[0]);
+        const travel = this.transformTravelRow(result[0]);
         // Redis 캐시에 짧게 저장 (비동기)
         this.cacheService.set(cacheKey, travel, { ttl: this.CACHE_TTL_SECONDS }).catch(error => this.logger.warn(`Failed to cache travel detail: ${error.message}`));
         return travel;
@@ -360,9 +342,8 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
         }
         // 캐시되지 않은 여행들을 배치로 조회
         if (uncachedIds.length > 0) {
-            const pool = await (0, pool_1.getPool)();
             const placeholders = uncachedIds.map((_, i) => `$${i + 1}`).join(',');
-            const result = await pool.query(`SELECT
+            const batchRows = await this.dataSource.query(`SELECT
            t.id::text AS id,
            t.title,
            to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date,
@@ -371,6 +352,8 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
            t.country_name_kr,
            t.base_currency,
            t.base_exchange_rate,
+           t.budget,
+           t.budget_currency,
            t.invite_code,
            t.status,
            t.created_at::text,
@@ -379,7 +362,7 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
          INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
          WHERE t.id IN (${placeholders})`, uncachedIds);
             // 조회 결과를 캐시에 저장
-            for (const row of result.rows) {
+            for (const row of batchRows) {
                 const travel = this.transformTravelRow(row);
                 cachedTravels.set(row.id, travel);
                 // 비동기로 캐시 저장
@@ -426,6 +409,8 @@ let OptimizedTravelService = OptimizedTravelService_1 = class OptimizedTravelSer
 exports.OptimizedTravelService = OptimizedTravelService;
 exports.OptimizedTravelService = OptimizedTravelService = OptimizedTravelService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [cacheService_1.CacheService,
+    __param(0, (0, typeorm_1.InjectDataSource)()),
+    __metadata("design:paramtypes", [typeorm_2.DataSource,
+        cacheService_1.CacheService,
         meta_service_1.MetaService])
 ], OptimizedTravelService);

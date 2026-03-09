@@ -52,9 +52,6 @@ export class JwtTokenService {
   }
 
   generateTokenPair(user: UserRecord, loginType: LoginType | undefined, sessionId: string): TokenPair {
-    console.log(`🔍 ENV DEBUG - ACCESS_TOKEN_TTL_SECONDS: ${process.env.ACCESS_TOKEN_TTL_SECONDS}`);
-    console.log(`🔍 ENV DEBUG - Parsed accessTokenTTL: ${env.accessTokenTTL} seconds (${env.accessTokenTTL/3600} hours)`);
-
     const accessExpiresAt = new Date(Date.now() + secondsToMs(env.accessTokenTTL));
     const refreshExpiresAt = new Date(Date.now() + secondsToMs(env.refreshTokenTTL));
 
@@ -85,24 +82,4 @@ export class JwtTokenService {
     return payload;
   }
 
-  // 임시 무한토큰 생성 (TODO: 나중에 제거 예정)
-  generateInfiniteToken(user: UserRecord, sessionId: string): string {
-    // 임시로 모든 환경에서 허용 (나중에 제거 예정)
-    // if (env.nodeEnv !== 'development') {
-    //   throw new Error('Infinite tokens are only allowed in development environment');
-    // }
-
-    const payload: AccessPayload = {
-      sub: user.id,
-      email: user.email,
-      name: user.name ?? undefined,
-      loginType: 'email',
-      lastLoginAt: new Date().toISOString(),
-      role: user.role,
-      sessionId,
-    };
-
-    // expiresIn을 설정하지 않으면 무한토큰이 됨
-    return jwt.sign(payload, env.jwtSecret);
-  }
 }

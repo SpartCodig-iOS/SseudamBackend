@@ -238,7 +238,11 @@
       "Bash(docker exec sseudambackend-api-1 psql $DATABASE_URL -c \"\\\\d travels;\")",
       "Bash(docker exec:*)",
       "Bash(docker compose down:*)",
-      "Bash(docker pull:*)"
+      "Bash(docker pull:*)",
+      "Bash(npx tsc:*)",
+      "Bash(grep:*)",
+      "Bash(timeout 10s npm run:*)",
+      "Bash(npm run:*)"
     ],
     "deny": [],
     "ask": []

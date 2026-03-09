@@ -88,7 +88,10 @@ test('listTravels returns mapped and paginated travel summaries', async () => {
       emitExpenseAdded: async () => undefined,
     } as any;
 
+    const mockDataSource = {} as any;
+
     const service = new TravelService(
+      mockDataSource,
       mockMetaService,
       mockCacheService,
       mockEventEmitter,
@@ -221,7 +224,10 @@ test('updateTravel applies owner changes and returns refreshed summary', async (
       emitExpenseAdded: async () => undefined,
     } as any;
 
+    const mockDataSource = {} as any;
+
     const service = new TravelService(
+      mockDataSource,
       mockMetaService,
       mockCacheService,
       mockEventEmitter,
@@ -300,7 +306,10 @@ test('deleteTravel verifies ownership and clears related records in a transactio
       emitExpenseAdded: async () => undefined,
     } as any;
 
+    const mockDataSource = {} as any;
+
     const service = new TravelService(
+      mockDataSource,
       mockMetaService,
       mockCacheService,
       mockEventEmitter,

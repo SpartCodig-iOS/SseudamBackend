@@ -3,15 +3,12 @@ import path from 'path';
 
 // .env 파일 명시적 로드
 const envPath = path.resolve(process.cwd(), '.env');
-const result = dotenv.config({ path: envPath });
+const dotenvResult = dotenv.config({ path: envPath });
 
-console.log('🔍 [ENV DEBUG] dotenv result:', result.error ? result.error.message : 'success');
-console.log('🔍 [ENV DEBUG] .env path:', envPath);
-console.log('🔍 [ENV DEBUG] Raw environment variables:');
-console.log('ACCESS_TOKEN_TTL_SECONDS:', process.env.ACCESS_TOKEN_TTL_SECONDS);
-console.log('REFRESH_TOKEN_TTL_SECONDS:', process.env.REFRESH_TOKEN_TTL_SECONDS);
-console.log('NODE_ENV:', process.env.NODE_ENV);
-console.log('PWD:', process.env.PWD);
+// 디버그 로그는 개발 환경에서만 출력 (민감 정보 노출 방지)
+if (process.env.NODE_ENV !== 'production' && dotenvResult.error) {
+  process.stderr.write(`[ENV] .env load warning: ${dotenvResult.error.message}\n`);
+}
 
 const truthy = (value?: string): boolean => {
   if (!value) return false;
@@ -19,15 +16,11 @@ const truthy = (value?: string): boolean => {
 };
 
 const optionalNumber = (value?: string, fallback?: number): number | undefined => {
-  console.log(`🔍 [optionalNumber] input: "${value}", fallback: ${fallback}`);
   if (!value || value.trim() === '') {
-    console.log(`🔍 [optionalNumber] using fallback: ${fallback}`);
     return fallback;
   }
   const parsed = Number(value.trim());
-  const result = Number.isFinite(parsed) ? parsed : fallback;
-  console.log(`🔍 [optionalNumber] parsed: ${parsed}, result: ${result}`);
-  return result;
+  return Number.isFinite(parsed) ? parsed : fallback;
 };
 
 const decodeSupabaseRef = (serviceRoleKey?: string): string | null => {
@@ -87,7 +80,7 @@ export const env = {
   databaseRequireTLS: process.env.DATABASE_REQUIRE_TLS ? truthy(process.env.DATABASE_REQUIRE_TLS) : null,
   databaseRejectUnauthorized: truthy(process.env.DATABASE_SSL_REJECT_UNAUTHORIZED) ?? false,
   databaseForceIPv4: truthy(process.env.DATABASE_FORCE_IPv4) ?? false,
-  jwtSecret: process.env.JWT_SECRET ?? 'secret',
+  jwtSecret: process.env.JWT_SECRET ?? '',
   accessTokenTTL: optionalNumber(process.env.ACCESS_TOKEN_TTL_SECONDS, 60 * 60 * 24) ?? 60 * 60 * 24,
   refreshTokenTTL: optionalNumber(process.env.REFRESH_TOKEN_TTL_SECONDS, 60 * 60 * 24 * 60) ?? 60 * 60 * 24 * 60,
   supabaseServiceRoleKey: (
@@ -147,9 +140,9 @@ if (env.corsOrigins.length === 0) {
 
 const missingVars: string[] = [];
 const supabaseHostLooksValid = env.supabaseUrl.includes('supabase.');
+// JWT_SECRET 길이 검사는 아래 블록에서 별도 처리
 const requiredEnv: Array<[boolean, string]> = [
   [Boolean(env.databaseUrl), 'RAILWAY_DATABASE_URL / DATABASE_URL / SUPABASE_DB_URL'],
-  [Boolean(env.jwtSecret), 'JWT_SECRET'],
   [Boolean(env.supabaseServiceRoleKey), 'SUPABASE_SERVICE_ROLE_KEY'],
   [Boolean(env.supabaseUrl), 'SUPABASE_URL'],
 ];
@@ -170,12 +163,13 @@ if (missingVars.length > 0) {
   );
 }
 
-if (env.jwtSecret === 'secret') {
+if (!env.jwtSecret || env.jwtSecret.length < 32) {
   if (isProduction) {
-    throw new Error('[ENV] JWT_SECRET must be set in production');
+    throw new Error('[ENV] JWT_SECRET must be set to a value of at least 32 characters in production');
   } else {
-    console.warn(
-      '[ENV] Using fallback JWT secret. Set JWT_SECRET to a secure value.',
-    );
+    // 개발 환경 전용 폴백: 절대 프로덕션 배포 금지
+    const devFallback = 'dev-only-insecure-jwt-secret-do-not-use-in-prod';
+    process.stderr.write('[ENV] WARNING: JWT_SECRET is not set or too short. Using insecure development fallback.\n');
+    env.jwtSecret = devFallback;
   }
 }

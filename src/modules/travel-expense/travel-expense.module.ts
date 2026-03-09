@@ -5,9 +5,10 @@ import { MetaModule } from '../meta/meta.module';
 import { ProfileModule } from '../profile/profile.module';
 import { CacheService } from '../../services/cacheService';
 import { QueueModule } from '../queue/queue.module';
+import { DatabaseModule } from '../database/database.module';
 
 @Module({
-  imports: [MetaModule, ProfileModule, QueueModule],
+  imports: [DatabaseModule, MetaModule, ProfileModule, QueueModule],
   controllers: [TravelExpenseController],
   providers: [TravelExpenseService, CacheService],
   exports: [TravelExpenseService],

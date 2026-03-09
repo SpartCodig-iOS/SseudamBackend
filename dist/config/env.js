@@ -1,16 +1,61 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.isProduction = exports.env = void 0;
-require("dotenv/config");
+const dotenv = __importStar(require("dotenv"));
+const path_1 = __importDefault(require("path"));
+// .env 파일 명시적 로드
+const envPath = path_1.default.resolve(process.cwd(), '.env');
+const dotenvResult = dotenv.config({ path: envPath });
+// 디버그 로그는 개발 환경에서만 출력 (민감 정보 노출 방지)
+if (process.env.NODE_ENV !== 'production' && dotenvResult.error) {
+    process.stderr.write(`[ENV] .env load warning: ${dotenvResult.error.message}\n`);
+}
 const truthy = (value) => {
     if (!value)
         return false;
     return ['1', 'true', 'yes', 'y', 'on'].includes(value.toLowerCase());
 };
 const optionalNumber = (value, fallback) => {
-    if (!value)
+    if (!value || value.trim() === '') {
         return fallback;
-    const parsed = Number(value);
+    }
+    const parsed = Number(value.trim());
     return Number.isFinite(parsed) ? parsed : fallback;
 };
 const decodeSupabaseRef = (serviceRoleKey) => {
@@ -65,8 +110,8 @@ exports.env = {
     databaseName: process.env.DATABASE_NAME ?? null,
     databaseRequireTLS: process.env.DATABASE_REQUIRE_TLS ? truthy(process.env.DATABASE_REQUIRE_TLS) : null,
     databaseRejectUnauthorized: truthy(process.env.DATABASE_SSL_REJECT_UNAUTHORIZED) ?? false,
-    databaseForceIPv4: truthy(process.env.DATABASE_FORCE_IPV4) ?? false,
-    jwtSecret: process.env.JWT_SECRET ?? 'secret',
+    databaseForceIPv4: truthy(process.env.DATABASE_FORCE_IPv4) ?? false,
+    jwtSecret: process.env.JWT_SECRET ?? '',
     accessTokenTTL: optionalNumber(process.env.ACCESS_TOKEN_TTL_SECONDS, 60 * 60 * 24) ?? 60 * 60 * 24,
     refreshTokenTTL: optionalNumber(process.env.REFRESH_TOKEN_TTL_SECONDS, 60 * 60 * 24 * 60) ?? 60 * 60 * 24 * 60,
     supabaseServiceRoleKey: (process.env.SUPABASE_SERVICE_ROLE_KEY ??
@@ -114,9 +159,9 @@ if (exports.env.corsOrigins.length === 0) {
 }
 const missingVars = [];
 const supabaseHostLooksValid = exports.env.supabaseUrl.includes('supabase.');
+// JWT_SECRET 길이 검사는 아래 블록에서 별도 처리
 const requiredEnv = [
     [Boolean(exports.env.databaseUrl), 'RAILWAY_DATABASE_URL / DATABASE_URL / SUPABASE_DB_URL'],
-    [Boolean(exports.env.jwtSecret), 'JWT_SECRET'],
     [Boolean(exports.env.supabaseServiceRoleKey), 'SUPABASE_SERVICE_ROLE_KEY'],
     [Boolean(exports.env.supabaseUrl), 'SUPABASE_URL'],
 ];
@@ -131,11 +176,14 @@ if (exports.env.supabaseUrl && !supabaseHostLooksValid && !supabaseProjectRef) {
 if (missingVars.length > 0) {
     throw new Error(`[ENV] Missing required environment variables: ${missingVars.join(', ')}`);
 }
-if (exports.env.jwtSecret === 'secret') {
+if (!exports.env.jwtSecret || exports.env.jwtSecret.length < 32) {
     if (exports.isProduction) {
-        throw new Error('[ENV] JWT_SECRET must be set in production');
+        throw new Error('[ENV] JWT_SECRET must be set to a value of at least 32 characters in production');
     }
     else {
-        console.warn('[ENV] Using fallback JWT secret. Set JWT_SECRET to a secure value.');
+        // 개발 환경 전용 폴백: 절대 프로덕션 배포 금지
+        const devFallback = 'dev-only-insecure-jwt-secret-do-not-use-in-prod';
+        process.stderr.write('[ENV] WARNING: JWT_SECRET is not set or too short. Using insecure development fallback.\n');
+        exports.env.jwtSecret = devFallback;
     }
 }

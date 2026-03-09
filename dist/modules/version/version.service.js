@@ -5,14 +5,22 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
 var VersionService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.VersionService = void 0;
 const common_1 = require("@nestjs/common");
+const typeorm_1 = require("@nestjs/typeorm");
+const typeorm_2 = require("typeorm");
 const env_1 = require("../../config/env");
-const pool_1 = require("../../db/pool");
 let VersionService = VersionService_1 = class VersionService {
-    constructor() {
+    constructor(dataSource) {
+        this.dataSource = dataSource;
         this.logger = new common_1.Logger(VersionService_1.name);
         this.networkTimeout = 5000;
         this.appVersionCache = new Map();
@@ -30,8 +38,7 @@ let VersionService = VersionService_1 = class VersionService {
     async ensureAppVersionTable() {
         if (this.appVersionTableReady)
             return;
-        const pool = await (0, pool_1.getPool)();
-        await pool.query(`
+        await this.dataSource.query(`
       CREATE TABLE IF NOT EXISTS app_versions (
         bundle_id TEXT PRIMARY KEY,
         latest_version TEXT NOT NULL,
@@ -47,8 +54,7 @@ let VersionService = VersionService_1 = class VersionService {
     async fetchDbVersion(bundleId) {
         try {
             await this.ensureAppVersionTable();
-            const pool = await (0, pool_1.getPool)();
-            const result = await pool.query(`SELECT bundle_id,
+            const rows = await this.dataSource.query(`SELECT bundle_id,
                 latest_version,
                 min_supported_version,
                 force_update,
@@ -57,7 +63,7 @@ let VersionService = VersionService_1 = class VersionService {
          FROM app_versions
          WHERE bundle_id = $1
          LIMIT 1`, [bundleId]);
-            return result.rows[0] ?? null;
+            return rows[0] ?? null;
         }
         catch (error) {
             // DB 문제 시 App Store 결과만으로 동작 (로그는 최소화)
@@ -177,37 +183,30 @@ let VersionService = VersionService_1 = class VersionService {
         return data;
     }
     async upsertDbVersion(data) {
-        try {
-            await this.ensureAppVersionTable();
-            const pool = await (0, pool_1.getPool)();
-            await pool.query(`INSERT INTO app_versions (bundle_id, latest_version, min_supported_version, force_update, release_notes)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (bundle_id)
-         DO UPDATE SET
-           latest_version = EXCLUDED.latest_version,
-           min_supported_version = EXCLUDED.min_supported_version,
-           force_update = EXCLUDED.force_update,
-           release_notes = EXCLUDED.release_notes,
-           updated_at = NOW()`, [
-                data.bundleId,
-                data.latestVersion,
-                data.minSupportedVersion,
-                data.forceUpdate,
-                data.releaseNotes,
-            ]);
-        }
-        catch (error) {
-            throw error;
-        }
+        await this.ensureAppVersionTable();
+        await this.dataSource.query(`INSERT INTO app_versions (bundle_id, latest_version, min_supported_version, force_update, release_notes)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (bundle_id)
+       DO UPDATE SET
+         latest_version = EXCLUDED.latest_version,
+         min_supported_version = EXCLUDED.min_supported_version,
+         force_update = EXCLUDED.force_update,
+         release_notes = EXCLUDED.release_notes,
+         updated_at = NOW()`, [
+            data.bundleId,
+            data.latestVersion,
+            data.minSupportedVersion,
+            data.forceUpdate,
+            data.releaseNotes,
+        ]);
     }
     async setAppVersionManual(payload) {
         const bundleId = 'io.sseudam.co';
         await this.ensureAppVersionTable();
-        const pool = await (0, pool_1.getPool)();
         const lastUpdated = this.toIsoString(new Date());
         const minSupported = '17.0';
         const forceUpdate = true;
-        await pool.query(`INSERT INTO app_versions (bundle_id, latest_version, min_supported_version, force_update, release_notes, updated_at)
+        await this.dataSource.query(`INSERT INTO app_versions (bundle_id, latest_version, min_supported_version, force_update, release_notes, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (bundle_id)
        DO UPDATE SET
@@ -233,5 +232,7 @@ let VersionService = VersionService_1 = class VersionService {
 };
 exports.VersionService = VersionService;
 exports.VersionService = VersionService = VersionService_1 = __decorate([
-    (0, common_1.Injectable)()
+    (0, common_1.Injectable)(),
+    __param(0, (0, typeorm_1.InjectDataSource)()),
+    __metadata("design:paramtypes", [typeorm_2.DataSource])
 ], VersionService);

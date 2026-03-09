@@ -10,11 +10,13 @@ exports.VersionModule = void 0;
 const common_1 = require("@nestjs/common");
 const version_controller_1 = require("./version.controller");
 const version_service_1 = require("./version.service");
+const database_module_1 = require("../database/database.module");
 let VersionModule = class VersionModule {
 };
 exports.VersionModule = VersionModule;
 exports.VersionModule = VersionModule = __decorate([
     (0, common_1.Module)({
+        imports: [database_module_1.DatabaseModule],
         controllers: [version_controller_1.VersionController],
         providers: [version_service_1.VersionService],
     })

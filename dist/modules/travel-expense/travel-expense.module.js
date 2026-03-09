@@ -14,12 +14,13 @@ const meta_module_1 = require("../meta/meta.module");
 const profile_module_1 = require("../profile/profile.module");
 const cacheService_1 = require("../../services/cacheService");
 const queue_module_1 = require("../queue/queue.module");
+const database_module_1 = require("../database/database.module");
 let TravelExpenseModule = class TravelExpenseModule {
 };
 exports.TravelExpenseModule = TravelExpenseModule;
 exports.TravelExpenseModule = TravelExpenseModule = __decorate([
     (0, common_1.Module)({
-        imports: [meta_module_1.MetaModule, profile_module_1.ProfileModule, queue_module_1.QueueModule],
+        imports: [database_module_1.DatabaseModule, meta_module_1.MetaModule, profile_module_1.ProfileModule, queue_module_1.QueueModule],
         controllers: [travel_expense_controller_1.TravelExpenseController],
         providers: [travel_expense_service_1.TravelExpenseService, cacheService_1.CacheService],
         exports: [travel_expense_service_1.TravelExpenseService],

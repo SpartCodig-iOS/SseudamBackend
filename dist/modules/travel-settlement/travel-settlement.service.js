@@ -8,45 +8,34 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TravelSettlementService = void 0;
 const common_1 = require("@nestjs/common");
 const crypto_1 = require("crypto");
-const pool_1 = require("../../db/pool");
+const typeorm_1 = require("@nestjs/typeorm");
+const typeorm_2 = require("typeorm");
 const cacheService_1 = require("../../services/cacheService");
 let TravelSettlementService = class TravelSettlementService {
-    constructor(cacheService) {
+    constructor(dataSource, cacheService) {
+        this.dataSource = dataSource;
         this.cacheService = cacheService;
         this.SETTLEMENT_PREFIX = 'settlement:summary';
         this.SETTLEMENT_TTL = 60; // 1분으로 단축 (실시간성 강화)
     }
-    async ensureTransaction(callback, poolInput) {
-        const pool = poolInput ?? (await (0, pool_1.getPool)());
-        const client = await pool.connect();
-        try {
-            await client.query('BEGIN');
-            const result = await callback(client);
-            await client.query('COMMIT');
-            return result;
-        }
-        catch (error) {
-            await client.query('ROLLBACK');
-            throw error;
-        }
-        finally {
-            client.release();
-        }
+    async ensureTransaction(callback) {
+        return this.dataSource.transaction(callback);
     }
-    async ensureMember(travelId, userId, pool) {
-        const targetPool = pool ?? (await (0, pool_1.getPool)());
-        const result = await targetPool.query(`SELECT 1 FROM travel_members WHERE travel_id = $1 AND user_id = $2 LIMIT 1`, [travelId, userId]);
-        if (!result.rows[0]) {
+    async ensureMember(travelId, userId) {
+        const rows = await this.dataSource.query(`SELECT 1 FROM travel_members WHERE travel_id = $1 AND user_id = $2 LIMIT 1`, [travelId, userId]);
+        if (!rows[0]) {
             throw new common_1.BadRequestException('해당 여행에 대한 접근 권한이 없습니다.');
         }
     }
-    async fetchBalances(travelId, pool) {
-        const targetPool = pool ?? (await (0, pool_1.getPool)());
-        const result = await targetPool.query(`WITH paid AS (
+    async fetchBalances(travelId) {
+        const result = await this.dataSource.query(`WITH paid AS (
          SELECT payer_id AS member_id, SUM(converted_amount) AS total_paid
          FROM travel_expenses
          WHERE travel_id = $1
@@ -68,7 +57,7 @@ let TravelSettlementService = class TravelSettlementService {
        LEFT JOIN paid ON paid.member_id = tm.user_id
        LEFT JOIN shared ON shared.member_id = tm.user_id
        WHERE tm.travel_id = $1`, [travelId]);
-        return result.rows.map((row) => ({
+        return result.map((row) => ({
             memberId: row.member_id,
             name: row.name,
             balance: Number(row.balance),
@@ -100,7 +89,6 @@ let TravelSettlementService = class TravelSettlementService {
         return settlements;
     }
     async getSettlementSummary(travelId, userId) {
-        const pool = await (0, pool_1.getPool)();
         const cacheKey = travelId;
         try {
             const cached = await this.cacheService.get(cacheKey, { prefix: this.SETTLEMENT_PREFIX });
@@ -111,10 +99,10 @@ let TravelSettlementService = class TravelSettlementService {
         catch {
             // ignore cache miss
         }
-        await this.ensureMember(travelId, userId, pool);
+        await this.ensureMember(travelId, userId);
         const [balances, storedSettlements] = await Promise.all([
-            this.fetchBalances(travelId, pool),
-            pool.query(`SELECT
+            this.fetchBalances(travelId),
+            this.dataSource.query(`SELECT
            ts.id::text,
            ts.from_member::text,
            ts.to_member::text,
@@ -130,9 +118,9 @@ let TravelSettlementService = class TravelSettlementService {
          ORDER BY ts.created_at ASC`, [travelId]),
         ]);
         const nameMap = new Map(balances.map((b) => [b.memberId, b.name ?? '알 수 없음']));
-        const storedRows = storedSettlements.rows;
+        const storedRows = storedSettlements;
         const computedSettlements = this.calculateSettlements(balances);
-        const savedSettlements = storedSettlements.rows.map((row) => ({
+        const savedSettlements = storedRows.map((row) => ({
             id: row.id,
             fromMember: row.from_name ?? nameMap.get(row.from_member) ?? '알 수 없음',
             toMember: row.to_name ?? nameMap.get(row.to_member) ?? '알 수 없음',
@@ -157,15 +145,14 @@ let TravelSettlementService = class TravelSettlementService {
         return summary;
     }
     async saveComputedSettlements(travelId, userId) {
-        const pool = await (0, pool_1.getPool)();
-        await this.ensureMember(travelId, userId, pool);
-        const balances = await this.fetchBalances(travelId, pool);
+        await this.ensureMember(travelId, userId);
+        const balances = await this.fetchBalances(travelId);
         const computedSettlements = this.calculateSettlements(balances);
         if (computedSettlements.length === 0) {
             throw new common_1.BadRequestException('정산할 항목이 없습니다.');
         }
-        await this.ensureTransaction(async (client) => {
-            await client.query(`DELETE FROM travel_settlements WHERE travel_id = $1`, [travelId]);
+        await this.ensureTransaction(async (manager) => {
+            await manager.query(`DELETE FROM travel_settlements WHERE travel_id = $1`, [travelId]);
             // 배치 INSERT로 성능 최적화 (100개 정산 = 1번 쿼리)
             if (computedSettlements.length > 0) {
                 const ids = computedSettlements.map(item => item.id);
@@ -173,33 +160,31 @@ let TravelSettlementService = class TravelSettlementService {
                 const fromMembers = computedSettlements.map(item => item.fromMemberId);
                 const toMembers = computedSettlements.map(item => item.toMemberId);
                 const amounts = computedSettlements.map(item => item.amount);
-                await client.query(`INSERT INTO travel_settlements (id, travel_id, from_member, to_member, amount)
+                await manager.query(`INSERT INTO travel_settlements (id, travel_id, from_member, to_member, amount)
            SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::uuid[], $4::uuid[], $5::numeric[])
            AS t(id, travel_id, from_member, to_member, amount)`, [ids, travelIds, fromMembers, toMembers, amounts]);
             }
-        }, pool);
+        });
         await this.cacheService.del(travelId, { prefix: this.SETTLEMENT_PREFIX }).catch(() => undefined);
         return this.getSettlementSummary(travelId, userId);
     }
     async markSettlementCompleted(travelId, userId, settlementId) {
-        const pool = await (0, pool_1.getPool)();
-        await this.ensureMember(travelId, userId, pool);
-        const result = await pool.query(`UPDATE travel_settlements
+        await this.ensureMember(travelId, userId);
+        const rows = await this.dataSource.query(`UPDATE travel_settlements
        SET status = 'completed', completed_at = NOW(), updated_at = NOW()
        WHERE id = $1 AND travel_id = $2
        RETURNING id`, [settlementId, travelId]);
-        if (!result.rows[0]) {
+        if (!rows[0]) {
             throw new common_1.BadRequestException('정산 내역을 찾을 수 없습니다. 계산된 결과를 저장한 뒤 완료 처리하세요.');
         }
         await this.cacheService.del(travelId, { prefix: this.SETTLEMENT_PREFIX }).catch(() => undefined);
         return this.getSettlementSummary(travelId, userId);
     }
     async getSettlementStatistics(travelId, userId) {
-        const pool = await (0, pool_1.getPool)();
-        await this.ensureMember(travelId, userId, pool);
+        await this.ensureMember(travelId, userId);
         // 전체 통계와 모든 멤버의 잔액을 한번에 조회
-        const [totalResult, balancesResult] = await Promise.all([
-            pool.query(`WITH travel_totals AS (
+        const [statsRows, balancesResult] = await Promise.all([
+            this.dataSource.query(`WITH travel_totals AS (
            SELECT SUM(converted_amount) AS total_expense_amount
            FROM travel_expenses
            WHERE travel_id = $1
@@ -221,9 +206,9 @@ let TravelSettlementService = class TravelSettlementService {
            my_shared.my_shared_amount,
            (my_paid.my_paid_amount - my_shared.my_shared_amount) AS my_balance
          FROM travel_totals, my_paid, my_shared`, [travelId, userId]),
-            this.fetchBalances(travelId, pool)
+            this.fetchBalances(travelId),
         ]);
-        const row = totalResult.rows[0];
+        const row = statsRows[0];
         if (!row) {
             return {
                 totalExpenseAmount: 0,
@@ -271,5 +256,7 @@ let TravelSettlementService = class TravelSettlementService {
 exports.TravelSettlementService = TravelSettlementService;
 exports.TravelSettlementService = TravelSettlementService = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [cacheService_1.CacheService])
+    __param(0, (0, typeorm_1.InjectDataSource)()),
+    __metadata("design:paramtypes", [typeorm_2.DataSource,
+        cacheService_1.CacheService])
 ], TravelSettlementService);

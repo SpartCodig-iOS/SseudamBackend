@@ -53,7 +53,19 @@ async function bootstrap() {
   }
 
   const helmetOptions: HelmetOptions = {
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", 'data:', 'https:'],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        upgradeInsecureRequests: [],
+      },
+    },
+    crossOriginEmbedderPolicy: false, // Swagger UI 호환성
   };
 
   app.use(helmet(helmetOptions));
@@ -110,9 +122,9 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // HTTP 요청 크기 및 타임아웃 제한 (8GB 메모리 활용)
-  app.use(json({ limit: '50mb' }));
-  app.use(urlencoded({ extended: true, limit: '50mb' }));
+  // HTTP 요청 크기 제한 (DoS 방지: JSON API 기준 1MB 이상 불필요)
+  app.use(json({ limit: '1mb' }));
+  app.use(urlencoded({ extended: true, limit: '1mb' }));
 
   // 글로벌 타임아웃 설정 (30초)
   app.use((req: any, res: any, next: any) => {

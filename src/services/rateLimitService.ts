@@ -47,6 +47,17 @@ export class RateLimitService {
     };
   }
 
+  /**
+   * Gateway에서 사용하는 Rate Limit 체크 (checkLimit 메서드 추가)
+   */
+  async checkLimit(key: string, maxRequests: number, windowMs: number): Promise<{ allowed: boolean; remaining: number }> {
+    const result = this.consume(key, maxRequests, windowMs);
+    return {
+      allowed: result.allowed,
+      remaining: result.remaining,
+    };
+  }
+
   private cleanup(now: number) {
     if (now - this.lastCleanup < this.CLEANUP_INTERVAL_MS) {
       return;

@@ -13,6 +13,8 @@ const auth_guard_1 = require("../../common/guards/auth.guard");
 const rate_limit_guard_1 = require("../../common/guards/rate-limit.guard");
 const jwtService_1 = require("../../services/jwtService");
 const optimized_jwt_service_1 = require("../../services/optimized-jwt.service");
+const enhanced_jwt_service_1 = require("../../services/enhanced-jwt.service");
+const jwt_blacklist_service_1 = require("../../services/jwt-blacklist.service");
 const supabaseService_1 = require("../../services/supabaseService");
 const oauth_token_service_1 = require("../../services/oauth-token.service");
 const sessionService_1 = require("../../services/sessionService");
@@ -29,6 +31,7 @@ const device_token_service_1 = require("../../services/device-token.service");
 const apns_service_1 = require("../../services/apns.service");
 const push_notification_service_1 = require("../../services/push-notification.service");
 const analytics_service_1 = require("../../services/analytics.service");
+const database_module_1 = require("../database/database.module");
 let SharedModule = class SharedModule {
 };
 exports.SharedModule = SharedModule;
@@ -36,6 +39,7 @@ exports.SharedModule = SharedModule = __decorate([
     (0, common_1.Global)(),
     (0, common_1.Module)({
         imports: [
+            database_module_1.DatabaseModule,
             event_emitter_1.EventEmitterModule.forRoot(),
         ],
         providers: [
@@ -44,6 +48,8 @@ exports.SharedModule = SharedModule = __decorate([
             oauth_token_service_1.OAuthTokenService,
             jwtService_1.JwtTokenService,
             optimized_jwt_service_1.OptimizedJwtTokenService,
+            enhanced_jwt_service_1.EnhancedJwtService,
+            jwt_blacklist_service_1.JwtBlacklistService,
             smart_cache_service_1.SmartCacheService,
             auth_service_1.AuthService,
             social_auth_service_1.SocialAuthService,
@@ -67,6 +73,8 @@ exports.SharedModule = SharedModule = __decorate([
             oauth_token_service_1.OAuthTokenService,
             jwtService_1.JwtTokenService,
             optimized_jwt_service_1.OptimizedJwtTokenService,
+            enhanced_jwt_service_1.EnhancedJwtService,
+            jwt_blacklist_service_1.JwtBlacklistService,
             smart_cache_service_1.SmartCacheService,
             auth_service_1.AuthService,
             social_auth_service_1.SocialAuthService,

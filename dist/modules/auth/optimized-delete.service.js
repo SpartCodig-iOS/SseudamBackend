@@ -8,17 +8,22 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __param = (this && this.__param) || function (paramIndex, decorator) {
+    return function (target, key) { decorator(target, key, paramIndex); }
+};
 var OptimizedDeleteService_1;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.OptimizedDeleteService = void 0;
 const common_1 = require("@nestjs/common");
-const pool_1 = require("../../db/pool");
+const typeorm_1 = require("@nestjs/typeorm");
+const typeorm_2 = require("typeorm");
 const supabaseService_1 = require("../../services/supabaseService");
 const oauth_token_service_1 = require("../../services/oauth-token.service");
 const social_auth_service_1 = require("../oauth/social-auth.service");
 const cacheService_1 = require("../../services/cacheService");
 let OptimizedDeleteService = OptimizedDeleteService_1 = class OptimizedDeleteService {
-    constructor(supabaseService, oauthTokenService, socialAuthService, cacheService) {
+    constructor(dataSource, supabaseService, oauthTokenService, socialAuthService, cacheService) {
+        this.dataSource = dataSource;
         this.supabaseService = supabaseService;
         this.oauthTokenService = oauthTokenService;
         this.socialAuthService = socialAuthService;
@@ -30,7 +35,6 @@ let OptimizedDeleteService = OptimizedDeleteService_1 = class OptimizedDeleteSer
      */
     async fastDeleteAccount(user, loginTypeHint) {
         const startTime = Date.now();
-        const pool = await (0, pool_1.getPool)();
         try {
             // 1. 사용자 정보를 병렬로 수집 (DB + 캐시)
             const [profileData, cachedTokens] = await Promise.all([
@@ -79,12 +83,11 @@ let OptimizedDeleteService = OptimizedDeleteService_1 = class OptimizedDeleteSer
      * 사용자 프로필 데이터 조회 (최적화된 쿼리)
      */
     async fetchUserProfileData(userId) {
-        const pool = await (0, pool_1.getPool)();
         try {
-            const result = await pool.query(`SELECT login_type, avatar_url
+            const rows = await this.dataSource.query(`SELECT login_type, avatar_url
          FROM profiles
          WHERE id = $1 LIMIT 1`, [userId]);
-            return result.rows[0] || null;
+            return rows[0] || null;
         }
         catch (error) {
             this.logger.warn(`Failed to fetch profile data: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -131,49 +134,38 @@ let OptimizedDeleteService = OptimizedDeleteService_1 = class OptimizedDeleteSer
      * 최적화된 로컬 데이터 삭제 (단일 트랜잭션)
      */
     async performFastLocalDeletion(userId) {
-        const pool = await (0, pool_1.getPool)();
-        const client = await pool.connect();
-        try {
-            await client.query('BEGIN');
+        let travelIdArray = [];
+        await this.dataSource.transaction(async (manager) => {
             // 사용자가 참여한 모든 여행 ID 수집 (캐시 무효화용)
-            const targetTravelsResult = await client.query('SELECT travel_id::text AS id FROM travel_members WHERE user_id = $1', [userId]);
-            const travelIdArray = targetTravelsResult.rows.map((r) => r.id);
+            const targetTravels = await manager.query('SELECT travel_id::text AS id FROM travel_members WHERE user_id = $1', [userId]);
+            travelIdArray = targetTravels.map((r) => r.id);
             // 1) 사용자 세션/토큰 정리 (존재하지 않는 테이블은 건너뜀)
-            await client.query(`DELETE FROM user_sessions WHERE user_id = $1`, [userId]);
-            const oauthTable = await client.query(`SELECT to_regclass('oauth_tokens')::text AS name`);
-            if (oauthTable.rows[0]?.name) {
-                await client.query(`DELETE FROM oauth_tokens WHERE user_id = $1`, [userId]);
+            await manager.query(`DELETE FROM user_sessions WHERE user_id = $1`, [userId]);
+            const oauthTable = await manager.query(`SELECT to_regclass('oauth_tokens')::text AS name`);
+            if (oauthTable[0]?.name) {
+                await manager.query(`DELETE FROM oauth_tokens WHERE user_id = $1`, [userId]);
             }
-            await client.query(`DELETE FROM device_tokens WHERE user_id = $1`, [userId]).catch(() => undefined);
-            await client.query(`UPDATE travel_invites SET created_by = NULL WHERE created_by = $1`, [userId]);
+            await manager.query(`DELETE FROM device_tokens WHERE user_id = $1`, [userId]).catch(() => undefined);
+            await manager.query(`UPDATE travel_invites SET created_by = NULL WHERE created_by = $1`, [userId]);
             // 2) 사용자가 포함된 여행 및 하위 데이터 삭제
             if (travelIdArray.length > 0) {
-                await client.query(`DELETE FROM travel_expense_participants
+                await manager.query(`DELETE FROM travel_expense_participants
              WHERE expense_id IN (SELECT id FROM travel_expenses WHERE travel_id = ANY($1::uuid[]))`, [travelIdArray]);
-                await client.query(`DELETE FROM travel_expenses WHERE travel_id = ANY($1::uuid[])`, [travelIdArray]);
-                await client.query(`DELETE FROM travel_settlements WHERE travel_id = ANY($1::uuid[])`, [travelIdArray]);
-                await client.query(`DELETE FROM travel_invites WHERE travel_id = ANY($1::uuid[])`, [travelIdArray]);
-                await client.query(`DELETE FROM travel_members WHERE travel_id = ANY($1::uuid[])`, [travelIdArray]);
-                await client.query(`DELETE FROM travels WHERE id = ANY($1::uuid[])`, [travelIdArray]);
+                await manager.query(`DELETE FROM travel_expenses WHERE travel_id = ANY($1::uuid[])`, [travelIdArray]);
+                await manager.query(`DELETE FROM travel_settlements WHERE travel_id = ANY($1::uuid[])`, [travelIdArray]);
+                await manager.query(`DELETE FROM travel_invites WHERE travel_id = ANY($1::uuid[])`, [travelIdArray]);
+                await manager.query(`DELETE FROM travel_members WHERE travel_id = ANY($1::uuid[])`, [travelIdArray]);
+                await manager.query(`DELETE FROM travels WHERE id = ANY($1::uuid[])`, [travelIdArray]);
             }
             // 3) 잔여 사용자 데이터 삭제
-            await client.query(`DELETE FROM travel_expense_participants WHERE member_id = $1`, [userId]);
-            await client.query(`DELETE FROM travel_expenses WHERE payer_id = $1 OR author_id = $1`, [userId]);
-            await client.query(`DELETE FROM travel_settlements WHERE from_member = $1 OR to_member = $1`, [userId]);
-            await client.query(`DELETE FROM travel_members WHERE user_id = $1`, [userId]);
-            await client.query(`DELETE FROM profiles WHERE id = $1`, [userId]);
-            await client.query('COMMIT');
-            this.logger.debug(`Local data anonymization completed for user ${userId}`);
-            return travelIdArray;
-        }
-        catch (error) {
-            await client.query('ROLLBACK');
-            this.logger.error(`Local anonymization failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-            throw error;
-        }
-        finally {
-            client.release();
-        }
+            await manager.query(`DELETE FROM travel_expense_participants WHERE member_id = $1`, [userId]);
+            await manager.query(`DELETE FROM travel_expenses WHERE payer_id = $1 OR author_id = $1`, [userId]);
+            await manager.query(`DELETE FROM travel_settlements WHERE from_member = $1 OR to_member = $1`, [userId]);
+            await manager.query(`DELETE FROM travel_members WHERE user_id = $1`, [userId]);
+            await manager.query(`DELETE FROM profiles WHERE id = $1`, [userId]);
+        });
+        this.logger.debug(`Local data anonymization completed for user ${userId}`);
+        return travelIdArray;
     }
     /**
      * Supabase 사용자 삭제 (비동기)
@@ -232,7 +224,9 @@ let OptimizedDeleteService = OptimizedDeleteService_1 = class OptimizedDeleteSer
 exports.OptimizedDeleteService = OptimizedDeleteService;
 exports.OptimizedDeleteService = OptimizedDeleteService = OptimizedDeleteService_1 = __decorate([
     (0, common_1.Injectable)(),
-    __metadata("design:paramtypes", [supabaseService_1.SupabaseService,
+    __param(0, (0, typeorm_1.InjectDataSource)()),
+    __metadata("design:paramtypes", [typeorm_2.DataSource,
+        supabaseService_1.SupabaseService,
         oauth_token_service_1.OAuthTokenService,
         social_auth_service_1.SocialAuthService,
         cacheService_1.CacheService])

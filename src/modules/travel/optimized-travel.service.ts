@@ -2,8 +2,8 @@ import {
   Injectable,
   Logger,
 } from '@nestjs/common';
-import { Pool } from 'pg';
-import { getPool } from '../../db/pool';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { CacheService } from '../../services/cacheService';
 import { MetaService } from '../meta/meta.service';
 
@@ -48,6 +48,8 @@ export class OptimizedTravelService {
   private readonly transactionTimeoutMs = 5000;
 
   constructor(
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
     private readonly cacheService: CacheService,
     private readonly metaService: MetaService,
   ) {}
@@ -98,16 +100,14 @@ export class OptimizedTravelService {
     }
 
     try {
-      const pool = await getPool();
-
       // 병렬로 총 개수와 목록 조회
-      const [totalResult, listResult] = await Promise.all([
-        this.getTotalTravelsCount(pool, userId, status),
-        this.getTravelsList(pool, userId, limit, offset, includeMembers, status, sort),
+      const [totalRows, listRows] = await Promise.all([
+        this.getTotalTravelsCount(userId, status),
+        this.getTravelsList(userId, limit, offset, includeMembers, status, sort),
       ]);
 
-      const total = totalResult.rows[0]?.total ?? 0;
-      const items = listResult.rows.map(this.transformTravelRow);
+      const total = totalRows[0]?.total ?? 0;
+      const items = listRows.map(this.transformTravelRow);
 
       const result = {
         total,
@@ -138,9 +138,9 @@ export class OptimizedTravelService {
     }
   }
 
-  private async getTotalTravelsCount(pool: Pool, userId: string, status?: 'active' | 'archived') {
+  private async getTotalTravelsCount(userId: string, status?: 'active' | 'archived'): Promise<any[]> {
     const statusCondition = this.buildStatusCondition(status, 't');
-    return pool.query(
+    return this.dataSource.query(
       `SELECT COUNT(*)::int AS total
        FROM travel_members tm
        INNER JOIN travels t ON t.id = tm.travel_id
@@ -151,20 +151,19 @@ export class OptimizedTravelService {
   }
 
   private async getTravelsList(
-    pool: Pool,
     userId: string,
     limit: number,
     offset: number,
     includeMembers: boolean,
     status: 'active' | 'archived' | undefined,
     sort: 'recent' | 'start_date' | 'start_date_desc',
-  ) {
+  ): Promise<any[]> {
     const statusCondition = this.buildStatusCondition(status, 't');
     const orderClause = this.buildOrderClause(sort);
 
     if (includeMembers) {
       // 멤버 정보 포함 (최적화된 쿼리)
-      return pool.query(
+      return this.dataSource.query(
           `SELECT
              t.id::text AS id,
              t.title,
@@ -208,7 +207,7 @@ export class OptimizedTravelService {
       );
     } else {
       // 멤버 정보 없이 빠른 조회 (성능 최적화: DB에서 status 계산)
-      return pool.query(
+      return this.dataSource.query(
         `SELECT
            t.id::text AS id,
            t.title,
@@ -256,29 +255,9 @@ export class OptimizedTravelService {
     }
   }
 
-  // 공통 트랜잭션 래퍼 (타임아웃 포함)
-  private async withTransaction<T>(callback: (client: any) => Promise<T>): Promise<T> {
-    const pool = await getPool();
-    const client = await pool.connect();
-    const timer = setTimeout(() => {
-      try {
-        client.release();
-      } catch {
-        /* ignore */
-      }
-    }, this.transactionTimeoutMs);
-    try {
-      await client.query('BEGIN');
-      const result = await callback(client);
-      await client.query('COMMIT');
-      return result;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      clearTimeout(timer);
-      client.release();
-    }
+  // 공통 트랜잭션 래퍼 (TypeORM DataSource 방식)
+  private async withTransaction<T>(callback: (manager: any) => Promise<T>): Promise<T> {
+    return this.dataSource.transaction(callback);
   }
 
   private buildStatusCondition(status: 'active' | 'archived' | undefined, alias: string): string {
@@ -343,8 +322,7 @@ export class OptimizedTravelService {
       this.logger.warn(`Travel detail cache read failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 
-    const pool = await getPool();
-    const result = await pool.query(
+    const result = await this.dataSource.query(
        `SELECT
           t.id::text AS id,
           t.title,
@@ -383,11 +361,11 @@ export class OptimizedTravelService {
       [travelId, userId],
     );
 
-    if (result.rows.length === 0) {
+    if (!result || result.length === 0) {
       return null;
     }
 
-    const travel = this.transformTravelRow(result.rows[0]);
+    const travel = this.transformTravelRow(result[0]);
 
     // Redis 캐시에 짧게 저장 (비동기)
     this.cacheService.set(cacheKey, travel, { ttl: this.CACHE_TTL_SECONDS }).catch(error =>
@@ -446,10 +424,9 @@ export class OptimizedTravelService {
 
     // 캐시되지 않은 여행들을 배치로 조회
     if (uncachedIds.length > 0) {
-      const pool = await getPool();
-      const placeholders = uncachedIds.map((_, i) => `$${i + 1}`).join(',');
+      const placeholders = uncachedIds.map((_: any, i: number) => `$${i + 1}`).join(',');
 
-      const result = await pool.query(
+      const batchRows = await this.dataSource.query(
         `SELECT
            t.id::text AS id,
            t.title,
@@ -472,7 +449,7 @@ export class OptimizedTravelService {
       );
 
       // 조회 결과를 캐시에 저장
-      for (const row of result.rows) {
+      for (const row of batchRows) {
         const travel = this.transformTravelRow(row);
         cachedTravels.set(row.id, travel);
 

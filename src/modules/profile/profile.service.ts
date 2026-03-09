@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
-import { getPool } from '../../db/pool';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { UpdateProfileInput } from '../../validators/profileSchemas';
 import { UserRecord } from '../../types/user';
 import { createClient } from '@supabase/supabase-js';
@@ -26,6 +27,8 @@ export class ProfileService {
   private readonly AVATAR_FETCH_TIMEOUT_MS = 1200; // 아바타 동기 조회 타임아웃 (초기 조회 실패 방지)
 
   constructor(
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
     private readonly cacheService: CacheService,
     private readonly supabaseService: SupabaseService,
   ) {}
@@ -310,8 +313,7 @@ export class ProfileService {
   }
 
   private async getProfileFromDB(userId: string): Promise<UserRecord | null> {
-    const pool = await getPool();
-    const result = await pool.query(
+    const rows = await this.dataSource.query(
       `SELECT
          id::text,
          email,
@@ -327,7 +329,7 @@ export class ProfileService {
       [userId],
     );
 
-    const row = result.rows[0];
+    const row = rows[0];
     if (!row) return null;
 
     return {
@@ -374,8 +376,7 @@ export class ProfileService {
       avatarURL = await this.uploadToSupabase(userId, file);
     }
 
-    const pool = await getPool();
-    const result = await pool.query(
+    const rows = await this.dataSource.query(
       `UPDATE profiles
        SET
          name = COALESCE($2, name),
@@ -393,7 +394,7 @@ export class ProfileService {
          updated_at`,
       [userId, payload.name ?? null, avatarURL],
     );
-    const row = result.rows[0];
+    const row = rows[0];
     const updated: UserRecord = {
       id: row.id,
       email: row.email,
@@ -599,13 +600,12 @@ export class ProfileService {
       }
 
       // 4. DB에서 avatar_url만 조회 (최소한의 쿼리)
-      const pool = await getPool();
-      const result = await pool.query(
+      const avatarRows = await this.dataSource.query(
         `SELECT avatar_url FROM profiles WHERE id = $1 LIMIT 1`,
-        [userId]
+        [userId],
       );
 
-      const dbAvatar = result.rows[0]?.avatar_url as string | null | undefined;
+      const dbAvatar = avatarRows[0]?.avatar_url as string | null | undefined;
       if (dbAvatar) {
         // Redis/메모리에 캐시해 다음 호출 가속화
         this.setCachedStorageAvatar(userId, dbAvatar);
@@ -658,11 +658,10 @@ export class ProfileService {
       this.setCachedStorageAvatar(userId, storageAvatar);
 
       // DB에도 저장 (실패 시 무시)
-      const pool = await getPool();
-      pool.query(
+      this.dataSource.query(
         `UPDATE profiles SET avatar_url = $2, updated_at = NOW() WHERE id = $1`,
-        [userId, storageAvatar]
-      ).catch(err => this.logger.warn(`[warmAvatarFromStorage] Persist failed for ${userId}: ${err.message}`));
+        [userId, storageAvatar],
+      ).catch((err: Error) => this.logger.warn(`[warmAvatarFromStorage] Persist failed for ${userId}: ${err.message}`));
     } catch (error) {
       this.logger.warn(`[warmAvatarFromStorage] Failed for ${userId}`, error as Error);
     }

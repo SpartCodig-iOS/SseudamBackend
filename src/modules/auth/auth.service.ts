@@ -1,5 +1,15 @@
-import { Injectable, InternalServerErrorException, UnauthorizedException, Inject, forwardRef, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  UnauthorizedException,
+  Inject,
+  forwardRef,
+  Logger,
+} from '@nestjs/common';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import bcrypt from 'bcryptjs';
+import { createHash } from 'crypto';
 import { LoginType } from '../../types/auth';
 import { UserRecord } from '../../types/user';
 import { LoginInput, SignupInput } from '../../validators/authSchemas';
@@ -11,7 +21,8 @@ import { OptimizedOAuthService } from '../oauth/optimized-oauth.service';
 import { CacheService } from '../../services/cacheService';
 import { fromSupabaseUser } from '../../utils/mappers';
 import { OAuthTokenOptions, SocialAuthService } from '../oauth/social-auth.service';
-import { getPool } from '../../db/pool';
+import { UserRepository } from '../../repositories/user.repository';
+import { User } from '../../entities/user.entity';
 
 export interface AuthSessionPayload {
   user: UserRecord;
@@ -36,11 +47,11 @@ export class AuthService {
 
   // 성공한 로그인에 대한 bcrypt 캐시 (5분 TTL)
   private readonly bcryptCache = new Map<string, { hash: string; expiresAt: number }>();
-  private readonly BCRYPT_CACHE_TTL = 5 * 60 * 1000; // 5분
+  private readonly BCRYPT_CACHE_TTL = 5 * 60 * 1000;
 
   // 사용자 정보 캐시 (2분 TTL, 빠른 재로그인)
   private readonly userCache = new Map<string, { user: UserRecord; expiresAt: number }>();
-  private readonly USER_CACHE_TTL = 2 * 60 * 1000; // 2분
+  private readonly USER_CACHE_TTL = 2 * 60 * 1000;
 
   constructor(
     private readonly supabaseService: SupabaseService,
@@ -48,11 +59,18 @@ export class AuthService {
     private readonly jwtTokenService: JwtTokenService,
     private readonly sessionService: SessionService,
     private readonly cacheService: CacheService,
+    private readonly userRepository: UserRepository,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
     @Inject(forwardRef(() => OptimizedOAuthService))
     private readonly optimizedOAuthService: OptimizedOAuthService,
     @Inject(forwardRef(() => SocialAuthService))
     private readonly socialAuthService: SocialAuthService,
   ) {}
+
+  // ---------------------------------------------------------------------------
+  // 인메모리 캐시 헬퍼 (identifier -> email 매핑)
+  // ---------------------------------------------------------------------------
 
   private getCachedEmail(identifier: string): string | null {
     const cached = this.identifierCache.get(identifier);
@@ -111,9 +129,19 @@ export class AuthService {
     });
   }
 
-  // bcrypt 캐시 관리 (성능 최적화)
+  // ---------------------------------------------------------------------------
+  // bcrypt 캐시 헬퍼
+  // 캐시 키: HMAC(email + password) → 평문 비밀번호가 메모리에 남지 않도록 함
+  // ---------------------------------------------------------------------------
+
+  private makeBcryptCacheKey(email: string, password: string): string {
+    return createHash('sha256')
+      .update(`${email}:${password}`)
+      .digest('hex');
+  }
+
   private getCachedBcryptResult(email: string, password: string): boolean | null {
-    const cacheKey = `${email}:${password.substring(0, 8)}`;
+    const cacheKey = this.makeBcryptCacheKey(email, password);
     const cached = this.bcryptCache.get(cacheKey);
     if (!cached) return null;
 
@@ -122,19 +150,18 @@ export class AuthService {
       return null;
     }
 
-    return cached.hash === password;
+    return cached.hash === 'verified';
   }
 
   private setCachedBcryptResult(email: string, password: string, isValid: boolean): void {
-    if (!isValid) return; // 실패한 로그인은 캐시하지 않음
+    if (!isValid) return;
 
-    const cacheKey = `${email}:${password.substring(0, 8)}`;
+    const cacheKey = this.makeBcryptCacheKey(email, password);
     this.bcryptCache.set(cacheKey, {
-      hash: password,
+      hash: 'verified',
       expiresAt: Date.now() + this.BCRYPT_CACHE_TTL,
     });
 
-    // 캐시 크기 제한
     if (this.bcryptCache.size > 500) {
       const oldestKey = this.bcryptCache.keys().next().value;
       if (oldestKey) {
@@ -143,12 +170,15 @@ export class AuthService {
     }
   }
 
-  // 사용자 캐시 관리 (Redis 기반 재로그인 최적화)
+  // ---------------------------------------------------------------------------
+  // Redis 기반 사용자 캐시 헬퍼 (보안상 password_hash 미포함)
+  // ---------------------------------------------------------------------------
+
   private async getCachedUser(email: string): Promise<UserRecord | null> {
     try {
       return await this.cacheService.get<UserRecord>(email, {
         prefix: 'user',
-        ttl: 120, // 2분
+        ttl: 120,
       });
     } catch (error) {
       this.logger.warn('Failed to get cached user, continuing without cache', error);
@@ -158,11 +188,10 @@ export class AuthService {
 
   private async setCachedUser(email: string, user: UserRecord): Promise<void> {
     try {
-      // 보안상 패스워드 해시는 캐시하지 않음
       const sanitizedUser = { ...user, password_hash: '' };
       await this.cacheService.set(email, sanitizedUser, {
         prefix: 'user',
-        ttl: 120, // 2분
+        ttl: 120,
       });
     } catch (error) {
       this.logger.warn('Failed to cache user, continuing without cache', error);
@@ -179,7 +208,29 @@ export class AuthService {
     void this.setCachedUser(normalizedEmail, sanitizedUser);
   }
 
-  // 고성능 직접 인증: 캐시 우선 + 단일 쿼리로 사용자 정보 조회 및 비밀번호 확인
+  // ---------------------------------------------------------------------------
+  // TypeORM User 엔티티 → UserRecord 변환 (password_hash는 비워서 반환)
+  // ---------------------------------------------------------------------------
+
+  private toUserRecord(user: User, includePasswordHash = false): UserRecord {
+    return {
+      id: user.id,
+      email: user.email.toLowerCase(),
+      name: user.name,
+      username: user.username,
+      avatar_url: user.avatar_url,
+      created_at: user.created_at,
+      updated_at: user.updated_at,
+      password_hash: includePasswordHash ? (user.password_hash ?? '') : '',
+      role: user.role ?? 'user',
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // authenticateUserDirect: TypeORM Repository 기반 고성능 인증
+  // 캐시 레이어: Redis user cache → bcrypt cache → TypeORM query
+  // ---------------------------------------------------------------------------
+
   private async authenticateUserDirect(
     identifier: string,
     password: string,
@@ -191,11 +242,10 @@ export class AuthService {
       options.emailHint ??
       (identifier.includes('@') ? identifier.toLowerCase() : null);
 
-    // 사용자 정보 캐시 확인 (Redis 기반 초고속)
+    // 1단계: Redis user cache 확인 + bcrypt cache 조합으로 초고속 인증
     if (cacheEmail) {
       const cachedUser = await this.getCachedUser(cacheEmail);
       if (cachedUser) {
-        // 캐시된 사용자로 비밀번호 검증
         const cachedBcryptResult = this.getCachedBcryptResult(cacheEmail, password);
         if (cachedBcryptResult === true) {
           this.logger.debug(`Full Redis cache hit for ${cacheEmail} - ultra fast auth`);
@@ -204,91 +254,45 @@ export class AuthService {
       }
     }
 
-    const pool = await getPool();
+    // 2단계: TypeORM Repository로 사용자 조회 (N+1 방지 - 단일 쿼리)
     const shouldUseEmailLookup =
       lookupMode === 'email' || (lookupMode === 'auto' && identifier.includes('@'));
-    const queryParam = shouldUseEmailLookup ? identifier.toLowerCase() : identifier;
-    const selectWithPassword = `SELECT
-           id::text,
-           email,
-           name,
-           username,
-           avatar_url,
-           created_at,
-           updated_at,
-           password_hash,
-           role
-         FROM profiles
-         WHERE ${shouldUseEmailLookup ? 'email = $1' : 'username = $1'}
-         LIMIT 1`;
-    const selectWithoutPassword = `SELECT
-           id::text,
-           email,
-           name,
-           username,
-           avatar_url,
-           created_at,
-           updated_at,
-           role
-         FROM profiles
-         WHERE ${shouldUseEmailLookup ? 'email = $1' : 'username = $1'}
-         LIMIT 1`;
-    const selectFallback = `SELECT
-           id::text,
-           email,
-           name,
-           username,
-           avatar_url,
-           created_at,
-           updated_at
-         FROM profiles
-         WHERE ${shouldUseEmailLookup ? 'email = $1' : 'username = $1'}
-         LIMIT 1`;
 
-    let result;
+    let user: User | null = null;
+
     try {
-      result = await pool.query(selectWithPassword, [queryParam]);
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('password_hash')) {
-        try {
-          result = await pool.query(selectWithoutPassword, [queryParam]);
-        } catch (innerError) {
-          if (!(innerError instanceof Error) || !innerError.message.includes('role')) {
-            throw innerError;
-          }
-          result = await pool.query(selectFallback, [queryParam]);
-        }
-      } else if (error instanceof Error && error.message.includes('role')) {
-        result = await pool.query(selectFallback, [queryParam]);
+      if (shouldUseEmailLookup) {
+        user = await this.userRepository.findByEmail(identifier.toLowerCase());
       } else {
-        throw error;
+        user = await this.userRepository.findByUsername(identifier);
       }
+    } catch (error) {
+      this.logger.error(`[authenticateUserDirect] TypeORM query failed for ${identifier}`, error);
+      return null;
     }
 
-    const row = result.rows[0];
-    if (!row) return null;
-    const resolvedEmail = row.email?.toLowerCase();
+    if (!user) return null;
+
+    const resolvedEmail = user.email?.toLowerCase();
     if (!resolvedEmail) {
       this.logger.warn('Profile row missing email, aborting authentication');
       return null;
     }
 
-    // 비밀번호 확인을 병렬로 처리할 수 있도록 준비
+    // 3단계: 비밀번호 검증
     let isValidPassword = false;
 
-    if (row.password_hash) {
-      // bcrypt 캐시 확인 (초고속)
+    if (user.password_hash) {
       const cachedResult = this.getCachedBcryptResult(resolvedEmail, password);
       if (cachedResult !== null) {
         isValidPassword = cachedResult;
         this.logger.debug(`bcrypt cache hit for ${resolvedEmail}`);
       } else {
-        // bcrypt 검증 (캐시 미스 시)
-        isValidPassword = await bcrypt.compare(password, row.password_hash);
+        isValidPassword = await bcrypt.compare(password, user.password_hash);
         this.setCachedBcryptResult(resolvedEmail, password, isValidPassword);
       }
     } else {
-      // Supabase 인증으로 폴백 (password_hash가 없는 경우)
+      // password_hash 없는 경우 Supabase 인증으로 폴백 (소셜 전용 계정)
       try {
         await this.supabaseService.signIn(resolvedEmail, password);
         isValidPassword = true;
@@ -300,25 +304,19 @@ export class AuthService {
     if (!isValidPassword) return null;
 
     const authDuration = Date.now() - authStartTime;
-    this.logger.debug(`Fast auth completed in ${authDuration}ms for ${resolvedEmail}`);
+    this.logger.debug(`TypeORM auth completed in ${authDuration}ms for ${resolvedEmail}`);
 
-    const userRecord: UserRecord = {
-      id: row.id,
-      email: resolvedEmail,
-      name: row.name,
-      username: row.username,
-      avatar_url: row.avatar_url,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-      password_hash: '', // 보안상 빈 값으로 설정
-      role: row.role ?? 'user',
-    };
+    const userRecord = this.toUserRecord(user);
 
-    // 성공한 인증 후 사용자 정보를 Redis 캐시에 저장
+    // 인증 성공 후 Redis 캐시에 저장 (다음 요청을 위한 선제 캐싱)
     void this.setCachedUser(resolvedEmail, userRecord);
 
     return userRecord;
   }
+
+  // ---------------------------------------------------------------------------
+  // createAuthSession: 세션 + 토큰 쌍 생성
+  // ---------------------------------------------------------------------------
 
   async createAuthSession(user: UserRecord, loginType: LoginType): Promise<AuthSessionPayload> {
     const startTime = Date.now();
@@ -333,12 +331,10 @@ export class AuthService {
       avatarUrl: user.avatar_url,
     });
 
-    // 세션 생성과 토큰 생성을 병렬로 처리 (성능 최적화)
     const [session] = await Promise.all([
-      this.sessionService.createSession(user.id, loginType)
+      this.sessionService.createSession(user.id, loginType),
     ]);
 
-    // 세션 ID를 받은 후 토큰 생성
     const tokenPair = this.jwtTokenService.generateTokenPair(user, loginType, session.sessionId);
 
     const duration = Date.now() - startTime;
@@ -347,7 +343,10 @@ export class AuthService {
     return { user, tokenPair, loginType, session };
   }
 
-  // 소셜 로그인 (인가코드/토큰 전달) 공통 처리
+  // ---------------------------------------------------------------------------
+  // socialLoginWithCode: OAuth 인가코드/토큰 기반 소셜 로그인
+  // ---------------------------------------------------------------------------
+
   async socialLoginWithCode(
     codeOrToken: string,
     provider: LoginType,
@@ -364,27 +363,28 @@ export class AuthService {
       oauthOptions.redirectUri = options.redirectUri;
     }
 
-    // Kakao는 authorizationCode를 넘기면 내부에서 교환하여 진행, 그 외는 Supabase access token 사용
     return this.optimizedOAuthService.fastOAuthLogin(codeOrToken, provider, oauthOptions);
   }
+
+  // ---------------------------------------------------------------------------
+  // signup
+  // ---------------------------------------------------------------------------
 
   async signup(input: SignupInput): Promise<AuthSessionPayload> {
     const startTime = Date.now();
     const lowerEmail = input.email.toLowerCase();
 
-    // 모든 작업을 병렬로 처리 (성능 최적화)
     const [supabaseUser, passwordHash] = await Promise.all([
       this.supabaseService.signUp(lowerEmail, input.password, {
         name: input.name,
       }),
-      bcrypt.hash(input.password, 4) // 6 -> 4로 더 단축 (로그인 성능 우선)
+      bcrypt.hash(input.password, 10),
     ]);
 
     if (!supabaseUser) {
       throw new InternalServerErrorException('Supabase createUser did not return a user');
     }
 
-    // username 생성 최적화
     const username = lowerEmail.includes('@')
       ? lowerEmail.split('@')[0].toLowerCase()
       : `user_${supabaseUser.id.substring(0, 8)}`;
@@ -403,7 +403,6 @@ export class AuthService {
 
     const result = await this.createAuthSession(newUser, 'signup');
 
-    // 부가 작업은 응답과 분리해 지연 최소화
     setImmediate(() => {
       void this.markLastLogin(newUser.id);
       void this.warmAuthCaches(newUser);
@@ -414,6 +413,10 @@ export class AuthService {
 
     return result;
   }
+
+  // ---------------------------------------------------------------------------
+  // login
+  // ---------------------------------------------------------------------------
 
   async login(input: LoginInput): Promise<AuthSessionPayload> {
     const startTime = Date.now();
@@ -430,7 +433,6 @@ export class AuthService {
     let lookupValue = identifier;
     let emailHint: string | undefined = loginType === 'email' ? identifier : undefined;
 
-    // username 로그인 시 캐시 기반으로 이메일 힌트 확보 (없으면 username으로 직접 조회)
     if (loginType === 'username') {
       const cachedEmail = await this.getIdentifierFromSharedCache(identifier);
       if (cachedEmail) {
@@ -439,7 +441,6 @@ export class AuthService {
       }
     }
 
-    // 고성능 직접 인증: Supabase 대신 직접 DB 쿼리 (더 빠름)
     const user = await this.authenticateUserDirect(lookupValue, input.password, {
       lookupType: loginType === 'username' && !emailHint ? 'username' : 'email',
       emailHint,
@@ -448,14 +449,12 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // 세션 생성과 캐시 업데이트를 병렬로 처리 (성능 최적화)
     const [result] = await Promise.all([
       this.createAuthSession(user, loginType),
       this.markLastLogin(user.id),
-      // 캐시 업데이트를 백그라운드에서 처리
       Promise.resolve().then(() => {
         this.warmAuthCaches(user);
-      })
+      }),
     ]);
 
     const duration = Date.now() - startTime;
@@ -463,6 +462,10 @@ export class AuthService {
 
     return result;
   }
+
+  // ---------------------------------------------------------------------------
+  // refresh: TypeORM Repository로 사용자 재조회
+  // ---------------------------------------------------------------------------
 
   async refresh(refreshToken: string): Promise<RefreshPayload> {
     const payload = this.jwtTokenService.verifyRefreshToken(refreshToken);
@@ -477,37 +480,27 @@ export class AuthService {
 
     let user: UserRecord;
     try {
-      const pool = await getPool();
-      const profile = await pool.query(
-        `SELECT
-           id::text,
-           email,
-           name,
-           username,
-           avatar_url,
-           created_at,
-           updated_at,
-           role
-         FROM profiles
-         WHERE id = $1
-         LIMIT 1`,
-        [payload.sub],
-      );
-      const row = profile.rows[0];
+      // TypeORM Repository로 사용자 조회 (password_hash 제외한 필요 컬럼만 선택)
+      const userEntity = await this.userRepository
+        .getRepository()
+        .createQueryBuilder('user')
+        .select([
+          'user.id',
+          'user.email',
+          'user.name',
+          'user.username',
+          'user.avatar_url',
+          'user.created_at',
+          'user.updated_at',
+          'user.role',
+        ])
+        .where('user.id = :id', { id: payload.sub })
+        .getOne();
 
-      if (row) {
-        user = {
-          id: row.id,
-          email: row.email,
-          name: row.name,
-          avatar_url: row.avatar_url,
-          username: row.username,
-          created_at: row.created_at,
-          updated_at: row.updated_at,
-          password_hash: '',
-          role: row.role ?? 'user',
-        };
+      if (userEntity) {
+        user = this.toUserRecord(userEntity);
       } else {
+        // DB에 없으면 Supabase fallback
         const supabaseUser = await this.supabaseService.getUserById(payload.sub);
         if (!supabaseUser) {
           throw new UnauthorizedException('User not found in Supabase');
@@ -515,44 +508,53 @@ export class AuthService {
         user = fromSupabaseUser(supabaseUser);
       }
     } catch (error) {
+      if (error instanceof UnauthorizedException) throw error;
+      this.logger.error(`[refresh] User verification failed for sub=${payload.sub}`, error);
       throw new UnauthorizedException('User verification failed');
     }
 
-    // 기존 세션은 재사용하지 않으므로 즉시 폐기
+    // 기존 세션 즉시 폐기 후 새 세션 발급
     await this.sessionService.deleteSession(payload.sessionId);
 
     const resolvedLoginType = (currentSession.loginType as LoginType | undefined) ?? 'email';
     const sessionPayload = await this.createAuthSession(user, resolvedLoginType);
-    return { user, tokenPair: sessionPayload.tokenPair, loginType: sessionPayload.loginType, session: sessionPayload.session };
+    return {
+      user,
+      tokenPair: sessionPayload.tokenPair,
+      loginType: sessionPayload.loginType,
+      session: sessionPayload.session,
+    };
   }
 
-  async deleteAccount(user: UserRecord, loginTypeHint?: LoginType): Promise<{ supabaseDeleted: boolean }> {
+  // ---------------------------------------------------------------------------
+  // deleteAccount: TypeORM DataSource 트랜잭션으로 로컬 데이터 삭제
+  // ---------------------------------------------------------------------------
+
+  async deleteAccount(
+    user: UserRecord,
+    loginTypeHint?: LoginType,
+  ): Promise<{ supabaseDeleted: boolean }> {
     const startTime = Date.now();
 
-    const pool = await getPool();
-
-    // 프로필 타입 조회 (DB 우선, 실패 시 Supabase)
+    // 1단계: 소셜 프로필 정보 조회 (TypeORM Repository 사용)
     let avatarUrl: string | null = user.avatar_url ?? null;
     let profileLoginType: LoginType | null = null;
     let appleRefreshToken: string | null = null;
     let googleRefreshToken: string | null = null;
 
     try {
-      const directProfile = await pool.query(
-        `SELECT login_type, apple_refresh_token, google_refresh_token, avatar_url
-         FROM profiles
-         WHERE id = $1
-         LIMIT 1`,
-        [user.id],
-      );
-      const profileRow = directProfile.rows[0];
-      if (profileRow) {
-        profileLoginType = (profileRow.login_type as LoginType | null) ?? null;
-        avatarUrl = avatarUrl ?? (profileRow.avatar_url as string | null);
+      const socialInfo = await this.userRepository.findSocialProfileInfo(user.id);
+      if (socialInfo) {
+        profileLoginType = (socialInfo.login_type as LoginType | null) ?? null;
+        avatarUrl = avatarUrl ?? socialInfo.avatar_url;
+        appleRefreshToken = socialInfo.apple_refresh_token;
+        googleRefreshToken = socialInfo.google_refresh_token;
       }
     } catch (error) {
-      this.logger.warn('[deleteAccount] Failed to fetch profile login type from DB', error as Error);
+      this.logger.warn('[deleteAccount] Failed to fetch profile social info from DB', error as Error);
     }
+
+    // DB 조회 실패 시 Supabase fallback
     if (!profileLoginType) {
       try {
         const profile = await this.supabaseService.findProfileById(user.id);
@@ -562,18 +564,17 @@ export class AuthService {
         this.logger.warn('[deleteAccount] Failed to fetch profile login type via Supabase', error as Error);
       }
     }
+
+    // loginType 결정: refresh token > loginTypeHint 순으로 보완
     if (!profileLoginType) {
-      if (appleRefreshToken) {
-        profileLoginType = 'apple';
-      } else if (googleRefreshToken) {
-        profileLoginType = 'google';
-      }
+      if (appleRefreshToken) profileLoginType = 'apple';
+      else if (googleRefreshToken) profileLoginType = 'google';
     }
     if (!profileLoginType && loginTypeHint) {
       profileLoginType = loginTypeHint;
     }
 
-    // 통합 토큰 테이블에서 조회
+    // 2단계: OAuth 통합 토큰 테이블에서 추가 조회
     try {
       const [appleToken, googleToken, kakaoToken] = await Promise.all([
         this.oauthTokenService.getToken(user.id, 'apple'),
@@ -585,19 +586,22 @@ export class AuthService {
       if (!profileLoginType && kakaoToken) {
         profileLoginType = 'kakao';
       }
-      const kakaoRefreshToken = kakaoToken ?? null;
 
-      if (profileLoginType === 'kakao' && kakaoRefreshToken) {
-        try {
-          await this.socialAuthService.revokeKakaoConnection(user.id, kakaoRefreshToken);
-        } catch (error) {
-          this.logger.warn('[deleteAccount] Kakao revoke failed', error);
+      if (profileLoginType === 'kakao') {
+        const kakaoRefreshToken = kakaoToken ?? null;
+        if (kakaoRefreshToken) {
+          try {
+            await this.socialAuthService.revokeKakaoConnection(user.id, kakaoRefreshToken);
+          } catch (error) {
+            this.logger.warn('[deleteAccount] Kakao revoke failed', error);
+          }
         }
       }
     } catch (error) {
       this.logger.warn('[deleteAccount] Failed to load refresh tokens', error as Error);
     }
 
+    // 3단계: 소셜 연결 해제
     await (async () => {
       if (profileLoginType === 'apple') {
         if (appleRefreshToken) {
@@ -633,34 +637,12 @@ export class AuthService {
       }
     })();
 
-    const localCleanup = (async () => {
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-        await client.query(
-          `DELETE FROM travel_expense_participants
-           WHERE member_id = $1
-              OR expense_id IN (
-                SELECT id FROM travel_expenses WHERE payer_id = $1
-              )`,
-          [user.id],
-        );
-        await client.query('DELETE FROM travel_expenses WHERE payer_id = $1', [user.id]);
-        await client.query('DELETE FROM travel_members WHERE user_id = $1', [user.id]);
-        await client.query('DELETE FROM travel_invites WHERE created_by = $1', [user.id]);
-        await client.query('DELETE FROM travel_settlements WHERE from_member = $1 OR to_member = $1', [user.id]);
-        await client.query('DELETE FROM user_sessions WHERE user_id = $1', [user.id]);
-        await client.query('DELETE FROM profiles WHERE id = $1', [user.id]);
-        await client.query('COMMIT');
-      } catch (error) {
-        await client.query('ROLLBACK');
-        throw error;
-      } finally {
-        client.release();
-      }
-    })();
+    // 4단계: TypeORM 트랜잭션으로 로컬 데이터 일괄 삭제
+    const localCleanup = this.dataSource.transaction(async (manager) => {
+      await this.userRepository.deleteAccountData(user.id, manager);
+    });
 
-    // 4) Supabase 사용자 삭제 (auth 테이블만)
+    // 5단계: Supabase auth 테이블 사용자 삭제 (병렬)
     let supabaseDeleted = false;
     const supabaseDeletion = (async () => {
       try {
@@ -676,46 +658,55 @@ export class AuthService {
       }
     })();
 
-    // 캐시에서도 제거
+    // 6단계: 인메모리 캐시 즉시 제거
     this.identifierCache.delete(user.email.toLowerCase());
     if (user.username) {
       this.identifierCache.delete(user.username.toLowerCase());
     }
 
     const cacheCleanup = Promise.all([
-      // OAuth 캐시 정리
-      this.socialAuthService.invalidateOAuthCacheByUser(user.id)
+      this.socialAuthService
+        .invalidateOAuthCacheByUser(user.id)
         .catch((error) => this.logger.warn('[deleteAccount] OAuth cache cleanup failed', error as Error)),
-
-      // 사용자 관련 모든 캐시 무효화 (새로운 Redis 캐시 무효화 전략)
-      this.cacheService.invalidateUserCache(user.id)
-        .catch((error) => this.logger.warn('[deleteAccount] User cache invalidation failed', error as Error)),
+      this.cacheService
+        .invalidateUserCache(user.id)
+        .catch((error) =>
+          this.logger.warn('[deleteAccount] User cache invalidation failed', error as Error),
+        ),
     ]);
 
-    const profileImageDeletion = this.supabaseService.deleteProfileImage(avatarUrl)
-      .catch((error) => this.logger.warn('[deleteAccount] Profile image deletion failed', error as Error));
+    const profileImageDeletion = this.supabaseService
+      .deleteProfileImage(avatarUrl)
+      .catch((error) =>
+        this.logger.warn('[deleteAccount] Profile image deletion failed', error as Error),
+      );
 
     await Promise.all([localCleanup, supabaseDeletion, cacheCleanup, profileImageDeletion]);
 
     const duration = Date.now() - startTime;
-    this.logger.debug(`Fast account deletion completed in ${duration}ms for ${user.email}`);
+    this.logger.debug(`Account deletion completed in ${duration}ms for ${user.email}`);
 
     return { supabaseDeleted };
   }
 
+  // ---------------------------------------------------------------------------
+  // markLastLogin: TypeORM QueryBuilder로 updated_at 갱신 (SELECT 없이 UPDATE only)
+  // ---------------------------------------------------------------------------
+
   async markLastLogin(userId: string): Promise<void> {
     try {
-      const pool = await getPool();
-      await pool.query(
-        `UPDATE profiles
-         SET updated_at = NOW()
-         WHERE id = $1`,
-        [userId],
-      );
+      await this.userRepository.markLastLogin(userId);
     } catch (error) {
-      this.logger.warn(`[markLastLogin] Failed to update last login for user ${userId}`, error as Error);
+      this.logger.warn(
+        `[markLastLogin] Failed to update last login for user ${userId}`,
+        error as Error,
+      );
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // logoutBySessionId
+  // ---------------------------------------------------------------------------
 
   async logoutBySessionId(sessionId: string): Promise<{ revoked: boolean }> {
     if (!sessionId) {

@@ -10,12 +10,14 @@ exports.DevModule = void 0;
 const common_1 = require("@nestjs/common");
 const dev_controller_1 = require("./dev.controller");
 const shared_module_1 = require("../shared/shared.module");
+const env_1 = require("../../config/env");
 let DevModule = class DevModule {
 };
 exports.DevModule = DevModule;
 exports.DevModule = DevModule = __decorate([
     (0, common_1.Module)({
         imports: [shared_module_1.SharedModule],
-        controllers: [dev_controller_1.DevController],
+        // DevController는 개발/스테이징 환경에서만 등록
+        controllers: env_1.env.nodeEnv !== 'production' ? [dev_controller_1.DevController] : [],
     })
 ], DevModule);

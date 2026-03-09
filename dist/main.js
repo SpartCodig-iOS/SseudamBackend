@@ -85,7 +85,19 @@ async function bootstrap() {
         app.useLogger(selectedLevels);
     }
     const helmetOptions = {
-        contentSecurityPolicy: false,
+        contentSecurityPolicy: {
+            directives: {
+                defaultSrc: ["'self'"],
+                scriptSrc: ["'self'"],
+                styleSrc: ["'self'", "'unsafe-inline'"],
+                imgSrc: ["'self'", 'data:', 'https:'],
+                connectSrc: ["'self'"],
+                fontSrc: ["'self'"],
+                objectSrc: ["'none'"],
+                upgradeInsecureRequests: [],
+            },
+        },
+        crossOriginEmbedderPolicy: false, // Swagger UI 호환성
     };
     app.use((0, helmet_1.default)(helmetOptions));
     // API 성능: 소형 응답은 압축하지 않고, 속도 우선
@@ -136,9 +148,9 @@ async function bootstrap() {
         methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
         credentials: true,
     });
-    // HTTP 요청 크기 및 타임아웃 제한 (8GB 메모리 활용)
-    app.use((0, express_1.json)({ limit: '50mb' }));
-    app.use((0, express_1.urlencoded)({ extended: true, limit: '50mb' }));
+    // HTTP 요청 크기 제한 (DoS 방지: JSON API 기준 1MB 이상 불필요)
+    app.use((0, express_1.json)({ limit: '1mb' }));
+    app.use((0, express_1.urlencoded)({ extended: true, limit: '1mb' }));
     // 글로벌 타임아웃 설정 (30초)
     app.use((req, res, next) => {
         req.setTimeout(30000, () => {

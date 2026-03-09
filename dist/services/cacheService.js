@@ -360,6 +360,30 @@ let CacheService = CacheService_1 = class CacheService {
         const regex = new RegExp(`^${regexPattern}$`);
         return regex.test(key);
     }
+    /**
+     * JWT Blacklist에서 사용하는 scanKeys 메서드 (KEYS 대신 안전한 SCAN 사용)
+     */
+    async scanKeys(pattern) {
+        const redis = await this.getRedisClient();
+        if (!redis) {
+            return [];
+        }
+        try {
+            const keys = [];
+            let cursor = '0';
+            do {
+                const result = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+                cursor = result[0];
+                const foundKeys = result[1];
+                keys.push(...foundKeys);
+            } while (cursor !== '0');
+            return keys;
+        }
+        catch (error) {
+            this.logger.error(`Redis SCAN failed for pattern ${pattern}: ${this.stringifyError(error)}`);
+            return [];
+        }
+    }
     stringifyError(error) {
         if (!error)
             return 'unknown error';

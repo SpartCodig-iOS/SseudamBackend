@@ -1,6 +1,7 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { env } from '../../config/env';
-import { getPool } from '../../db/pool';
 
 export interface AppVersionMeta {
   bundleId: string;
@@ -25,6 +26,11 @@ export class VersionService {
   private readonly appVersionCacheTTL = 1000 * 60 * 5; // 5분
   private appVersionTableReady = false;
 
+  constructor(
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
+  ) {}
+
   private toIsoString(input: any): string | null {
     if (!input) return null;
     const d = input instanceof Date ? input : new Date(input);
@@ -34,8 +40,7 @@ export class VersionService {
 
   private async ensureAppVersionTable(): Promise<void> {
     if (this.appVersionTableReady) return;
-    const pool = await getPool();
-    await pool.query(`
+    await this.dataSource.query(`
       CREATE TABLE IF NOT EXISTS app_versions (
         bundle_id TEXT PRIMARY KEY,
         latest_version TEXT NOT NULL,
@@ -52,8 +57,7 @@ export class VersionService {
   private async fetchDbVersion(bundleId: string) {
     try {
       await this.ensureAppVersionTable();
-      const pool = await getPool();
-      const result = await pool.query(
+      const rows = await this.dataSource.query(
         `SELECT bundle_id,
                 latest_version,
                 min_supported_version,
@@ -65,7 +69,7 @@ export class VersionService {
          LIMIT 1`,
         [bundleId],
       );
-      return result.rows[0] ?? null;
+      return rows[0] ?? null;
     } catch (error) {
       // DB 문제 시 App Store 결과만으로 동작 (로그는 최소화)
       return null;
@@ -209,30 +213,25 @@ export class VersionService {
   }
 
   private async upsertDbVersion(data: AppVersionMeta): Promise<void> {
-    try {
-      await this.ensureAppVersionTable();
-      const pool = await getPool();
-      await pool.query(
-        `INSERT INTO app_versions (bundle_id, latest_version, min_supported_version, force_update, release_notes)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (bundle_id)
-         DO UPDATE SET
-           latest_version = EXCLUDED.latest_version,
-           min_supported_version = EXCLUDED.min_supported_version,
-           force_update = EXCLUDED.force_update,
-           release_notes = EXCLUDED.release_notes,
-           updated_at = NOW()`,
-        [
-          data.bundleId,
-          data.latestVersion,
-          data.minSupportedVersion,
-          data.forceUpdate,
-          data.releaseNotes,
-        ],
-      );
-    } catch (error) {
-      throw error;
-    }
+    await this.ensureAppVersionTable();
+    await this.dataSource.query(
+      `INSERT INTO app_versions (bundle_id, latest_version, min_supported_version, force_update, release_notes)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (bundle_id)
+       DO UPDATE SET
+         latest_version = EXCLUDED.latest_version,
+         min_supported_version = EXCLUDED.min_supported_version,
+         force_update = EXCLUDED.force_update,
+         release_notes = EXCLUDED.release_notes,
+         updated_at = NOW()`,
+      [
+        data.bundleId,
+        data.latestVersion,
+        data.minSupportedVersion,
+        data.forceUpdate,
+        data.releaseNotes,
+      ],
+    );
   }
 
   async setAppVersionManual(payload: {
@@ -241,12 +240,11 @@ export class VersionService {
   }): Promise<void> {
     const bundleId = 'io.sseudam.co';
     await this.ensureAppVersionTable();
-    const pool = await getPool();
     const lastUpdated = this.toIsoString(new Date());
     const minSupported = '17.0';
     const forceUpdate = true;
 
-    await pool.query(
+    await this.dataSource.query(
       `INSERT INTO app_versions (bundle_id, latest_version, min_supported_version, force_update, release_notes, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (bundle_id)

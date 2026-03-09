@@ -6,9 +6,10 @@ import { MetaModule } from '../meta/meta.module';
 import { ProfileModule } from '../profile/profile.module';
 import { CacheService } from '../../services/cacheService';
 import { QueueModule } from '../queue/queue.module';
+import { DatabaseModule } from '../database/database.module';
 
 @Module({
-  imports: [MetaModule, ProfileModule, QueueModule],
+  imports: [DatabaseModule, MetaModule, ProfileModule, QueueModule],
   controllers: [TravelController],
   providers: [TravelService, OptimizedTravelService, CacheService],
   exports: [TravelService, OptimizedTravelService],
