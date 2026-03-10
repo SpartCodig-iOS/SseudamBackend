@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
 import { CacheService } from '../../services/cacheService';
+import { AppMetricsService } from '../../common/metrics/app-metrics.service';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 도메인 타입
@@ -73,6 +74,7 @@ export class TravelSettlementService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly cacheService: CacheService,
+    private readonly metricsService: AppMetricsService,
   ) {}
 
   // ───────────────────────────────────────────────────────────────────────────
@@ -431,6 +433,7 @@ export class TravelSettlementService {
         `settlements=${computedSettlements.length} version=${currentVersion}->${nextVersion}`,
     );
 
+    this.metricsService?.recordSettlementCalculated(travelId, 'success');
     return result;
   }
 

@@ -1,52 +1,14 @@
-import { env } from '../config/env';
+/**
+ * utils/logger.ts
+ *
+ * 하위 호환 래퍼.
+ * 기존 코드는 import { logger } from '../utils/logger' 로 그대로 사용 가능.
+ * 내부적으로는 pino 기반 pinoLogger 에 위임한다.
+ *
+ * 모든 로그에 requestId가 자동 포함된다 (AsyncLocalStorage).
+ */
+export { pinoLogger as logger } from '../common/logger/pino-logger';
+export type { } from '../common/logger/pino-logger';
 
-type LogLevel = 'error' | 'info' | 'debug';
-
-type LogPayload = Record<string, unknown> | undefined;
-
-const levelPriority: Record<LogLevel, number> = {
-  error: 0,
-  info: 1,
-  debug: 2,
-};
-
-const resolveLevel = (value?: string): LogLevel => {
-  if (!value) return 'info';
-  const normalized = value.toLowerCase() as LogLevel;
-  return normalized in levelPriority ? normalized : 'info';
-};
-
-const activeLevel = resolveLevel(env.logLevel);
-
-const shouldLog = (level: LogLevel) => levelPriority[level] <= levelPriority[activeLevel];
-
-const serializeMeta = (meta?: LogPayload) => {
-  if (!meta || Object.keys(meta).length === 0) {
-    return '';
-  }
-  try {
-    return ` ${JSON.stringify(meta)}`;
-  } catch (_error) {
-    return ' [unserializable-metadata]';
-  }
-};
-
-const write = (level: LogLevel, message: string, meta?: LogPayload) => {
-  if (!shouldLog(level)) return;
-  const timestamp = new Date().toISOString();
-  const line = `[${timestamp}] ${level.toUpperCase()} ${message}${serializeMeta(meta)}`;
-  if (level === 'error') {
-    console.error(line);
-  } else {
-    console.log(line);
-  }
-};
-
-export const logger = {
-  error: (message: string, meta?: LogPayload) => write('error', message, meta),
-  info: (message: string, meta?: LogPayload) => write('info', message, meta),
-  debug: (message: string, meta?: LogPayload) => write('debug', message, meta),
-  level: activeLevel,
-};
-
-export type { LogLevel };
+// LogLevel 타입도 그대로 export (기존 코드 호환)
+export type LogLevel = 'error' | 'warn' | 'info' | 'debug';

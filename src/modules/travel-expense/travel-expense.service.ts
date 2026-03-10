@@ -9,6 +9,7 @@ import { PushNotificationService } from '../../services/push-notification.servic
 import { AnalyticsService } from '../../services/analytics.service';
 import { ProfileService } from '../profile/profile.service';
 import { QueueEventService } from '../queue/services/queue-event.service';
+import { AppMetricsService } from '../../common/metrics/app-metrics.service';
 
 interface TravelContext {
   id: string;
@@ -61,6 +62,7 @@ export class TravelExpenseService {
     private readonly analyticsService: AnalyticsService,
     private readonly profileService: ProfileService,
     private readonly queueEventService: QueueEventService,
+    private readonly metricsService: AppMetricsService,
   ) {}
 
   /**
@@ -488,6 +490,7 @@ export class TravelExpenseService {
         console.warn(`Failed to emit expense added event: ${error.message}`);
       });
 
+      this.metricsService?.recordExpenseAdded(payload.currency, payload.category ?? null);
       return result;
     }
   }

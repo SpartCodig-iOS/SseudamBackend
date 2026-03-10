@@ -14,6 +14,7 @@ import * as Sentry from '@sentry/node';
 import { AppModule } from './app.module';
 import { env } from './config/env';
 import { logger } from './utils/logger';
+import { PinoNestLogger } from './common/logger/pino-logger';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { MemoryOptimizer } from './utils/memory-optimizer';
 
@@ -26,31 +27,23 @@ async function bootstrap() {
       dsn: env.sentryDsn,
       environment: env.nodeEnv,
       tracesSampleRate: env.sentryTracesSampleRate,
-      profilesSampleRate: 0.1, // 10% 프로파일링 샘플링
-      integrations: [Sentry.expressIntegration()],
+      profilesSampleRate: env.sentryProfilesSampleRate,
+      integrations: [
+        Sentry.expressIntegration(),
+        // HTTP 아웃바운드 요청 추적 (소셜 OAuth, 환율 API 등)
+        Sentry.httpIntegration(),
+      ],
     });
     if (client) {
       Sentry.initOpenTelemetry(client);
     }
   }
 
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
-
-  const resolvedLogLevel = env.logLevel?.toLowerCase() ?? 'info';
-  const loggerLevels: Record<string, ('log' | 'error' | 'warn' | 'debug' | 'verbose')[]> = {
-    silent: [],
-    error: ['error'],
-    warn: ['error', 'warn'],
-    info: ['error', 'warn', 'log'],
-    debug: ['error', 'warn', 'log', 'debug'],
-    verbose: ['error', 'warn', 'log', 'debug', 'verbose'],
-  };
-  const selectedLevels = loggerLevels[resolvedLogLevel] ?? loggerLevels.info;
-  if (selectedLevels.length === 0) {
-    app.useLogger(false);
-  } else {
-    app.useLogger(selectedLevels);
-  }
+  // pino 기반 구조화 로거를 NestJS 로거로 등록
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    logger: new PinoNestLogger(),
+    bufferLogs: false,
+  });
 
   const helmetOptions: HelmetOptions = {
     contentSecurityPolicy: {

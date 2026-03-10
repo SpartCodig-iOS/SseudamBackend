@@ -8,6 +8,7 @@ import {
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { Request, Response } from 'express';
+import { RequestContext } from '../context/request-context';
 
 @Injectable()
 export class PerformanceInterceptor implements NestInterceptor {
@@ -79,7 +80,10 @@ export class PerformanceInterceptor implements NestInterceptor {
         if (!response.headersSent) {
           response.set({
             'X-Response-Time': `${duration.toFixed(2)}ms`,
-            'X-Request-ID': `req_${startTime}`,
+            // 미들웨어에서 설정한 requestId 재사용 (없으면 폴백)
+            'X-Request-ID': RequestContext.getRequestId() !== 'unknown'
+              ? RequestContext.getRequestId()
+              : `req_${startTime}`,
           });
         }
 

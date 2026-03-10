@@ -11,6 +11,7 @@ import { ZodError, ZodIssue } from 'zod';
 import { logger } from '../../utils/logger';
 import { env } from '../../config/env';
 import { DatabaseError } from 'pg';
+import { RequestContext } from '../context/request-context';
 
 const formatZodIssue = (issue: ZodIssue) => ({
   path: issue.path,
@@ -30,6 +31,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
+    const requestId = RequestContext.getRequestId();
     const normalizeDbError = (err: DatabaseError) => {
       const code = err.code;
       // PostgreSQL 에러코드 매핑 (https://www.postgresql.org/docs/current/errcodes-appendix.html)
@@ -41,10 +43,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     if (exception instanceof ZodError) {
       const issues = exception.issues.map(formatZodIssue);
-      logger.info('Validation failed', { issues });
+      logger.info('Validation failed', { issues, requestId });
       return response.status(HttpStatus.BAD_REQUEST).json({
         code: HttpStatus.BAD_REQUEST,
         message: '요청 데이터 형식이 올바르지 않습니다.',
+        requestId,
         data: { errors: issues },
       });
     }
@@ -62,16 +65,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const data = typeof res === 'object' && res && 'data' in res ? (res as any).data : [];
 
       if (status >= 500) {
-        logger.error('Unhandled exception', { message, stack: exception.stack });
+        logger.error('Unhandled exception', { message, stack: exception.stack, requestId });
         this.capture(exception);
       } else {
-        logger.info('Handled error response', { status, message });
+        logger.info('Handled error response', { status, message, requestId });
       }
 
       return response.status(status).json({
         code: status,
         data,
         message,
+        requestId,
       });
     }
 
@@ -85,16 +89,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
           code: mapped.status,
           data: [],
           message: mapped.message,
+          requestId,
         });
       }
     }
-    logger.error('Unhandled exception', { message, stack: (exception as Error)?.stack });
+    logger.error('Unhandled exception', { message, stack: (exception as Error)?.stack, requestId });
     this.capture(exception);
 
     return response.status(status).json({
       code: status,
       data: [],
       message,
+      requestId,
     });
   }
 }

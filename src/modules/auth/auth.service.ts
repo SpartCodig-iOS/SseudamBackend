@@ -25,6 +25,7 @@ import { EnhancedJwtService } from '../../services/enhanced-jwt.service';
 // AuthSessionPayload는 AuthSessionService에서 정의 (공유 타입)
 export { AuthSessionPayload } from '../shared/auth-session.service';
 import { AuthSessionPayload } from '../shared/auth-session.service';
+import { AppMetricsService } from '../../common/metrics/app-metrics.service';
 
 // RefreshPayload는 AuthSessionPayload와 동일한 구조
 type RefreshPayload = AuthSessionPayload;
@@ -56,6 +57,8 @@ export class AuthService {
     private readonly authSessionService: AuthSessionService,
     // 통합 로그아웃 플로우에서 JWT blacklist 처리에 사용
     private readonly enhancedJwtService: EnhancedJwtService,
+    // 메트릭 계측 (Optional: 모듈에 등록되지 않은 환경에서도 동작)
+    private readonly metricsService: AppMetricsService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -355,6 +358,8 @@ export class AuthService {
       emailHint,
     });
     if (!user) {
+      const failDuration = Date.now() - startTime;
+      this.metricsService?.recordLoginAttempt(loginType as any, failDuration, 'failure');
       throw new UnauthorizedException('Invalid credentials');
     }
 
@@ -368,6 +373,7 @@ export class AuthService {
 
     const duration = Date.now() - startTime;
     this.logger.debug(`Fast login completed in ${duration}ms for ${identifier}`);
+    this.metricsService?.recordLoginAttempt(loginType as any, duration, 'success');
 
     return result;
   }

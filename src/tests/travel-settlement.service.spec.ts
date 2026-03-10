@@ -26,7 +26,15 @@ import { TravelSettlementService } from '../modules/travel-settlement/travel-set
 function buildService(): TravelSettlementService {
   const mockDataSource = {} as any;
   const mockCacheService = {} as any;
-  return new TravelSettlementService(mockDataSource, mockCacheService);
+  const mockMetricsService = {
+    recordSettlementCalculated: () => undefined,
+    recordTravelCreated: () => undefined,
+    recordLoginAttempt: () => undefined,
+    recordExpenseAdded: () => undefined,
+    updateCacheHitRatio: () => undefined,
+    recordHttpRequest: () => undefined,
+  } as any;
+  return new TravelSettlementService(mockDataSource, mockCacheService, mockMetricsService);
 }
 
 function member(memberId: string, balance: number, name: string | null = null) {

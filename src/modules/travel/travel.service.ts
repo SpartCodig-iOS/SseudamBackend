@@ -14,10 +14,12 @@ import { CreateTravelInput } from '../../validators/travelSchemas';
 import { UserRecord } from '../../types/user';
 import { MetaService } from '../meta/meta.service';
 import { CacheService } from '../../services/cacheService';
+import { AdaptiveCacheService } from '../../services/adaptive-cache.service';
 import { PushNotificationService } from '../../services/push-notification.service';
 import { ProfileService } from '../profile/profile.service';
 import { env } from '../../config/env';
 import { QueueEventService } from '../queue/services/queue-event.service';
+import { AppMetricsService } from '../../common/metrics/app-metrics.service';
 
 export interface TravelSummary {
   id: string;
@@ -62,14 +64,15 @@ export class TravelService {
   private countryCurrencyLoaded = false;
   private countryCurrencyLoadPromise: Promise<void> | null = null;
 
-  // 여행 목록 캐시: 30초 TTL, 사용자별 캐시
-  private readonly travelListCache = new Map<string, { data: TravelSummary[]; expiresAt: number }>();
-  private readonly TRAVEL_LIST_CACHE_TTL = 30 * 1000; // 30초로 단축하여 최신 반영
-  private readonly MAX_CACHE_SIZE = 1000;
+  /**
+   * 여행 목록/상세/멤버 인메모리 캐시: AdaptiveCacheService(LRU) 위임.
+   * 기존 Map 기반 캐시는 제거되었으며, 메모리 상한과 LRU 정책이 자동 적용됩니다.
+   */
+  private readonly TRAVEL_LIST_CACHE_TTL = 30 * 1000; // 30초 (ms, 하위 호환)
+  private readonly MAX_CACHE_SIZE = 1000; // 하위 호환 상수 (AdaptiveCacheService 내부에서 관리)
 
-  // 여행 상세 캐시: 30초 TTL
-  private readonly travelDetailCache = new Map<string, { data: TravelDetail; expiresAt: number }>();
-  private readonly TRAVEL_DETAIL_CACHE_TTL = 30 * 1000; // 30초로 단축하여 최신 반영
+  // 여행 상세 캐시 TTL (하위 호환)
+  private readonly TRAVEL_DETAIL_CACHE_TTL = 30 * 1000;
   private readonly TRAVEL_LIST_REDIS_PREFIX = 'travel:list';
   private readonly TRAVEL_DETAIL_REDIS_PREFIX = 'travel:detail';
   private readonly INVITE_REDIS_PREFIX = 'invite:code';
@@ -86,10 +89,12 @@ export class TravelService {
     private readonly dataSource: DataSource,
     private readonly metaService: MetaService,
     private readonly cacheService: CacheService,
+    private readonly adaptiveCacheService: AdaptiveCacheService,
     private readonly eventEmitter: EventEmitter2,
     private readonly pushNotificationService: PushNotificationService,
     private readonly profileService: ProfileService,
     private readonly queueEventService: QueueEventService,
+    private readonly metricsService: AppMetricsService,
   ) {}
 
   private emitTravelMembershipChanged(travelId: string): void {
@@ -142,106 +147,127 @@ export class TravelService {
     }
   }
 
+  /**
+   * 여행 목록 캐시 조회 (AdaptiveCacheService LRU 위임).
+   * 기존 Map 기반 무제한 증가 문제를 해결합니다.
+   */
   private async getCachedTravelList(key: string, rawKey = false): Promise<TravelSummary[] | null> {
-    const cacheKey = rawKey ? key : `${key}`;
-    // Redis 우선
-    try {
-      const redisData = await this.cacheService.get<TravelSummary[]>(cacheKey, {
-        prefix: this.TRAVEL_LIST_REDIS_PREFIX,
-      });
-      if (redisData) {
-        this.travelListCache.set(cacheKey, { data: redisData, expiresAt: Date.now() + this.TRAVEL_LIST_CACHE_TTL });
-        return redisData;
-      }
-    } catch (error) {
-      this.logger.warn(`[Travel] Redis travel list miss for ${cacheKey}:`, error);
-    }
+    const cacheKey = rawKey ? key : key;
 
-    const cached = this.travelListCache.get(cacheKey);
-    if (!cached || Date.now() > cached.expiresAt) {
-      this.travelListCache.delete(cacheKey);
+    // AdaptiveCacheService L1(LRU) → L2(Redis) 순으로 조회
+    try {
+      const entry = await this.adaptiveCacheService.get<TravelSummary[] | null>(
+        `travel_list:${cacheKey}`,
+        async () => {
+          // L2 Redis 체크
+          const redisData = await this.cacheService.get<TravelSummary[]>(cacheKey, {
+            prefix: this.TRAVEL_LIST_REDIS_PREFIX,
+          });
+          return redisData ?? null;
+        },
+        {
+          baseTtl: Math.floor(this.TRAVEL_LIST_CACHE_TTL / 1000),
+          maxTtlMultiplier: 2,
+          tags: ['travel_list'],
+        },
+      );
+      return entry;
+    } catch (error) {
+      this.logger.warn(`[Travel] getCachedTravelList failed for ${cacheKey}:`, error);
       return null;
     }
-    return cached.data;
   }
 
   private setCachedTravelList(key: string, travels: TravelSummary[], rawKey = false): void {
-    const cacheKey = rawKey ? key : `${key}`;
-    if (this.travelListCache.size >= this.MAX_CACHE_SIZE) {
-      const oldestKey = this.travelListCache.keys().next().value;
-      if (oldestKey) this.travelListCache.delete(oldestKey);
-    }
-    this.travelListCache.set(cacheKey, {
-      data: travels,
-      expiresAt: Date.now() + this.TRAVEL_LIST_CACHE_TTL
-    });
+    const cacheKey = rawKey ? key : key;
+    const ttlSeconds = Math.floor(this.TRAVEL_LIST_CACHE_TTL / 1000);
 
-    // Redis에도 캐싱
-    this.cacheService.set(cacheKey, travels, {
-      prefix: this.TRAVEL_LIST_REDIS_PREFIX,
-      ttl: Math.floor(this.TRAVEL_LIST_CACHE_TTL / 1000),
-    }).catch(() => undefined);
+    // AdaptiveCacheService에 저장 (내부에서 Redis L2도 자동 저장)
+    this.adaptiveCacheService
+      .get<TravelSummary[]>(
+        `travel_list:${cacheKey}`,
+        async () => travels,
+        { baseTtl: ttlSeconds, maxTtlMultiplier: 2, tags: ['travel_list'] },
+      )
+      .catch(() => undefined);
+
+    // Redis에도 직접 저장 (다른 프로세스와의 호환성)
+    this.cacheService
+      .set(cacheKey, travels, {
+        prefix: this.TRAVEL_LIST_REDIS_PREFIX,
+        ttl: ttlSeconds,
+      })
+      .catch(() => undefined);
   }
 
+  /**
+   * 여행 상세 캐시 조회 (AdaptiveCacheService LRU 위임).
+   */
   private async getCachedTravelDetail(travelId: string): Promise<TravelDetail | null> {
-    // Redis 우선
     try {
-      const redisData = await this.cacheService.get<TravelDetail>(travelId, {
-        prefix: this.TRAVEL_DETAIL_REDIS_PREFIX,
-      });
-      if (redisData) {
-        this.travelDetailCache.set(travelId, { data: redisData, expiresAt: Date.now() + this.TRAVEL_DETAIL_CACHE_TTL });
-        return redisData;
-      }
+      const entry = await this.adaptiveCacheService.get<TravelDetail | null>(
+        `travel_detail:${travelId}`,
+        async () => {
+          const redisData = await this.cacheService.get<TravelDetail>(travelId, {
+            prefix: this.TRAVEL_DETAIL_REDIS_PREFIX,
+          });
+          return redisData ?? null;
+        },
+        {
+          baseTtl: Math.floor(this.TRAVEL_DETAIL_CACHE_TTL / 1000),
+          maxTtlMultiplier: 3,
+          tags: [`travel:${travelId}`],
+        },
+      );
+      return entry;
     } catch (error) {
-      this.logger.warn(`[Travel] Redis travel detail miss for ${travelId}:`, error);
-    }
-
-    const cached = this.travelDetailCache.get(travelId);
-    if (!cached || Date.now() > cached.expiresAt) {
-      this.travelDetailCache.delete(travelId);
+      this.logger.warn(`[Travel] getCachedTravelDetail failed for ${travelId}:`, error);
       return null;
     }
-    return cached.data;
   }
 
   private setCachedTravelDetail(travelId: string, travel: TravelDetail): void {
-    if (this.travelDetailCache.size >= this.MAX_CACHE_SIZE) {
-      const oldestKey = this.travelDetailCache.keys().next().value;
-      if (oldestKey) this.travelDetailCache.delete(oldestKey);
-    }
-    this.travelDetailCache.set(travelId, {
-      data: travel,
-      expiresAt: Date.now() + this.TRAVEL_DETAIL_CACHE_TTL
-    });
+    const ttlSeconds = Math.floor(this.TRAVEL_DETAIL_CACHE_TTL / 1000);
 
-    this.cacheService.set(travelId, travel, {
-      prefix: this.TRAVEL_DETAIL_REDIS_PREFIX,
-      ttl: Math.floor(this.TRAVEL_DETAIL_CACHE_TTL / 1000),
-    }).catch(() => undefined);
+    // AdaptiveCacheService에 저장 (LRU + Redis)
+    this.adaptiveCacheService
+      .get<TravelDetail>(
+        `travel_detail:${travelId}`,
+        async () => travel,
+        { baseTtl: ttlSeconds, maxTtlMultiplier: 3, tags: [`travel:${travelId}`] },
+      )
+      .catch(() => undefined);
+
+    this.cacheService
+      .set(travelId, travel, {
+        prefix: this.TRAVEL_DETAIL_REDIS_PREFIX,
+        ttl: ttlSeconds,
+      })
+      .catch(() => undefined);
 
     // 멤버십 캐시도 함께 갱신해 상세 조회 시 DB 조회를 줄임
-    travel.members?.forEach(member => {
+    travel.members?.forEach((member) => {
       this.setMemberCache(travelId, member.userId, true);
     });
   }
 
   private invalidateUserTravelCache(userId: string): void {
-    // 메모리 캐시에서 해당 사용자의 모든 키 삭제
-    const keys = Array.from(this.travelListCache.keys()).filter(key => key.startsWith(`${userId}:`));
-    keys.forEach(key => this.travelListCache.delete(key));
+    // AdaptiveCacheService 태그 기반 무효화
+    this.adaptiveCacheService.invalidateByTag(`user:${userId}`).catch(() => undefined);
+    this.adaptiveCacheService.invalidateByTag('travel_list').catch(() => undefined);
 
-    // Redis 캐시에서도 해당 사용자의 모든 여행 목록 삭제
+    // Redis 캐시 패턴 삭제 (다른 프로세스 호환)
     this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:${userId}:*`).catch(() => undefined);
-    // 최적화 서비스 캐시도 함께 제거
     this.cacheService.delPattern(`user_travels:${userId}:*`).catch(() => undefined);
-    // travel_detail:* 전체 삭제 대신 사용자 관련 목록 캐시만 제거
   }
 
   private invalidateTravelDetailCache(travelId: string): void {
-    this.travelDetailCache.delete(travelId);
+    // AdaptiveCacheService LRU에서 제거
+    this.adaptiveCacheService.del(`travel_detail:${travelId}`).catch(() => undefined);
+    this.adaptiveCacheService.invalidateByTag(`travel:${travelId}`).catch(() => undefined);
+
+    // Redis에서도 제거 (하위 호환)
     this.cacheService.del(travelId, { prefix: this.TRAVEL_DETAIL_REDIS_PREFIX }).catch(() => undefined);
-    // 최적화 서비스의 상세 캐시도 함께 제거
     this.cacheService.del(`travel_detail:${travelId}`).catch(() => undefined);
   }
 
@@ -783,8 +809,10 @@ export class TravelService {
         this.logger.warn(`Failed to emit travel created event: ${error.message}`);
       });
 
+      this.metricsService?.recordTravelCreated('success');
       return travel;
     } catch (error) {
+      this.metricsService?.recordTravelCreated('error');
       this.logger.error('Failed to create travel', error as Error);
       throw new InternalServerErrorException('여행 생성에 실패했습니다.');
     }
@@ -1348,10 +1376,10 @@ export class TravelService {
     // 여행에 참여한 모든 멤버의 목록 캐시도 무효화 (최적화된 패턴 삭제)
     await this.invalidateTravelCachesForMembers(travelId);
 
-    // 🔥 임시: 강제 전체 캐시 클리어 (디버깅용)
+    // 강제 전체 캐시 클리어 (업데이트 직후 최신 반영 보장)
     this.logger.warn(`[CACHE-DEBUG] updateTravel: Forcing cache clear for travel ${travelId}, user ${userId}`);
-    this.travelListCache.clear();
-    this.travelDetailCache.clear();
+    // AdaptiveCacheService 태그 기반 무효화 (travel_list 전체 + 해당 여행 상세)
+    await this.adaptiveCacheService.invalidateByTags(['travel_list', `travel:${travelId}`]).catch(() => undefined);
     await this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:*`).catch(() => undefined);
     await this.cacheService.delPattern(`${this.TRAVEL_DETAIL_REDIS_PREFIX}:*`).catch(() => undefined);
 
