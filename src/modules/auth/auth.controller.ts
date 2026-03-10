@@ -327,7 +327,13 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '로그아웃 (sessionId 기반)' })
+  @ApiOperation({
+    summary: '로그아웃 (sessionId + JWT blacklist 통합)',
+    description:
+      'sessionId로 세션을 삭제하고, Authorization 헤더의 Bearer 토큰이 있으면 ' +
+      'JWT blacklist에도 등록하여 즉시 무효화합니다. ' +
+      '두 작업을 하나의 요청으로 처리하므로 /logout-jwt 를 별도로 호출할 필요가 없습니다.',
+  })
   @ApiBody({
     schema: {
       type: 'object',
@@ -337,9 +343,20 @@ export class AuthController {
       },
     },
   })
-  async logout(@Body() body: unknown) {
+  async logout(@Body() body: unknown, @Req() req: RequestWithUser) {
     const payload = logoutSchema.parse(body);
-    const result = await this.authService.logoutBySessionId(payload.sessionId);
+
+    // Authorization 헤더에서 Bearer 토큰 추출 (있는 경우 blacklist 처리)
+    const authHeader = req.headers?.authorization ?? '';
+    const accessToken = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : undefined;
+
+    const result = await this.authService.logout({
+      sessionId: payload.sessionId,
+      accessToken,
+    });
+
     return success(result, 'Logout successful');
   }
 

@@ -30,6 +30,20 @@ let TravelSettlementController = class TravelSettlementController {
         const summary = await this.travelSettlementService.getSettlementSummary(travelId, req.currentUser.id);
         return (0, api_1.success)(summary);
     }
+    async saveComputed(travelId, req, idempotencyKey) {
+        if (!req.currentUser) {
+            throw new common_1.UnauthorizedException('Unauthorized');
+        }
+        const summary = await this.travelSettlementService.saveComputedSettlements(travelId, req.currentUser.id, { idempotencyKey: idempotencyKey ?? undefined });
+        return (0, api_1.success)(summary);
+    }
+    async markComplete(travelId, settlementId, req) {
+        if (!req.currentUser) {
+            throw new common_1.UnauthorizedException('Unauthorized');
+        }
+        const summary = await this.travelSettlementService.markSettlementCompleted(travelId, req.currentUser.id, settlementId);
+        return (0, api_1.success)(summary);
+    }
     async getStatistics(travelId, req) {
         if (!req.currentUser) {
             throw new common_1.UnauthorizedException('Unauthorized');
@@ -51,9 +65,48 @@ __decorate([
     __metadata("design:returntype", Promise)
 ], TravelSettlementController.prototype, "getSummary", null);
 __decorate([
+    (0, common_1.Post)('compute'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({
+        summary: '정산 계산 결과 저장 (낙관적 락 + 멱등성 보장)',
+        description: 'Idempotency-Key 헤더를 제공하면 동일 키의 중복 요청을 막아 줍니다. ' +
+            '두 사용자가 동시에 요청할 경우 두 번째 요청은 409 Conflict를 반환합니다.',
+    }),
+    (0, swagger_1.ApiHeader)({
+        name: 'Idempotency-Key',
+        description: '클라이언트가 생성한 UUID — 동일 키로 재요청 시 캐시된 결과 반환',
+        required: false,
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: travel_settlement_dto_1.TravelSettlementDto }),
+    __param(0, (0, common_1.Param)('travelId')),
+    __param(1, (0, common_1.Req)()),
+    __param(2, (0, common_1.Headers)('Idempotency-Key')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object, String]),
+    __metadata("design:returntype", Promise)
+], TravelSettlementController.prototype, "saveComputed", null);
+__decorate([
+    (0, common_1.Patch)(':settlementId/complete'),
+    (0, common_1.HttpCode)(common_1.HttpStatus.OK),
+    (0, swagger_1.ApiOperation)({
+        summary: '특정 정산 완료 처리 (낙관적 락 — 동시 수정 방지)',
+        description: '이미 완료 상태인 항목은 재처리 없이 현재 정산 요약을 반환합니다 (멱등성). ' +
+            '다른 사용자가 동시에 같은 항목을 수정하면 409 Conflict를 반환합니다.',
+    }),
+    (0, swagger_1.ApiOkResponse)({ type: travel_settlement_dto_1.TravelSettlementDto }),
+    __param(0, (0, common_1.Param)('travelId')),
+    __param(1, (0, common_1.Param)('settlementId')),
+    __param(2, (0, common_1.Req)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, Object]),
+    __metadata("design:returntype", Promise)
+], TravelSettlementController.prototype, "markComplete", null);
+__decorate([
     (0, common_1.Get)('statistics'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    (0, swagger_1.ApiOperation)({ summary: '정산 통계 조회 - 총 내역, 내가 쓴 금액, 모든 멤버의 받을/줄 금액' }),
+    (0, swagger_1.ApiOperation)({
+        summary: '정산 통계 조회 - 총 내역, 내가 쓴 금액, 모든 멤버의 받을/줄 금액',
+    }),
     (0, swagger_1.ApiOkResponse)({
         schema: {
             type: 'object',
@@ -63,28 +116,34 @@ __decorate([
                 data: {
                     type: 'object',
                     properties: {
-                        totalExpenseAmount: { type: 'number', description: '총 지출 금액 (KRW)', example: 150000 },
-                        myPaidAmount: { type: 'number', description: '내가 지출한 금액 (KRW)', example: 80000 },
-                        mySharedAmount: { type: 'number', description: '내가 부담해야 할 금액 (KRW)', example: 75000 },
-                        myBalance: { type: 'number', description: '내 잔액 (양수: 받을 금액, 음수: 줄 금액)', example: 5000 },
-                        balanceStatus: { type: 'string', enum: ['receive', 'pay', 'settled'], description: '잔액 상태', example: 'receive' },
+                        totalExpenseAmount: { type: 'number', example: 150000 },
+                        myPaidAmount: { type: 'number', example: 80000 },
+                        mySharedAmount: { type: 'number', example: 75000 },
+                        myBalance: { type: 'number', example: 5000 },
+                        balanceStatus: {
+                            type: 'string',
+                            enum: ['receive', 'pay', 'settled'],
+                            example: 'receive',
+                        },
                         memberBalances: {
                             type: 'array',
-                            description: '모든 여행 멤버의 잔액 정보',
                             items: {
                                 type: 'object',
                                 properties: {
-                                    memberId: { type: 'string', description: '멤버 ID', example: 'e11c473b-052d-4740-8213-999c05bfc332' },
-                                    memberName: { type: 'string', description: '멤버 이름', example: '홍길동' },
-                                    balance: { type: 'number', description: '잔액 (양수: 받을 금액, 음수: 줄 금액)', example: -5000 },
-                                    balanceStatus: { type: 'string', enum: ['receive', 'pay', 'settled'], description: '잔액 상태', example: 'pay' }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+                                    memberId: { type: 'string' },
+                                    memberName: { type: 'string' },
+                                    balance: { type: 'number' },
+                                    balanceStatus: {
+                                        type: 'string',
+                                        enum: ['receive', 'pay', 'settled'],
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        },
     }),
     __param(0, (0, common_1.Param)('travelId')),
     __param(1, (0, common_1.Req)()),

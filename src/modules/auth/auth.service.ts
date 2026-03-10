@@ -2,19 +2,16 @@ import {
   Injectable,
   InternalServerErrorException,
   UnauthorizedException,
-  Inject,
-  forwardRef,
   Logger,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import bcrypt from 'bcryptjs';
-import { createHash } from 'crypto';
 import { LoginType } from '../../types/auth';
 import { UserRecord } from '../../types/user';
 import { LoginInput, SignupInput } from '../../validators/authSchemas';
-import { JwtTokenService, TokenPair } from '../../services/jwtService';
-import { SessionRecord, SessionService } from '../../services/sessionService';
+import { JwtTokenService } from '../../services/jwtService';
+import { SessionService } from '../../services/sessionService';
 import { SupabaseService } from '../../services/supabaseService';
 import { OAuthTokenService } from '../../services/oauth-token.service';
 import { OptimizedOAuthService } from '../oauth/optimized-oauth.service';
@@ -23,20 +20,14 @@ import { fromSupabaseUser } from '../../utils/mappers';
 import { OAuthTokenOptions, SocialAuthService } from '../oauth/social-auth.service';
 import { UserRepository } from '../../repositories/user.repository';
 import { User } from '../../entities/user.entity';
+import { AuthSessionService } from '../shared/auth-session.service';
+import { EnhancedJwtService } from '../../services/enhanced-jwt.service';
+// AuthSessionPayload는 AuthSessionService에서 정의 (공유 타입)
+export { AuthSessionPayload } from '../shared/auth-session.service';
+import { AuthSessionPayload } from '../shared/auth-session.service';
 
-export interface AuthSessionPayload {
-  user: UserRecord;
-  tokenPair: TokenPair;
-  loginType: LoginType;
-  session: SessionRecord;
-}
-
-interface RefreshPayload {
-  user: UserRecord;
-  tokenPair: TokenPair;
-  loginType: LoginType;
-  session: SessionRecord;
-}
+// RefreshPayload는 AuthSessionPayload와 동일한 구조
+type RefreshPayload = AuthSessionPayload;
 
 @Injectable()
 export class AuthService {
@@ -44,10 +35,6 @@ export class AuthService {
   private readonly identifierCache = new Map<string, { email: string; expiresAt: number }>();
   private readonly IDENTIFIER_CACHE_TTL = 5 * 60 * 1000;
   private readonly IDENTIFIER_CACHE_REDIS_PREFIX = 'identifier';
-
-  // 성공한 로그인에 대한 bcrypt 캐시 (5분 TTL)
-  private readonly bcryptCache = new Map<string, { hash: string; expiresAt: number }>();
-  private readonly BCRYPT_CACHE_TTL = 5 * 60 * 1000;
 
   // 사용자 정보 캐시 (2분 TTL, 빠른 재로그인)
   private readonly userCache = new Map<string, { user: UserRecord; expiresAt: number }>();
@@ -62,10 +49,13 @@ export class AuthService {
     private readonly userRepository: UserRepository,
     @InjectDataSource()
     private readonly dataSource: DataSource,
-    @Inject(forwardRef(() => OptimizedOAuthService))
+    // forwardRef 제거: AuthModule이 OAuthModule을 import하므로 단방향 의존 가능
     private readonly optimizedOAuthService: OptimizedOAuthService,
-    @Inject(forwardRef(() => SocialAuthService))
     private readonly socialAuthService: SocialAuthService,
+    // 세션 생성 로직을 AuthSessionService로 위임 (SocialAuthService와 공유)
+    private readonly authSessionService: AuthSessionService,
+    // 통합 로그아웃 플로우에서 JWT blacklist 처리에 사용
+    private readonly enhancedJwtService: EnhancedJwtService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -130,47 +120,6 @@ export class AuthService {
   }
 
   // ---------------------------------------------------------------------------
-  // bcrypt 캐시 헬퍼
-  // 캐시 키: HMAC(email + password) → 평문 비밀번호가 메모리에 남지 않도록 함
-  // ---------------------------------------------------------------------------
-
-  private makeBcryptCacheKey(email: string, password: string): string {
-    return createHash('sha256')
-      .update(`${email}:${password}`)
-      .digest('hex');
-  }
-
-  private getCachedBcryptResult(email: string, password: string): boolean | null {
-    const cacheKey = this.makeBcryptCacheKey(email, password);
-    const cached = this.bcryptCache.get(cacheKey);
-    if (!cached) return null;
-
-    if (Date.now() > cached.expiresAt) {
-      this.bcryptCache.delete(cacheKey);
-      return null;
-    }
-
-    return cached.hash === 'verified';
-  }
-
-  private setCachedBcryptResult(email: string, password: string, isValid: boolean): void {
-    if (!isValid) return;
-
-    const cacheKey = this.makeBcryptCacheKey(email, password);
-    this.bcryptCache.set(cacheKey, {
-      hash: 'verified',
-      expiresAt: Date.now() + this.BCRYPT_CACHE_TTL,
-    });
-
-    if (this.bcryptCache.size > 500) {
-      const oldestKey = this.bcryptCache.keys().next().value;
-      if (oldestKey) {
-        this.bcryptCache.delete(oldestKey);
-      }
-    }
-  }
-
-  // ---------------------------------------------------------------------------
   // Redis 기반 사용자 캐시 헬퍼 (보안상 password_hash 미포함)
   // ---------------------------------------------------------------------------
 
@@ -227,8 +176,8 @@ export class AuthService {
   }
 
   // ---------------------------------------------------------------------------
-  // authenticateUserDirect: TypeORM Repository 기반 고성능 인증
-  // 캐시 레이어: Redis user cache → bcrypt cache → TypeORM query
+  // authenticateUserDirect: TypeORM Repository 기반 인증
+  // 캐시 레이어: Redis user cache → TypeORM query → bcrypt.compare (캐시 없음)
   // ---------------------------------------------------------------------------
 
   private async authenticateUserDirect(
@@ -238,23 +187,9 @@ export class AuthService {
   ): Promise<UserRecord | null> {
     const authStartTime = Date.now();
     const lookupMode = options.lookupType ?? 'email';
-    const cacheEmail =
-      options.emailHint ??
-      (identifier.includes('@') ? identifier.toLowerCase() : null);
 
-    // 1단계: Redis user cache 확인 + bcrypt cache 조합으로 초고속 인증
-    if (cacheEmail) {
-      const cachedUser = await this.getCachedUser(cacheEmail);
-      if (cachedUser) {
-        const cachedBcryptResult = this.getCachedBcryptResult(cacheEmail, password);
-        if (cachedBcryptResult === true) {
-          this.logger.debug(`Full Redis cache hit for ${cacheEmail} - ultra fast auth`);
-          return cachedUser;
-        }
-      }
-    }
-
-    // 2단계: TypeORM Repository로 사용자 조회 (N+1 방지 - 단일 쿼리)
+    // 1단계: TypeORM Repository로 사용자 조회 (N+1 방지 - 단일 쿼리)
+    // bcrypt 캐시는 보안상 제거됨 — 매 요청마다 bcrypt.compare 수행
     const shouldUseEmailLookup =
       lookupMode === 'email' || (lookupMode === 'auto' && identifier.includes('@'));
 
@@ -279,18 +214,11 @@ export class AuthService {
       return null;
     }
 
-    // 3단계: 비밀번호 검증
+    // 3단계: 비밀번호 검증 (매 요청마다 bcrypt.compare 수행 — 캐시 없음)
     let isValidPassword = false;
 
     if (user.password_hash) {
-      const cachedResult = this.getCachedBcryptResult(resolvedEmail, password);
-      if (cachedResult !== null) {
-        isValidPassword = cachedResult;
-        this.logger.debug(`bcrypt cache hit for ${resolvedEmail}`);
-      } else {
-        isValidPassword = await bcrypt.compare(password, user.password_hash);
-        this.setCachedBcryptResult(resolvedEmail, password, isValidPassword);
-      }
+      isValidPassword = await bcrypt.compare(password, user.password_hash);
     } else {
       // password_hash 없는 경우 Supabase 인증으로 폴백 (소셜 전용 계정)
       try {
@@ -315,32 +243,13 @@ export class AuthService {
   }
 
   // ---------------------------------------------------------------------------
-  // createAuthSession: 세션 + 토큰 쌍 생성
+  // createAuthSession: 세션 + 토큰 쌍 생성 (AuthSessionService에 위임)
   // ---------------------------------------------------------------------------
 
   async createAuthSession(user: UserRecord, loginType: LoginType): Promise<AuthSessionPayload> {
-    const startTime = Date.now();
-
-    // 세션 생성 전 프로필 레코드가 확실히 존재하도록 보장 (FK 오류 방지)
-    await this.supabaseService.upsertProfile({
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      username: user.username,
-      loginType,
-      avatarUrl: user.avatar_url,
-    });
-
-    const [session] = await Promise.all([
-      this.sessionService.createSession(user.id, loginType),
-    ]);
-
-    const tokenPair = this.jwtTokenService.generateTokenPair(user, loginType, session.sessionId);
-
-    const duration = Date.now() - startTime;
-    this.logger.debug(`Auth session created in ${duration}ms for user ${user.id}`);
-
-    return { user, tokenPair, loginType, session };
+    // 공유 로직은 AuthSessionService에 위임
+    // SocialAuthService도 동일한 AuthSessionService를 사용하므로 중복 없음
+    return this.authSessionService.createAuthSession(user, loginType);
   }
 
   // ---------------------------------------------------------------------------
@@ -705,7 +614,7 @@ export class AuthService {
   }
 
   // ---------------------------------------------------------------------------
-  // logoutBySessionId
+  // logoutBySessionId  (기존 — 세션 삭제만)
   // ---------------------------------------------------------------------------
 
   async logoutBySessionId(sessionId: string): Promise<{ revoked: boolean }> {
@@ -714,5 +623,59 @@ export class AuthService {
     }
     const deleted = await this.sessionService.deleteSession(sessionId);
     return { revoked: deleted };
+  }
+
+  // ---------------------------------------------------------------------------
+  // logout  — 통합 로그아웃 플로우
+  //   1. 세션 삭제 (SessionService)
+  //   2. JWT blacklist 추가 (EnhancedJwtService)
+  //
+  // 두 작업을 하나의 메서드로 묶어 클라이언트가 별도 엔드포인트를 신경 쓰지 않아도 됨.
+  // 어느 한 쪽이 실패해도 최대한 나머지를 처리하고 결과를 반환한다.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * 통합 로그아웃 플로우
+   *
+   * 1. 세션 삭제 (SessionService) — 필수
+   * 2. JWT blacklist 추가 (EnhancedJwtService) — accessToken 전달 시 처리
+   *
+   * 두 작업을 하나의 메서드로 묶어 클라이언트가 /logout 와 /logout-jwt 를
+   * 각각 호출하지 않아도 된다. 어느 한 쪽이 실패해도 나머지를 계속 처리한다.
+   */
+  async logout(params: {
+    sessionId: string;
+    accessToken?: string;
+  }): Promise<{ revoked: boolean; tokenInvalidated: boolean }> {
+    if (!params.sessionId) {
+      throw new UnauthorizedException('sessionId is required');
+    }
+
+    // 1. 세션 삭제 (필수)
+    let revoked = false;
+    try {
+      revoked = await this.sessionService.deleteSession(params.sessionId);
+    } catch (error) {
+      this.logger.warn('[logout] Session deletion failed', error as Error);
+    }
+
+    // 2. JWT blacklist 추가 (선택 — accessToken 미전달 시 건너뜀)
+    let tokenInvalidated = false;
+    if (params.accessToken) {
+      try {
+        tokenInvalidated = await this.enhancedJwtService.invalidateToken(
+          params.accessToken,
+          'logout',
+        );
+      } catch (error) {
+        this.logger.warn('[logout] JWT blacklisting failed', error as Error);
+      }
+    }
+
+    this.logger.debug(
+      `[logout] sessionId=${params.sessionId} revoked=${revoked} tokenInvalidated=${tokenInvalidated}`,
+    );
+
+    return { revoked, tokenInvalidated };
   }
 }

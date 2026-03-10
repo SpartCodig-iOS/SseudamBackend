@@ -127,9 +127,17 @@ let AuthController = AuthController_1 = class AuthController {
             supabaseDeleted: result.supabaseDeleted,
         }, 'Account deleted successfully');
     }
-    async logout(body) {
+    async logout(body, req) {
         const payload = authSchemas_1.logoutSchema.parse(body);
-        const result = await this.authService.logoutBySessionId(payload.sessionId);
+        // Authorization 헤더에서 Bearer 토큰 추출 (있는 경우 blacklist 처리)
+        const authHeader = req.headers?.authorization ?? '';
+        const accessToken = authHeader.startsWith('Bearer ')
+            ? authHeader.slice(7).trim()
+            : undefined;
+        const result = await this.authService.logout({
+            sessionId: payload.sessionId,
+            accessToken,
+        });
         return (0, api_1.success)(result, 'Logout successful');
     }
     async logoutJwt(req) {
@@ -447,7 +455,12 @@ __decorate([
 __decorate([
     (0, common_1.Post)('logout'),
     (0, common_1.HttpCode)(common_1.HttpStatus.OK),
-    (0, swagger_1.ApiOperation)({ summary: '로그아웃 (sessionId 기반)' }),
+    (0, swagger_1.ApiOperation)({
+        summary: '로그아웃 (sessionId + JWT blacklist 통합)',
+        description: 'sessionId로 세션을 삭제하고, Authorization 헤더의 Bearer 토큰이 있으면 ' +
+            'JWT blacklist에도 등록하여 즉시 무효화합니다. ' +
+            '두 작업을 하나의 요청으로 처리하므로 /logout-jwt 를 별도로 호출할 필요가 없습니다.',
+    }),
     (0, swagger_1.ApiBody)({
         schema: {
             type: 'object',
@@ -458,8 +471,9 @@ __decorate([
         },
     }),
     __param(0, (0, common_1.Body)()),
+    __param(1, (0, common_1.Req)()),
     __metadata("design:type", Function),
-    __metadata("design:paramtypes", [Object]),
+    __metadata("design:paramtypes", [Object, Object]),
     __metadata("design:returntype", Promise)
 ], AuthController.prototype, "logout", null);
 __decorate([
