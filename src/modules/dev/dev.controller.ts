@@ -1,11 +1,11 @@
 import { Controller, Post, Body, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBody, ApiResponse, ApiExcludeController } from '@nestjs/swagger';
-import { APNSService } from '../../services/apns.service';
-import { DeviceTokenService } from '../../services/device-token.service';
-import { PushNotificationService } from '../../services/push-notification.service';
-import { DeepLinkType, DeepLinkUtils } from '../../types/deeplink';
+import { APNSService } from '../notification/services/apns.service';
+import { DeviceTokenService } from '../oauth/services/device-token.service';
+import { PushNotificationService } from '../notification/services/push-notification.service';
+import { DeepLinkType, DeepLinkUtils } from '../notification/types/deeplink.types';
 import { env } from '../../config/env';
-import { success } from '../../types/api';
+import { success } from '../../common/types/api.types';
 
 @ApiTags('Development')
 @ApiExcludeController()

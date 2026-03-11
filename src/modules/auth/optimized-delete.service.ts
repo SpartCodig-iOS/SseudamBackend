@@ -1,12 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { UserRecord } from '../../types/user';
-import { LoginType } from '../../types/auth';
-import { SupabaseService } from '../../services/supabaseService';
-import { OAuthTokenService } from '../../services/oauth-token.service';
+import { UserRecord } from '../user/types/user.types';
+import { LoginType } from './types/auth.types';
+import { SupabaseService } from '../../common/services/supabase.service';
+import { OAuthTokenService } from '../oauth/services/oauth-token.service';
 import { SocialAuthService } from '../oauth/social-auth.service';
-import { CacheService } from '../../services/cacheService';
+import { CacheService } from '../../common/services/cache.service';
 
 @Injectable()
 export class OptimizedDeleteService {

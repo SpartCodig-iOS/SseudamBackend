@@ -1,13 +1,16 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decorators/roles.decorator';
-import { RequestWithUser } from '../../types/request';
-import { UserRole } from '../../types/user';
-import { getPool } from '../../db/pool';
+import { RequestWithUser } from '../types/request.types';
+import { UserRole } from '../../modules/user/types/user.types';
+import { UserRepository } from '../../modules/user/repositories/user.repository';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly userRepository: UserRepository,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const requiredRoles = this.reflector.getAllAndOverride<UserRole[]>(ROLES_KEY, [
@@ -32,12 +35,7 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('Insufficient role');
     }
 
-    const pool = await getPool();
-    const result = await pool.query(
-      `SELECT role FROM profiles WHERE id = $1 LIMIT 1`,
-      [userId],
-    );
-    const dbRole: UserRole | undefined = result.rows[0]?.role ?? undefined;
+    const dbRole = await this.userRepository.findRoleById(userId) as UserRole | null;
 
     if (dbRole && requiredRoles.includes(dbRole)) {
       request.currentUser = request.currentUser

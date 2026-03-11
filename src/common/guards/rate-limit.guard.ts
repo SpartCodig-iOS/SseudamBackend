@@ -11,7 +11,7 @@ import {
   RATE_LIMIT_METADATA_KEY,
   RateLimitOptions,
 } from '../decorators/rate-limit.decorator';
-import { RateLimitService } from '../../services/rateLimitService';
+import { RateLimitService } from '../services/rate-limit.service';
 
 const DEFAULT_WINDOW_MS = 15 * 60 * 1000;
 const DEFAULT_LIMIT = 5;
@@ -23,7 +23,7 @@ export class RateLimitGuard implements CanActivate {
     private readonly rateLimitService: RateLimitService,
   ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const options =
       this.reflector.get<RateLimitOptions>(
         RATE_LIMIT_METADATA_KEY,
@@ -52,7 +52,7 @@ export class RateLimitGuard implements CanActivate {
       `${context.getClass().name}:${context.getHandler().name}`;
     const key = `${prefix}:${ip}`;
 
-    const result = this.rateLimitService.consume(key, limit, windowMs);
+    const result = await this.rateLimitService.consume(key, limit, windowMs);
 
     if (!result.allowed) {
       const retrySeconds = Math.ceil(result.retryAfterMs / 1000);

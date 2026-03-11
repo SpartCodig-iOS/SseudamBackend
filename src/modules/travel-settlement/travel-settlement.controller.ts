@@ -21,8 +21,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AuthGuard } from '../../common/guards/auth.guard';
-import { success } from '../../types/api';
-import { RequestWithUser } from '../../types/request';
+import { success } from '../../common/types/api.types';
+import { RequestWithUser } from '../../common/types/request.types';
 import { TravelSettlementService } from './travel-settlement.service';
 import { TravelSettlementDto } from './dto/travel-settlement.dto';
 

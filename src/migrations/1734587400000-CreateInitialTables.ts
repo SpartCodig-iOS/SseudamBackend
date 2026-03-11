@@ -1,11 +1,11 @@
-import { MigrationInterface, QueryRunner } from 'typeorm';
+import { MigrationInterface, QueryRunner } from "typeorm";
 
 export class CreateInitialTables1734587400000 implements MigrationInterface {
-    name = 'CreateInitialTables1734587400000'
+  name = "CreateInitialTables1734587400000";
 
-    public async up(queryRunner: QueryRunner): Promise<void> {
-        // Create users table (profiles 테이블을 기반으로 한 users 테이블)
-        await queryRunner.query(`
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    // Create users table (profiles 테이블을 기반으로 한 users 테이블)
+    await queryRunner.query(`
             CREATE TABLE IF NOT EXISTS "users" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "email" varchar(255) NOT NULL,
@@ -22,12 +22,16 @@ export class CreateInitialTables1734587400000 implements MigrationInterface {
             )
         `);
 
-        // Create indexes for users
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_users_email" ON "users" ("email")`);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_users_username" ON "users" ("username")`);
+    // Create indexes for users
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_users_email" ON "users" ("email")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_users_username" ON "users" ("username")`,
+    );
 
-        // Create travels table
-        await queryRunner.query(`
+    // Create travels table
+    await queryRunner.query(`
             CREATE TABLE IF NOT EXISTS "travels" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "title" varchar(120) NOT NULL,
@@ -51,13 +55,19 @@ export class CreateInitialTables1734587400000 implements MigrationInterface {
             )
         `);
 
-        // Create indexes for travels
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_travels_owner_id" ON "travels" ("owner_id")`);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_travels_status" ON "travels" ("status")`);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_travels_dates" ON "travels" ("start_date", "end_date")`);
+    // Create indexes for travels
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_travels_owner_id" ON "travels" ("owner_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_travels_status" ON "travels" ("status")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_travels_dates" ON "travels" ("start_date", "end_date")`,
+    );
 
-        // Create travel_members table
-        await queryRunner.query(`
+    // Create travel_members table
+    await queryRunner.query(`
             CREATE TABLE IF NOT EXISTS "travel_members" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "travel_id" uuid NOT NULL,
@@ -72,13 +82,19 @@ export class CreateInitialTables1734587400000 implements MigrationInterface {
             )
         `);
 
-        // Create indexes for travel_members
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_travel_members_travel_id" ON "travel_members" ("travel_id")`);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_travel_members_user_id" ON "travel_members" ("user_id")`);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_travel_members_role" ON "travel_members" ("role")`);
+    // Create indexes for travel_members
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_travel_members_travel_id" ON "travel_members" ("travel_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_travel_members_user_id" ON "travel_members" ("user_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_travel_members_role" ON "travel_members" ("role")`,
+    );
 
-        // Create travel_expenses table
-        await queryRunner.query(`
+    // Create travel_expenses table
+    await queryRunner.query(`
             CREATE TABLE IF NOT EXISTS "travel_expenses" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "travel_id" uuid NOT NULL,
@@ -100,15 +116,25 @@ export class CreateInitialTables1734587400000 implements MigrationInterface {
             )
         `);
 
-        // Create indexes for travel_expenses
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_travel_expenses_travel_id" ON "travel_expenses" ("travel_id")`);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_travel_expenses_author_id" ON "travel_expenses" ("author_id")`);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_travel_expenses_payer_id" ON "travel_expenses" ("payer_id")`);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_travel_expenses_date" ON "travel_expenses" ("expense_date")`);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_travel_expenses_category" ON "travel_expenses" ("category")`);
+    // Create indexes for travel_expenses
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_travel_expenses_travel_id" ON "travel_expenses" ("travel_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_travel_expenses_author_id" ON "travel_expenses" ("author_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_travel_expenses_payer_id" ON "travel_expenses" ("payer_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_travel_expenses_date" ON "travel_expenses" ("expense_date")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_travel_expenses_category" ON "travel_expenses" ("category")`,
+    );
 
-        // Create travel_expense_participants table
-        await queryRunner.query(`
+    // Create travel_expense_participants table
+    await queryRunner.query(`
             CREATE TABLE IF NOT EXISTS "travel_expense_participants" (
                 "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
                 "expense_id" uuid NOT NULL,
@@ -121,17 +147,23 @@ export class CreateInitialTables1734587400000 implements MigrationInterface {
             )
         `);
 
-        // Create indexes for travel_expense_participants
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_travel_expense_participants_expense_id" ON "travel_expense_participants" ("expense_id")`);
-        await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_travel_expense_participants_user_id" ON "travel_expense_participants" ("user_id")`);
-    }
+    // Create indexes for travel_expense_participants
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_travel_expense_participants_expense_id" ON "travel_expense_participants" ("expense_id")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_travel_expense_participants_user_id" ON "travel_expense_participants" ("user_id")`,
+    );
+  }
 
-    public async down(queryRunner: QueryRunner): Promise<void> {
-        // Drop tables in reverse order (due to foreign key constraints)
-        await queryRunner.query(`DROP TABLE IF EXISTS "travel_expense_participants"`);
-        await queryRunner.query(`DROP TABLE IF EXISTS "travel_expenses"`);
-        await queryRunner.query(`DROP TABLE IF EXISTS "travel_members"`);
-        await queryRunner.query(`DROP TABLE IF EXISTS "travels"`);
-        await queryRunner.query(`DROP TABLE IF EXISTS "users"`);
-    }
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    // Drop tables in reverse order (due to foreign key constraints)
+    await queryRunner.query(
+      `DROP TABLE IF EXISTS "travel_expense_participants"`,
+    );
+    await queryRunner.query(`DROP TABLE IF EXISTS "travel_expenses"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "travel_members"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "travels"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "users"`);
+  }
 }

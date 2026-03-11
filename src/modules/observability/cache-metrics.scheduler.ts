@@ -9,7 +9,7 @@
  *   - Redis 다운 (fallback only): 히트율 = fallback size > 0 ? 0.5 : 0.0
  */
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { CacheService } from '../../services/cacheService';
+import { CacheService } from '../../common/services/cache.service';
 import { AppMetricsService } from '../../common/metrics/app-metrics.service';
 
 @Injectable()

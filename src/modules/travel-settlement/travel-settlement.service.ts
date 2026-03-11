@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, Injectable, Logger } from '@nes
 import { randomUUID } from 'crypto';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
-import { CacheService } from '../../services/cacheService';
+import { CacheService } from '../../common/services/cache.service';
 import { AppMetricsService } from '../../common/metrics/app-metrics.service';
 
 // ─────────────────────────────────────────────────────────────────────────────

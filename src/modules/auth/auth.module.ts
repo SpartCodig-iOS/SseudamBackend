@@ -1,46 +1,43 @@
-import { Module, forwardRef } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
+/**
+ * AuthModule
+ *
+ * 이메일/비밀번호 기반 인증, 토큰 갱신, 로그아웃, 회원탈퇴를 담당한다.
+ *
+ * 의존 관계 (forwardRef 완전 제거):
+ *   AuthModule -> JwtSharedModule  (전역, JwtTokenService/EnhancedJwtService)
+ *   AuthModule -> CacheSharedModule (전역, CacheService)
+ *   AuthModule -> AuthSharedModule  (SupabaseService, SessionService 등)
+ *   AuthModule -> OAuthModule       (SocialAuthService, OptimizedOAuthService)
+ *
+ * OAuthModule은 AuthModule을 import하지 않는다.
+ * 과거의 순환(Auth <-> OAuth)은 AuthSharedModule 분리로 해소되었다.
+ */
+import { Module } from '@nestjs/common';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { OptimizedDeleteService } from './optimized-delete.service';
 import { OAuthModule } from '../oauth/oauth.module';
 import { DatabaseModule } from '../database/database.module';
-import { CacheService } from '../../services/cacheService';
-import { EnhancedJwtService } from '../../services/enhanced-jwt.service';
-import { JwtBlacklistService } from '../../services/jwt-blacklist.service';
-import { env } from '../../config/env';
+import { AuthSharedModule } from '../shared/auth-shared.module';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
   imports: [
-    // DatabaseModule이 TypeORM forRoot + forFeature(User) + UserRepository를 모두 제공합니다.
-    // DataSource도 TypeOrmModule을 통해 자동으로 주입 가능합니다.
     DatabaseModule,
-    forwardRef(() => OAuthModule),
-    // JWT 모듈 등록 (Enhanced JWT 서비스용)
-    JwtModule.register({
-      secret: env.jwtSecret,
-      signOptions: {
-        expiresIn: `${env.accessTokenTTL}s`,
-        issuer: 'sseudam-backend',
-        audience: 'sseudam-app',
-      },
-    }),
+    AuthSharedModule,
+    NotificationModule,  // DeviceTokenService 주입
+    // OAuthModule은 SocialAuthService, OptimizedOAuthService를 export한다.
+    // OAuthModule은 AuthModule을 import하지 않으므로 순환 참조 없음.
+    OAuthModule,
   ],
-  controllers: [
-    AuthController,
-  ],
+  controllers: [AuthController],
   providers: [
     AuthService,
-    CacheService,
-    // JWT Blacklist System
-    EnhancedJwtService,
-    JwtBlacklistService,
+    OptimizedDeleteService,
   ],
   exports: [
     AuthService,
-    CacheService,
-    // Enhanced JWT 서비스들도 export하여 다른 모듈에서 사용 가능
-    EnhancedJwtService,
-    JwtBlacklistService,
+    OptimizedDeleteService,
   ],
 })
 export class AuthModule {}

@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Logger, Post, Query, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, HttpCode, HttpStatus, Logger, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -10,11 +10,11 @@ import {
 } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { OptimizedDeleteService } from './optimized-delete.service';
-import { success } from '../../types/api';
-import { loginSchema, refreshSchema, signupSchema, logoutSchema } from '../../validators/authSchemas';
+import { success } from '../../common/types/api.types';
+import { loginSchema, refreshSchema, signupSchema, logoutSchema } from './schemas/auth.schemas';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RateLimitGuard } from '../../common/guards/rate-limit.guard';
-import { RequestWithUser } from '../../types/request';
+import { RequestWithUser } from '../../common/types/request.types';
 import {
   DeleteAccountResponseDto,
   LoginResponseDto,
@@ -23,13 +23,13 @@ import {
 } from './dto/auth-response.dto';
 import { buildAuthSessionResponse } from './auth-response.util';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator';
-import { LoginType } from '../../types/auth';
-import { DeviceTokenService } from '../../services/device-token.service';
-import { AnalyticsService } from '../../services/analytics.service';
-import { JwtTokenService } from '../../services/jwtService';
-import { SessionService } from '../../services/sessionService';
-import { EnhancedJwtService } from '../../services/enhanced-jwt.service';
-import { JwtBlacklistService } from '../../services/jwt-blacklist.service';
+import { LoginType } from './types/auth.types';
+import { DeviceTokenService } from '../oauth/services/device-token.service';
+import { AnalyticsService } from '../../common/services/analytics.service';
+import { JwtTokenService } from './services/jwt.service';
+import { SessionService } from './services/session.service';
+import { EnhancedJwtService } from './services/enhanced-jwt.service';
+import { JwtBlacklistService } from './services/jwt-blacklist.service';
 
 @ApiTags('Auth')
 @Controller('api/v1/auth')

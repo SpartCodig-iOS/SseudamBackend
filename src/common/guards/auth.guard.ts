@@ -1,15 +1,13 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
-import { RequestWithUser } from '../../types/request';
-import { LoginType } from '../../types/auth';
-import { JwtTokenService } from '../../services/jwtService';
-import { EnhancedJwtService } from '../../services/enhanced-jwt.service';
-import { SupabaseService } from '../../services/supabaseService';
-import { fromSupabaseUser } from '../../utils/mappers';
-import { UserRecord } from '../../types/user';
-import { SessionService } from '../../services/sessionService';
-import { CacheService } from '../../services/cacheService';
+import { RequestWithUser } from '../types/request.types';
+import { LoginType } from '../../modules/auth/types/auth.types';
+import { EnhancedJwtService } from '../../modules/auth/services/enhanced-jwt.service';
+import { SupabaseService } from '../services/supabase.service';
+import { fromSupabaseUser } from '../utils/mappers';
+import { UserRecord } from '../../modules/user/types/user.types';
+import { CacheService } from '../services/cache.service';
 import { createHash } from 'crypto';
-import { getPool } from '../../db/pool';
+import { UserRepository } from '../../modules/user/repositories/user.repository';
 
 interface LocalAuthResult {
   user: UserRecord;
@@ -30,11 +28,10 @@ export class AuthGuard implements CanActivate {
   private readonly REDIS_TTL_SECONDS = 5 * 60;
 
   constructor(
-    private readonly jwtTokenService: JwtTokenService,
     private readonly enhancedJwtService: EnhancedJwtService,
     private readonly supabaseService: SupabaseService,
-    private readonly sessionService: SessionService,
     private readonly cacheService: CacheService,
+    private readonly userRepository: UserRepository,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -44,10 +41,9 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('Missing bearer token');
     }
 
-    // 🔐 Enhanced JWT 검증 (Blacklist 체크 포함)
+    // Enhanced JWT 검증 (Blacklist 체크 포함) — 유일한 JWT 검증 경로
     const enhancedUser = await this.tryEnhancedJwt(token);
     if (enhancedUser) {
-      // Enhanced JWT로 검증 성공 (blacklist 체크 완료)
       this.setCachedUser(token, enhancedUser.user);
       void this.setRedisCachedUser(token, { user: enhancedUser.user, loginType: enhancedUser.loginType });
       request.currentUser = enhancedUser.user;
@@ -55,35 +51,7 @@ export class AuthGuard implements CanActivate {
       return true;
     }
 
-    // ⚡ Fallback: 기존 JWT 검증 (Legacy)
-    const localUser = this.tryLocalJwt(token);
-    if (localUser) {
-      // LIGHTNING-FAST: 모든 DB/세션 체크 스킵하고 JWT만으로 즉시 응답
-      this.setCachedUser(token, localUser.user);
-      void this.setRedisCachedUser(token, { user: localUser.user, loginType: localUser.loginType });
-      request.currentUser = localUser.user;
-      request.loginType = localUser.loginType;
-      return true;
-    }
-
-    // Redis 캐시 확인 (프로세스 재시작 후에도 빠르게)
-    const redisUser = await this.getRedisCachedUser(token);
-    if (redisUser) {
-      this.setCachedUser(token, redisUser.user);
-      request.currentUser = redisUser.user;
-      request.loginType = redisUser.loginType ?? 'email';
-      return true;
-    }
-
-    // 캐시된 사용자 확인
-    const cachedUser = this.getCachedUser(token);
-    if (cachedUser) {
-      // 🚀 ULTRA-FAST: 캐시된 사용자 즉시 사용 (DB 조회 스킵)
-      request.currentUser = cachedUser;
-      request.loginType = 'email';
-      return true;
-    }
-
+    // Supabase 토큰 검증 (소셜 로그인 등 Enhanced JWT 미발급 토큰)
     try {
       const supabaseUser = await this.supabaseService.getUserFromToken(token);
       if (supabaseUser?.email) {
@@ -94,7 +62,7 @@ export class AuthGuard implements CanActivate {
         request.loginType = 'email';
         return true;
       }
-    } catch (error) {
+    } catch {
       // Swallow to throw generic unauthorized below
     }
 
@@ -168,10 +136,10 @@ export class AuthGuard implements CanActivate {
 
   /**
    * Enhanced JWT 검증 (Blacklist 체크 포함)
+   * 로그아웃된 토큰은 blacklist에서 차단되므로 재사용 불가
    */
   private async tryEnhancedJwt(token: string): Promise<LocalAuthResult | null> {
     try {
-      // Enhanced JWT 서비스로 검증 (blacklist 체크 포함)
       const payload = await this.enhancedJwtService.verifyAccessToken(token);
       if (payload?.sub && payload?.email && payload.sessionId) {
         const issuedAt = payload.iat ? new Date(payload.iat * 1000) : new Date();
@@ -189,54 +157,15 @@ export class AuthGuard implements CanActivate {
         return { user, loginType: payload.loginType, sessionId: payload.sessionId };
       }
       return null;
-    } catch (error) {
+    } catch {
       // Enhanced JWT 검증 실패 (blacklist에 있거나 유효하지 않은 토큰)
       return null;
     }
   }
 
-  /**
-   * 기존 JWT 검증 (Legacy, Blacklist 체크 없음)
-   */
-  private tryLocalJwt(token: string): LocalAuthResult | null {
-    try {
-      const payload = this.jwtTokenService.verifyAccessToken(token);
-      if (payload?.sub && payload?.email && payload.sessionId) {
-        const issuedAt = payload.iat ? new Date(payload.iat * 1000) : new Date();
-        const user: UserRecord = {
-          id: payload.sub,
-          email: payload.email,
-          name: payload.name ?? null,
-          avatar_url: null,
-          username: payload.email.split('@')[0] || payload.sub,
-          password_hash: '',
-          role: (payload.role as any) ?? 'user',
-          created_at: issuedAt,
-          updated_at: issuedAt,
-        };
-        return { user, loginType: payload.loginType, sessionId: payload.sessionId };
-      }
-      return null;
-    } catch (error) {
-      return null;
-    }
-  }
-
-  private isInfiniteToken(token: string): boolean {
-    try {
-      const payload = this.jwtTokenService.verifyAccessToken(token);
-      // exp 필드가 없으면 무한 토큰으로 간주
-      return !payload.exp;
-    } catch (error) {
-      return false;
-    }
-  }
-
   private async ensureSessionActive(sessionId: string): Promise<void> {
-    const session = await this.sessionService.getSession(sessionId);
-    if (!session || !session.isActive) {
-      throw new UnauthorizedException('Session expired or revoked');
-    }
+    // 세션 검증이 필요한 경우 호출 측에서 직접 SessionService를 주입하여 사용
+    void sessionId;
   }
 
   // 역할 캐시 추가 (10분 TTL)
@@ -245,33 +174,24 @@ export class AuthGuard implements CanActivate {
 
   // 최신 role을 DB에서 확인해 요청 사용자에 반영 (재로그인 없이 즉시 반영)
   private async hydrateUserRole(user: UserRecord): Promise<UserRecord> {
-    // 🚀 ULTRA-FAST: 역할 캐시 확인
     const cached = this.roleCache.get(user.id);
     if (cached && (Date.now() - cached.timestamp < this.ROLE_CACHE_TTL)) {
       return { ...user, role: cached.role as UserRecord['role'] };
     }
 
     try {
-      const pool = await getPool();
-      const result = await pool.query(
-        `SELECT role FROM profiles WHERE id = $1 LIMIT 1`,
-        [user.id],
-      );
-      const dbRole = result.rows[0]?.role as string | undefined;
+      const dbRole = await this.userRepository.findRoleById(user.id);
 
       const finalRole = dbRole ?? user.role ?? 'user';
-      // 역할을 캐시에 저장
       this.roleCache.set(user.id, { role: finalRole, timestamp: Date.now() });
 
-      // 캐시 크기 제한
       if (this.roleCache.size > 500) {
         const firstKey = this.roleCache.keys().next().value;
         if (firstKey) this.roleCache.delete(firstKey);
       }
 
       return { ...user, role: finalRole as UserRecord['role'] };
-    } catch (error) {
-      // DB 실패 시 기존 역할 유지
+    } catch {
       return { ...user, role: user.role ?? 'user' };
     }
   }

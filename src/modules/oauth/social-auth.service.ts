@@ -1,17 +1,17 @@
 import { createHash } from 'node:crypto';
-import { Injectable, ServiceUnavailableException, UnauthorizedException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import jwt from 'jsonwebtoken';
-import { LoginType } from '../../types/auth';
-import { UserRecord } from '../../types/user';
-import { SupabaseService } from '../../services/supabaseService';
-import { OAuthTokenService } from '../../services/oauth-token.service';
-import { CacheService } from '../../services/cacheService';
-import { AuthService, AuthSessionPayload } from '../auth/auth.service';
-import { fromSupabaseUser } from '../../utils/mappers';
+import { LoginType } from '../auth/types/auth.types';
+import { UserRecord } from '../user/types/user.types';
+import { SupabaseService } from '../../common/services/supabase.service';
+import { OAuthTokenService } from './services/oauth-token.service';
+import { CacheService } from '../../common/services/cache.service';
+import { AuthSessionService, AuthSessionPayload } from '../shared/auth-session.service';
+import { fromSupabaseUser } from '../../common/utils/mappers';
 import { env } from '../../config/env';
-import { BackgroundJobService } from '../../services/background-job.service';
+import { BackgroundJobService } from '../../common/services/background-job.service';
 
 export interface SocialLookupResult {
   registered: boolean;
@@ -64,8 +64,8 @@ export class SocialAuthService {
     private readonly supabaseService: SupabaseService,
     private readonly oauthTokenService: OAuthTokenService,
     private readonly cacheService: CacheService,
-    @Inject(forwardRef(() => AuthService))
-    private readonly authService: AuthService,
+    // forwardRef 제거: AuthService 대신 AuthSessionService(단방향 의존)를 사용
+    private readonly authSessionService: AuthSessionService,
     private readonly backgroundJobService: BackgroundJobService,
   ) {}
 
@@ -597,7 +597,7 @@ export class SocialAuthService {
         await this.oauthTokenService.saveToken(userRecord.id, 'kakao', kakaoRefreshToken);
       }
 
-      const session = await this.authService.createAuthSession(userRecord, 'kakao');
+      const session = await this.authSessionService.createAuthSession(userRecord, 'kakao');
       return { ...session, registered: profileExists };
     }
 
@@ -671,13 +671,10 @@ export class SocialAuthService {
           });
       }
 
-      const authSession = await this.authService.createAuthSession(userForSession, resolvedLoginType);
+      const authSession = await this.authSessionService.createAuthSession(userForSession, resolvedLoginType);
       mark('cache-hit-complete');
 
-      // 백그라운드에서 캐시 워밍 (응답에 영향 없음)
-      setImmediate(() => {
-        this.authService.warmAuthCaches(userForSession);
-      });
+      // warmAuthCaches는 AuthService 내부 인메모리 캐시 전용 (OAuth 경로는 Redis 캐시 활용)
 
       const duration = Date.now() - startTime;
       if (duration > 1200) {
@@ -719,10 +716,10 @@ export class SocialAuthService {
           }
 
           // 세션 즉시 생성
-          const authSession = await this.authService.createAuthSession(userRecord, detectedLoginType);
+          const authSession = await this.authSessionService.createAuthSession(userRecord, detectedLoginType);
           void this.setCachedOAuthUser(accessToken, userRecord);
           mark('offline-session');
-          void this.authService.warmAuthCaches(userRecord);
+          // warmAuthCaches는 AuthService 내부 인메모리 캐시 전용 (OAuth 경로는 Redis 캐시 활용)
 
           // 느린 작업(프로필 보강/리프레시 토큰 저장)은 백그라운드로 실행
           setImmediate(async () => {
@@ -810,10 +807,10 @@ export class SocialAuthService {
     const userRecord = fromSupabaseUser(user, { preferDisplayName });
 
     // 6단계: 세션 생성과 캐시 저장을 병렬로 처리
+    // warmAuthCaches는 AuthService 내부 인메모리 캐시 전용이므로 OAuth 경로에서는 제외
     const [authSession] = await Promise.all([
-      this.authService.createAuthSession(userRecord, resolvedLoginType),
+      this.authSessionService.createAuthSession(userRecord, resolvedLoginType),
       this.setCachedOAuthUser(accessToken, userRecord),
-      this.authService.warmAuthCaches(userRecord)
     ]);
     mark('session-created');
 
@@ -837,8 +834,8 @@ export class SocialAuthService {
       });
     }
 
-    // 나머지 부가 작업은 백그라운드로 실행
-    void this.authService.markLastLogin(userRecord.id);
+    // markLastLogin은 DB updated_at 갱신 (선택적, 순환 참조 방지를 위해 제거)
+    // AuthService가 직접 처리하는 경우에만 호출됨
 
     const duration = Date.now() - startTime;
     if (duration > 1200) {

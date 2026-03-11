@@ -7,21 +7,21 @@ import {
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import bcrypt from 'bcryptjs';
-import { LoginType } from '../../types/auth';
-import { UserRecord } from '../../types/user';
-import { LoginInput, SignupInput } from '../../validators/authSchemas';
-import { JwtTokenService } from '../../services/jwtService';
-import { SessionService } from '../../services/sessionService';
-import { SupabaseService } from '../../services/supabaseService';
-import { OAuthTokenService } from '../../services/oauth-token.service';
+import { LoginType } from './types/auth.types';
+import { UserRecord } from '../user/types/user.types';
+import { LoginInput, SignupInput } from './schemas/auth.schemas';
+import { JwtTokenService } from './services/jwt.service';
+import { SessionService } from './services/session.service';
+import { SupabaseService } from '../../common/services/supabase.service';
+import { OAuthTokenService } from '../oauth/services/oauth-token.service';
 import { OptimizedOAuthService } from '../oauth/optimized-oauth.service';
-import { CacheService } from '../../services/cacheService';
-import { fromSupabaseUser } from '../../utils/mappers';
+import { CacheService } from '../../common/services/cache.service';
+import { fromSupabaseUser } from '../../common/utils/mappers';
 import { OAuthTokenOptions, SocialAuthService } from '../oauth/social-auth.service';
-import { UserRepository } from '../../repositories/user.repository';
-import { User } from '../../entities/user.entity';
+import { UserRepository } from '../user/repositories/user.repository';
+import { User } from '../user/entities/user.entity';
 import { AuthSessionService } from '../shared/auth-session.service';
-import { EnhancedJwtService } from '../../services/enhanced-jwt.service';
+import { EnhancedJwtService } from './services/enhanced-jwt.service';
 // AuthSessionPayload는 AuthSessionService에서 정의 (공유 타입)
 export { AuthSessionPayload } from '../shared/auth-session.service';
 import { AuthSessionPayload } from '../shared/auth-session.service';
@@ -169,7 +169,7 @@ export class AuthService {
       id: user.id,
       email: user.email.toLowerCase(),
       name: user.name,
-      username: user.username,
+      username: user.username ?? '',
       avatar_url: user.avatar_url,
       created_at: user.created_at,
       updated_at: user.updated_at,

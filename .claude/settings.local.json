@@ -242,7 +242,14 @@
       "Bash(npx tsc:*)",
       "Bash(grep:*)",
       "Bash(timeout 10s npm run:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(ls:*)",
+      "Bash(node:*)",
+      "Bash(mv:*)",
+      "Bash(/tmp/analyze_db_usage.sh:*)",
+      "Bash(/tmp/check_raw_sql.sh:*)",
+      "Bash(/tmp/summary_stats.sh:*)",
+      "Bash(npm test:*)"
     ],
     "deny": [],
     "ask": []

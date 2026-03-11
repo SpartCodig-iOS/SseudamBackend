@@ -4,7 +4,7 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { CacheService } from '../../services/cacheService';
+import { CacheService } from '../../common/services/cache.service';
 import { MetaService } from '../meta/meta.service';
 
 interface TravelMember {

@@ -1,15 +1,15 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { UpdateProfileInput } from '../../validators/profileSchemas';
-import { UserRecord } from '../../types/user';
+import { UpdateProfileInput } from './schemas/profile.schemas';
+import { UserRecord } from '../user/types/user.types';
 import { createClient } from '@supabase/supabase-js';
 import { env } from '../../config/env';
 import { randomUUID } from 'crypto';
 import { Express } from 'express';
-import { CacheService } from '../../services/cacheService';
-import { SupabaseService } from '../../services/supabaseService';
-import { ImageProcessor, ImageVariant } from '../../utils/imageProcessor';
+import { CacheService } from '../../common/services/cache.service';
+import { SupabaseService } from '../../common/services/supabase.service';
+import { ImageProcessor, ImageVariant } from '../../common/utils/image-processor';
 import 'multer';
 
 @Injectable()

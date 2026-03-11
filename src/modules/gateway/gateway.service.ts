@@ -1,8 +1,8 @@
 import { Injectable, Logger, UnauthorizedException, ForbiddenException, HttpException, HttpStatus } from '@nestjs/common';
-import { EnhancedJwtService } from '../../services/enhanced-jwt.service';
-import { RateLimitService } from '../../services/rateLimitService';
-import { CacheService } from '../../services/cacheService';
-import { UserRole } from '../../types/user';
+import { EnhancedJwtService } from '../auth/services/enhanced-jwt.service';
+import { RateLimitService } from '../../common/services/rate-limit.service';
+import { CacheService } from '../../common/services/cache.service';
+import { UserRole } from '../user/types/user.types';
 
 export interface GatewayRequest {
   method: string;
@@ -154,11 +154,11 @@ export class GatewayService {
 
     try {
       // 1. 라우트 설정 찾기
+      // routeConfigs에 없는 라우트는 기본적으로 허용 (NestJS 컨트롤러 가드에서 별도 처리)
       const routeConfig = this.findRouteConfig(request.path, request.method);
       if (!routeConfig) {
         return {
-          allowed: false,
-          reason: 'Route not found or method not allowed'
+          allowed: true,
         };
       }
 

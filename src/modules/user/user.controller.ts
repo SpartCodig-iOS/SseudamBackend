@@ -17,8 +17,8 @@ import { UserService, CreateUserDto, UpdateUserDto } from './user.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { User } from '../../entities/user.entity';
-import { UserRole } from '../../types/user';
+import { User } from './entities/user.entity';
+import { UserRole } from './types/user.types';
 
 @ApiTags('Users')
 @Controller('users')

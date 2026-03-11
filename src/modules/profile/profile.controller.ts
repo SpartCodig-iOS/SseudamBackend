@@ -17,11 +17,11 @@ import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTa
 import { Express } from 'express';
 import 'multer';
 import { AuthGuard } from '../../common/guards/auth.guard';
-import { success } from '../../types/api';
-import { RequestWithUser } from '../../types/request';
-import { toProfileResponse } from '../../utils/mappers';
+import { success } from '../../common/types/api.types';
+import { RequestWithUser } from '../../common/types/request.types';
+import { toProfileResponse } from '../../common/utils/mappers';
 import { ProfileResponseDto } from './dto/profile-response.dto';
-import { updateProfileSchema } from '../../validators/profileSchemas';
+import { updateProfileSchema } from './schemas/profile.schemas';
 import { ProfileService } from './profile.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 

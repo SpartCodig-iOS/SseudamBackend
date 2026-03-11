@@ -15,12 +15,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { success } from '../../types/api';
+import { success } from '../../common/types/api.types';
 import { AuthGuard } from '../../common/guards/auth.guard';
-import { RequestWithUser } from '../../types/request';
+import { RequestWithUser } from '../../common/types/request.types';
 import { TravelService } from './travel.service';
 import { OptimizedTravelService } from './optimized-travel.service';
-import { createTravelSchema, travelInviteCodeSchema, transferOwnershipSchema } from '../../validators/travelSchemas';
+import { createTravelSchema, travelInviteCodeSchema, transferOwnershipSchema } from './schemas/travel.schemas';
 import { TravelInviteResponseDto, TravelListResponseDto, TravelSummaryDto } from './dto/travel-response.dto';
 
 @ApiTags('Travels')

@@ -1,7 +1,7 @@
 import { BadRequestException, Controller, Get, HttpCode, HttpStatus, Query } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { success } from '../../types/api';
-import { SessionService } from '../../services/sessionService';
+import { success } from '../../common/types/api.types';
+import { SessionService } from '../auth/services/session.service';
 import { SessionResponseDto } from './dto/session-response.dto';
 
 @ApiTags('Session')

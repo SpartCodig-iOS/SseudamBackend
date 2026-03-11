@@ -8,7 +8,7 @@ import {
 import { Response } from 'express';
 import * as Sentry from '@sentry/node';
 import { ZodError, ZodIssue } from 'zod';
-import { logger } from '../../utils/logger';
+import { logger } from '../utils/logger';
 import { env } from '../../config/env';
 import { DatabaseError } from 'pg';
 import { RequestContext } from '../context/request-context';

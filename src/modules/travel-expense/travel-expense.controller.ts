@@ -1,11 +1,11 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { AuthGuard } from '../../common/guards/auth.guard';
-import { RequestWithUser } from '../../types/request';
-import { success } from '../../types/api';
+import { RequestWithUser } from '../../common/types/request.types';
+import { success } from '../../common/types/api.types';
 import { TravelExpenseService } from './travel-expense.service';
 import { TravelExpenseDto } from '../travel/dto/travel-response.dto';
-import { createExpenseSchema } from '../../validators/travelExpenseSchemas';
+import { createExpenseSchema } from './schemas/travel-expense.schemas';
 
 @ApiTags('Travel Expenses')
 @ApiBearerAuth()

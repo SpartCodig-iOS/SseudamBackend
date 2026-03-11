@@ -1,22 +1,93 @@
-import { Controller, Get, HttpCode, HttpStatus } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Res,
+  UnauthorizedException,
+  Req,
+} from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { success } from '../../types/api';
-import { CacheService } from '../../services/cacheService';
+import { Response, Request } from 'express';
+import { success } from '../../common/types/api.types';
+import { CacheService } from '../../common/services/cache.service';
 import { getPoolStats } from '../../db/pool';
 import { HealthResponseDto } from './dto/health-response.dto';
-import { MemoryOptimizer } from '../../utils/memory-optimizer';
-import { SmartCacheService } from '../../services/smart-cache.service';
+import { MemoryOptimizer } from '../../common/utils/memory-optimizer';
+import { SmartCacheService } from '../../common/services/smart-cache.service';
+import { AdaptiveCacheService } from '../../common/services/adaptive-cache.service';
+import { PoolMonitorService } from './pool-monitor.service';
 import { getPool } from '../../db/pool';
+import { env } from '../../config/env';
+
+/**
+ * 내부 전용 /metrics 엔드포인트 접근을 제한하는 IP 허용 목록 및 API 키 검증
+ *
+ * 허용 조건 (OR):
+ *   1. X-Metrics-Key 헤더가 METRICS_API_KEY 환경변수와 일치
+ *   2. 요청 IP가 사설 네트워크 대역(loopback, RFC1918, 컨테이너 브릿지)에 속함
+ */
+const PRIVATE_IP_PATTERNS: RegExp[] = [
+  /^127\./,                       // loopback
+  /^::1$/,                        // IPv6 loopback
+  /^10\./,                        // RFC1918 Class A
+  /^172\.(1[6-9]|2\d|3[01])\./,  // RFC1918 Class B
+  /^192\.168\./,                  // RFC1918 Class C
+  /^fd[0-9a-f]{2}:/i,            // IPv6 ULA (컨테이너 내부 네트워크)
+];
+
+function isPrivateIp(ip: string): boolean {
+  const normalized = ip?.trim() ?? '';
+  return PRIVATE_IP_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function resolveClientIp(request: Request): string {
+  const forwarded = request.headers['x-forwarded-for'];
+  if (forwarded) {
+    return (Array.isArray(forwarded) ? forwarded[0] : forwarded)
+      .split(',')[0]
+      .trim();
+  }
+  return request.ip ?? request.socket?.remoteAddress ?? '';
+}
+
+function assertMetricsAccess(request: Request): void {
+  // API Key 검증 (로드밸런서 뒤 프로덕션 환경에서 사용)
+  const metricsApiKey = process.env['METRICS_API_KEY'];
+  if (metricsApiKey) {
+    const providedKey = request.headers['x-metrics-key'];
+    if (providedKey === metricsApiKey) {
+      return;
+    }
+  }
+
+  // 내부 IP 허용 (로컬/컨테이너/사설망 요청)
+  const clientIp = resolveClientIp(request);
+  if (isPrivateIp(clientIp)) {
+    return;
+  }
+
+  // 개발 환경에서는 항상 허용
+  if (env.nodeEnv === 'development' || env.nodeEnv === 'test') {
+    return;
+  }
+
+  throw new UnauthorizedException(
+    'Access to /metrics is restricted to internal networks or requires a valid API key',
+  );
+}
 
 @ApiTags('Health')
 @Controller()
 export class HealthController {
   private lastHealthCheck: { result: 'ok' | 'unavailable'; timestamp: number } | null = null;
-  private readonly HEALTH_CACHE_TTL = 5 * 1000; // 5초 캐시 (빠른 회복)
+  private readonly HEALTH_CACHE_TTL = 5 * 1000; // 5초 캐시
 
   constructor(
     private readonly cacheService: CacheService,
     private readonly smartCacheService: SmartCacheService,
+    private readonly adaptiveCacheService: AdaptiveCacheService,
+    private readonly poolMonitorService: PoolMonitorService,
   ) {}
 
   private async checkDatabaseHealth(): Promise<'ok' | 'unavailable'> {
@@ -24,7 +95,7 @@ export class HealthController {
       const pool = await getPool();
       await pool.query('SELECT 1');
       return 'ok';
-    } catch (error) {
+    } catch {
       return 'unavailable';
     }
   }
@@ -40,47 +111,49 @@ export class HealthController {
   }
 
   @Get('health')
-  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '서버 및 데이터베이스 상태 확인' })
   @ApiOkResponse({ type: HealthResponseDto })
-  async health() {
-    // 캐시된 헬스 체크 결과 사용 (30초 캐시)
+  async health(@Res() res: Response) {
     const now = Date.now();
     const cached = this.lastHealthCheck;
+
+    // 캐시된 결과가 유효한 경우 즉시 응답
     if (cached && (now - cached.timestamp) < this.HEALTH_CACHE_TTL) {
-      return success({
-        status: 'ok',
+      const statusCode = cached.result === 'ok' ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE;
+      return res.status(statusCode).json(success({
+        status: cached.result === 'ok' ? 'ok' : 'degraded',
         database: cached.result,
-      });
+      }));
     }
 
-    // 캐시가 있지만 만료된 경우: 비동기 갱신 후 즉시 응답해 지연 최소화
+    // 캐시 만료 시: 비동기 갱신 후 캐시된 결과로 즉시 응답
     if (cached) {
       this.refreshHealthAsync();
-      return success({
-        status: 'ok',
+      const statusCode = cached.result === 'ok' ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE;
+      return res.status(statusCode).json(success({
+        status: cached.result === 'ok' ? 'ok' : 'degraded',
         database: cached.result,
-      });
+      }));
     }
 
-    // 첫 호출 시만 빠른 헬스 체크 (타임아웃 1초)
+    // 첫 호출 시 동기 헬스 체크 (타임아웃 1초)
     const database = await Promise.race([
       this.checkDatabaseHealth(),
       new Promise<'unavailable'>((resolve) => setTimeout(() => resolve('unavailable'), 1000)),
     ]);
 
-    // 결과 캐싱
     this.lastHealthCheck = { result: database, timestamp: now };
 
-    return success({
-      status: 'ok',
+    const statusCode = database === 'ok' ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE;
+    return res.status(statusCode).json(success({
+      status: database === 'ok' ? 'ok' : 'degraded',
       database,
-    });
+    }));
   }
 
-  @Get('metrics')
+  @Get('health/metrics')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '성능 메트릭 및 시스템 상태 확인' })
+  @ApiOperation({ summary: '시스템 상태 JSON 메트릭 (내부 전용) — Prometheus 형식은 GET /metrics 사용' })
   @ApiOkResponse({
     description: '시스템 성능 메트릭',
     schema: {
@@ -142,10 +215,12 @@ export class HealthController {
       },
     },
   })
-  async getMetrics() {
+  async getMetrics(@Req() req: Request) {
+    // 내부 전용 엔드포인트: IP 또는 API Key 기반 접근 제어
+    assertMetricsAccess(req);
+
     const startTime = process.hrtime.bigint();
 
-    // 최적화된 메모리 통계
     const memoryStats = MemoryOptimizer.getMemoryStats();
     const memoryUsage = process.memoryUsage();
     const formatBytes = (bytes: number) => {
@@ -153,14 +228,11 @@ export class HealthController {
       return `${mb.toFixed(1)} MB`;
     };
 
-    // CPU 사용량 (간단한 추정)
     const loadAverage = process.cpuUsage();
     const cpuUsage = ((loadAverage.user + loadAverage.system) / 1000000) % 100;
 
-    // 데이터베이스 커넥션 풀 상태
     const poolStats = getPoolStats();
 
-    // 캐시 상태 (빠른 조회)
     let cacheStats;
     try {
       cacheStats = await Promise.race([
@@ -170,7 +242,7 @@ export class HealthController {
           fallback: { size: 0, keys: [] }
         }), 100))
       ]);
-    } catch (error) {
+    } catch {
       cacheStats = {
         redis: { status: 'unavailable' },
         fallback: { size: 0, keys: [] }
@@ -178,7 +250,7 @@ export class HealthController {
     }
 
     const endTime = process.hrtime.bigint();
-    const responseTimeMs = Number(endTime - startTime) / 1000000; // 나노초를 밀리초로 변환
+    const responseTimeMs = Number(endTime - startTime) / 1000000;
 
     return success({
       server: {
@@ -189,7 +261,7 @@ export class HealthController {
           total: formatBytes(memoryUsage.heapTotal),
           external: formatBytes(memoryUsage.external),
           percentage: (memoryUsage.rss / memoryUsage.heapTotal) * 100,
-          optimized: memoryStats, // 최적화된 메모리 정보
+          optimized: memoryStats,
         },
         cpu: {
           usage: cpuUsage,
@@ -202,6 +274,7 @@ export class HealthController {
       },
       database: {
         pool: poolStats || { message: 'Pool not initialized' },
+        poolMonitor: this.poolMonitorService.getReport(),
       },
       cache: cacheStats,
       optimization: {
@@ -210,6 +283,7 @@ export class HealthController {
         memoryCacheEnabled: true,
         performanceMonitoringEnabled: true,
         smartCache: this.smartCacheService.getStats(),
+        adaptiveCache: this.adaptiveCacheService.getStats(),
         apiOptimization: {
           total: 0,
           averageResponseTime: 0,

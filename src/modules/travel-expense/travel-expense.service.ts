@@ -2,11 +2,11 @@ import { BadRequestException, ForbiddenException, Injectable, NotFoundException 
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
-import { CreateExpenseInput } from '../../validators/travelExpenseSchemas';
+import { CreateExpenseInput } from './schemas/travel-expense.schemas';
 import { MetaService } from '../meta/meta.service';
-import { CacheService } from '../../services/cacheService';
-import { PushNotificationService } from '../../services/push-notification.service';
-import { AnalyticsService } from '../../services/analytics.service';
+import { CacheService } from '../../common/services/cache.service';
+import { PushNotificationService } from '../notification/services/push-notification.service';
+import { AnalyticsService } from '../../common/services/analytics.service';
 import { ProfileService } from '../profile/profile.service';
 import { QueueEventService } from '../queue/services/queue-event.service';
 import { AppMetricsService } from '../../common/metrics/app-metrics.service';

@@ -1,33 +1,26 @@
+/**
+ * GatewayModule
+ *
+ * API Gateway: 모든 요청의 인증/인가 및 Rate Limit을 처리한다.
+ *
+ * 이전 문제: JwtModule.register()를 직접 등록하고 EnhancedJwtService,
+ *           JwtBlacklistService, CacheService, RateLimitService를 모두 직접 provide.
+ *
+ * 개선: JwtSharedModule(@Global)과 CacheSharedModule(@Global)이 자동으로
+ *      필요한 서비스를 주입하므로 GatewayModule은 비즈니스 서비스에만 집중한다.
+ */
 import { Module } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
 import { GatewayController } from './gateway.controller';
 import { GatewayService } from './gateway.service';
 import { GatewayMiddleware } from './gateway.middleware';
-import { EnhancedJwtService } from '../../services/enhanced-jwt.service';
-import { JwtBlacklistService } from '../../services/jwt-blacklist.service';
-import { RateLimitService } from '../../services/rateLimitService';
-import { CacheService } from '../../services/cacheService';
-import { env } from '../../config/env';
 
 @Module({
-  imports: [
-    JwtModule.register({
-      secret: env.jwtSecret,
-      signOptions: {
-        expiresIn: `${env.accessTokenTTL}s`,
-        issuer: 'sseudam-backend',
-        audience: 'sseudam-app',
-      },
-    }),
-  ],
+  // JwtSharedModule  -> EnhancedJwtService, JwtBlacklistService, JwtModule (@Global)
+  // CacheSharedModule -> CacheService, RateLimitService (@Global)
   controllers: [GatewayController],
   providers: [
     GatewayService,
     GatewayMiddleware,
-    EnhancedJwtService,
-    JwtBlacklistService,
-    RateLimitService,
-    CacheService,
   ],
   exports: [GatewayService, GatewayMiddleware],
 })

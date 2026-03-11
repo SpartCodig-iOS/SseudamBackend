@@ -1,5 +1,5 @@
 import type { AuthService } from './auth.service';
-import { toUserResponse } from '../../utils/mappers';
+import { toUserResponse } from '../../common/utils/mappers';
 
 export type AuthSessionResult = Awaited<ReturnType<AuthService['signup']>>;
 

@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, ConflictException } from '@nestjs/common';
-import { UserRepository } from '../../repositories/user.repository';
-import { User } from '../../entities/user.entity';
-import { UserRole } from '../../types/user';
+import { UserRepository } from './repositories/user.repository';
+import { User } from './entities/user.entity';
+import { UserRole } from './types/user.types';
 import * as bcrypt from 'bcryptjs';
 
 export interface CreateUserDto {
@@ -151,6 +151,7 @@ export class UserService {
    * 비밀번호 확인
    */
   async verifyPassword(user: User, password: string): Promise<boolean> {
+    if (!user.password_hash) return false;
     return bcrypt.compare(password, user.password_hash);
   }
 

@@ -101,15 +101,22 @@ export class ResponseTransformInterceptor implements NestInterceptor {
     }
   }
 
-  private compactObject(obj: any): any {
+  private compactObject(obj: any, seen: WeakSet<object> = new WeakSet()): any {
     if (Array.isArray(obj)) {
-      return obj.map(item => this.compactObject(item));
+      return obj.map(item => this.compactObject(item, seen));
     }
 
     if (obj && typeof obj === 'object') {
       if (obj instanceof Date) {
         return obj.toISOString();
       }
+
+      // 순환 참조 감지 — 이미 방문한 객체는 빈 객체로 대체
+      if (seen.has(obj)) {
+        return {};
+      }
+      seen.add(obj);
+
       const compacted: any = {};
       for (const [key, value] of Object.entries(obj)) {
         // null, undefined, 빈 문자열 제거
@@ -118,7 +125,7 @@ export class ResponseTransformInterceptor implements NestInterceptor {
           continue;
         }
         if (value !== null && value !== undefined && value !== '') {
-          compacted[key] = this.compactObject(value);
+          compacted[key] = this.compactObject(value, seen);
         }
       }
       return compacted;

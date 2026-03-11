@@ -13,10 +13,10 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import * as Sentry from '@sentry/node';
 import { AppModule } from './app.module';
 import { env } from './config/env';
-import { logger } from './utils/logger';
+import { logger } from './common/utils/logger';
 import { PinoNestLogger } from './common/logger/pino-logger';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
-import { MemoryOptimizer } from './utils/memory-optimizer';
+import { MemoryOptimizer } from './common/utils/memory-optimizer';
 
 async function bootstrap() {
   // 메모리 최적화 초기화
