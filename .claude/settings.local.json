@@ -249,7 +249,9 @@
       "Bash(/tmp/analyze_db_usage.sh:*)",
       "Bash(/tmp/check_raw_sql.sh:*)",
       "Bash(/tmp/summary_stats.sh:*)",
-      "Bash(npm test:*)"
+      "Bash(npm test:*)",
+      "Bash(git reset:*)",
+      "Bash(git rm:*)"
     ],
     "deny": [],
     "ask": []
