@@ -69,8 +69,8 @@ export class ProfileController {
     return success({
       id: profile.id,
       userId: profile.username || profile.email?.split('@')[0] || req.currentUser.username || 'user',
-      email: profile.email || '',
-      name: profile.name || '',  // null 처리 추가
+      email: profile.email || null, // 빈 문자열 대신 null 반환
+      name: profile.name || null,   // 빈 문자열 대신 null 반환
       avatarURL: resolvedAvatar, // 🚀 빠른 아바타 (캐시 우선)
       role: profile.role || req.currentUser.role || 'user',
       createdAt: formatDate(profile.created_at),
