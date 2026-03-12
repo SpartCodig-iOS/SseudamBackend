@@ -93,9 +93,20 @@ export class HealthController {
   private async checkDatabaseHealth(): Promise<'ok' | 'unavailable'> {
     try {
       const pool = await getPool();
-      await pool.query('SELECT 1');
-      return 'ok';
-    } catch {
+      if (!pool) {
+        return 'unavailable';
+      }
+
+      // 빠른 연결 테스트 (1초 타임아웃)
+      const client = await pool.connect();
+      try {
+        await client.query('SELECT 1');
+        return 'ok';
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      console.warn('Database health check failed:', error instanceof Error ? error.message : 'Unknown error');
       return 'unavailable';
     }
   }
@@ -111,9 +122,30 @@ export class HealthController {
   }
 
   @Get('health')
-  @ApiOperation({ summary: '서버 및 데이터베이스 상태 확인' })
-  @ApiOkResponse({ type: HealthResponseDto })
-  async health(@Res() res: Response) {
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '서버 상태 확인 (빠른 응답)' })
+  @ApiOkResponse({ description: '서버 상태 정보' })
+  async health() {
+    // 기본 서버 상태만 체크 (데이터베이스 체크 제외)
+    const uptime = process.uptime();
+    const memoryUsage = process.memoryUsage();
+
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      uptime: Math.floor(uptime),
+      memory: {
+        used: Math.round(memoryUsage.rss / 1024 / 1024),
+        heap: Math.round(memoryUsage.heapUsed / 1024 / 1024),
+      },
+      nodeEnv: env.nodeEnv || 'unknown',
+    };
+  }
+
+  @Get('health/full')
+  @ApiOperation({ summary: '서버 및 데이터베이스 전체 상태 확인' })
+  @ApiOkResponse({ description: '전체 상태 정보' })
+  async fullHealth(@Res() res: Response) {
     const now = Date.now();
     const cached = this.lastHealthCheck;
 
@@ -123,6 +155,8 @@ export class HealthController {
       return res.status(statusCode).json(success({
         status: cached.result === 'ok' ? 'ok' : 'degraded',
         database: cached.result,
+        timestamp: new Date().toISOString(),
+        uptime: Math.floor(process.uptime()),
       }));
     }
 
@@ -133,6 +167,8 @@ export class HealthController {
       return res.status(statusCode).json(success({
         status: cached.result === 'ok' ? 'ok' : 'degraded',
         database: cached.result,
+        timestamp: new Date().toISOString(),
+        uptime: Math.floor(process.uptime()),
       }));
     }
 
@@ -148,6 +184,8 @@ export class HealthController {
     return res.status(statusCode).json(success({
       status: database === 'ok' ? 'ok' : 'degraded',
       database,
+      timestamp: new Date().toISOString(),
+      uptime: Math.floor(process.uptime()),
     }));
   }
 
