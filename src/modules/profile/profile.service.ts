@@ -320,7 +320,34 @@ export class ProfileService {
       select: ['id', 'email', 'name', 'avatar_url', 'username', 'role', 'created_at', 'updated_at']
     });
 
-    if (!profile) return null;
+    if (!profile) {
+      // DB에 프로필이 없는 경우 Supabase에서 가져와서 동기화
+      try {
+        this.logger.log(`Profile not found in DB for user ${userId}, syncing from Supabase...`);
+        const syncedProfile = await this.syncProfileFromSupabase(userId);
+        if (syncedProfile) {
+          this.logger.log(`Profile synced successfully for user ${userId}`);
+          return syncedProfile;
+        }
+      } catch (error) {
+        this.logger.warn(`Failed to sync profile from Supabase for user ${userId}:`, error);
+      }
+      return null;
+    }
+
+    // DB 프로필에 email이나 name이 없는 경우에도 Supabase에서 보완
+    if (!profile.email || !profile.name) {
+      try {
+        this.logger.log(`Profile incomplete for user ${userId}, enriching from Supabase...`);
+        const enrichedProfile = await this.enrichProfileFromSupabase(profile);
+        if (enrichedProfile) {
+          this.logger.log(`Profile enriched successfully for user ${userId}`);
+          return enrichedProfile;
+        }
+      } catch (error) {
+        this.logger.warn(`Failed to enrich profile from Supabase for user ${userId}:`, error);
+      }
+    }
 
     // raw SQL 결과와 같은 형태로 변환
     return {
@@ -706,6 +733,121 @@ export class ProfileService {
       }
       // 실패 시 비동기 워밍만 수행
       void this.warmAvatarFromStorage(userId);
+      return null;
+    }
+  }
+
+  /**
+   * Supabase에서 완전한 프로필 정보를 가져와서 DB에 동기화
+   */
+  private async syncProfileFromSupabase(userId: string): Promise<UserRecord | null> {
+    try {
+      // 1. Supabase auth.users에서 사용자 정보 가져오기
+      const supabaseUser = await this.supabaseService.getUserById(userId);
+      if (!supabaseUser) {
+        this.logger.warn(`User not found in Supabase: ${userId}`);
+        return null;
+      }
+
+      // 2. Supabase profiles 테이블에서 프로필 정보 가져오기
+      const supabaseProfile = await this.supabaseService.findProfileById(userId);
+
+      // 3. 사용자 정보 구성
+      const email = supabaseUser.email || supabaseProfile?.email || '';
+      const name = supabaseUser.user_metadata?.name ||
+                  supabaseUser.user_metadata?.full_name ||
+                  supabaseProfile?.name ||
+                  null;
+      const username = supabaseProfile?.username || email.split('@')[0] || userId;
+      const loginType = supabaseProfile?.login_type || 'email';
+      const avatarUrl = this.supabaseService.resolveAvatarFromUser(supabaseUser) ||
+                       supabaseProfile?.avatar_url ||
+                       null;
+
+      // 4. DB에 프로필 생성/업데이트
+      const profileRepository = this.dataSource.getRepository('User');
+
+      const profileData = {
+        id: userId,
+        email,
+        name,
+        username,
+        login_type: loginType,
+        avatar_url: avatarUrl,
+        role: 'user' as any,
+        created_at: new Date(supabaseUser.created_at) || new Date(),
+        updated_at: new Date(),
+      };
+
+      await profileRepository.save(profileData);
+
+      this.logger.log(`Profile synchronized for user ${userId}: email=${email}, name=${name}`);
+
+      return {
+        id: userId,
+        email,
+        name,
+        avatar_url: avatarUrl,
+        username,
+        role: 'user',
+        created_at: profileData.created_at,
+        updated_at: profileData.updated_at,
+        password_hash: '',
+      };
+    } catch (error) {
+      this.logger.error(`Failed to sync profile from Supabase for user ${userId}:`, error);
+      return null;
+    }
+  }
+
+  /**
+   * 기존 DB 프로필을 Supabase 데이터로 보완
+   */
+  private async enrichProfileFromSupabase(profile: any): Promise<UserRecord | null> {
+    try {
+      const supabaseUser = await this.supabaseService.getUserById(profile.id);
+      if (!supabaseUser) {
+        return null;
+      }
+
+      const supabaseProfile = await this.supabaseService.findProfileById(profile.id);
+
+      // 누락된 정보 보완
+      const updatedEmail = profile.email || supabaseUser.email || '';
+      const updatedName = profile.name ||
+                         supabaseUser.user_metadata?.name ||
+                         supabaseUser.user_metadata?.full_name ||
+                         supabaseProfile?.name ||
+                         null;
+
+      // DB 업데이트가 필요한 경우에만 업데이트
+      if (!profile.email || !profile.name) {
+        const profileRepository = this.dataSource.getRepository('User');
+        await profileRepository.update(
+          { id: profile.id },
+          {
+            email: updatedEmail,
+            name: updatedName,
+            updated_at: new Date(),
+          }
+        );
+
+        this.logger.log(`Profile enriched for user ${profile.id}: email=${updatedEmail}, name=${updatedName}`);
+      }
+
+      return {
+        id: profile.id,
+        email: updatedEmail,
+        name: updatedName,
+        avatar_url: profile.avatar_url,
+        username: profile.username,
+        role: profile.role ?? 'user',
+        created_at: profile.created_at,
+        updated_at: new Date(),
+        password_hash: '',
+      };
+    } catch (error) {
+      this.logger.error(`Failed to enrich profile from Supabase for user ${profile.id}:`, error);
       return null;
     }
   }
