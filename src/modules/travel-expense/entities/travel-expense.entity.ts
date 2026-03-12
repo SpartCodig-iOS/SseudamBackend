@@ -52,7 +52,7 @@ export class TravelExpense {
   @Column({ type: 'decimal', precision: 15, scale: 2 })
   amount!: number;
 
-  @Column({ type: 'varchar' })
+  @Column({ type: 'varchar', length: 3 })
   currency!: string;
 
   @Column({ type: 'decimal', precision: 15, scale: 2, name: 'converted_amount' })

@@ -20,9 +20,9 @@ import { ProfileService } from '../profile/profile.service';
 import { env } from '../../config/env';
 import { QueueEventService } from '../queue/services/queue-event.service';
 import { AppMetricsService } from '../../common/metrics/app-metrics.service';
-import { Travel } from './entities/travel.entity';
+import { Travel, TravelStatus } from './entities/travel.entity';
 import { TravelMember } from './entities/travel-member.entity';
-import { TravelInvite } from './entities/travel-invite.entity';
+import { TravelInvite, TravelInviteStatus } from './entities/travel-invite.entity';
 import { TravelCurrencySnapshot } from './entities/travel-currency-snapshot.entity';
 import { User } from '../user/entities/user.entity';
 
@@ -520,7 +520,7 @@ export class TravelService {
       .createQueryBuilder('t')
       .innerJoin('t.members', 'tm', 'tm.userId = :userId', { userId })
       .leftJoin('t.owner', 'owner_profile')
-      .leftJoin('TravelInvite', 'ti', 'ti.travelId = t.id AND ti.status = :status', { status: 'active' })
+      .leftJoin('TravelInvite', 'ti', 'ti.travelId = t.id AND ti.status = :status', { status: TravelInviteStatus.ACTIVE })
       .select([
         't.id',
         't.title',
@@ -538,7 +538,7 @@ export class TravelService {
         'tm.role',
         'owner_profile.name'
       ])
-      .addSelect("CASE WHEN t.endDate < CURRENT_DATE THEN 'archived' ELSE 'active' END", 'status')
+      .addSelect(`CASE WHEN t.endDate < CURRENT_DATE THEN '${TravelStatus.ARCHIVED}' ELSE '${TravelStatus.ACTIVE}' END`, 'status')
       .where('t.id = :travelId', { travelId })
       .getRawOne();
 
@@ -687,11 +687,11 @@ export class TravelService {
     return this.countryCurrencyCache.get(code) ?? (baseCurrency ?? 'USD');
   }
 
-  private buildStatusCondition(status: 'active' | 'archived' | undefined, alias: string): string {
-    if (status === 'active') {
+  private buildStatusCondition(status: TravelStatus.ACTIVE | TravelStatus.ARCHIVED | undefined, alias: string): string {
+    if (status === TravelStatus.ACTIVE) {
       return `AND ${alias}.end_date >= CURRENT_DATE`;
     }
-    if (status === 'archived') {
+    if (status === TravelStatus.ARCHIVED) {
       return `AND ${alias}.end_date < CURRENT_DATE`;
     }
     return '';
@@ -732,7 +732,7 @@ export class TravelService {
         const inviteCode = this.generateInviteCode();
 
         // 1. 여행 생성
-        const travelStatus = new Date(endDate) < new Date() ? 'archived' : 'active';
+        const travelStatus = new Date(endDate) < new Date() ? TravelStatus.ARCHIVED : TravelStatus.ACTIVE;
         const newTravel = await manager.save(Travel, {
           ownerId: currentUser.id,
           title: payload.title,
@@ -763,7 +763,7 @@ export class TravelService {
               travelId: newTravel.id,
               inviteCode,
               createdBy: currentUser.id,
-              status: 'active' as any,
+              status: TravelStatus.ACTIVE as any,
               expiresAt: null,
               maxUses: null,
               usedCount: 0,
@@ -850,7 +850,7 @@ export class TravelService {
 
   async listTravels(
     userId: string,
-    pagination: { page?: number; limit?: number; status?: 'active' | 'archived' } = {},
+    pagination: { page?: number; limit?: number; status?: TravelStatus.ACTIVE | TravelStatus.ARCHIVED } = {},
   ): Promise<{ total: number; page: number; limit: number; items: TravelSummary[] }> {
     await this.ensureCountryCurrencyMap();
 
@@ -882,9 +882,9 @@ export class TravelService {
       .offset(offset);
 
     // 상태 조건 추가
-    if (pagination.status === 'active') {
+    if (pagination.status === TravelStatus.ACTIVE) {
       subQueryBuilder = subQueryBuilder.andWhere('t.end_date >= CURRENT_DATE');
-    } else if (pagination.status === 'archived') {
+    } else if (pagination.status === TravelStatus.ARCHIVED) {
       subQueryBuilder = subQueryBuilder.andWhere('t.end_date < CURRENT_DATE');
     }
 
@@ -972,7 +972,7 @@ export class TravelService {
     // 기존 초대 코드가 있는지 확인
     const travelInviteRepository = this.dataSource.getRepository(TravelInvite);
     const existingInvite = await travelInviteRepository.findOne({
-      where: { travelId, status: 'active' as any },
+      where: { travelId, status: TravelInviteStatus.ACTIVE as any },
       order: { createdAt: 'DESC' },
       select: ['inviteCode'],
     });
@@ -987,7 +987,7 @@ export class TravelService {
           travelId,
           inviteCode,
           createdBy: userId,
-          status: 'active' as any,
+          status: TravelInviteStatus.ACTIVE as any,
           expiresAt: null,
           maxUses: null,
           usedCount: 0,
@@ -998,7 +998,7 @@ export class TravelService {
 
     await this.setCachedInvite(inviteCode, {
       travel_id: travelId,
-      status: 'active',
+      status: TravelInviteStatus.ACTIVE,
       used_count: 0,
       max_uses: null,
       expires_at: null,
@@ -1208,7 +1208,7 @@ export class TravelService {
 
     // 캐시된 데이터 신뢰 (TTL을 짧게 유지하여 신뢰성 확보)
     // 기존 중복 쿼리 제거로 성능 개선
-    if (inviteRow.status !== 'active' || inviteRow.travel_status !== 'active') {
+    if (inviteRow.status !== TravelInviteStatus.ACTIVE || inviteRow.travel_status !== TravelStatus.ACTIVE) {
       throw new BadRequestException('만료되었거나 비활성화된 초대 코드입니다.');
     }
     if (inviteRow.max_uses && inviteRow.used_count >= inviteRow.max_uses) {
@@ -1414,7 +1414,7 @@ export class TravelService {
       }
 
       const endDate = this.normalizeDate(payload.endDate, 'endDate');
-      const status = new Date(endDate) < new Date() ? 'archived' : 'active';
+      const status = new Date(endDate) < new Date() ? TravelStatus.ARCHIVED : TravelStatus.ACTIVE;
 
       const updateData = {
         title: payload.title,

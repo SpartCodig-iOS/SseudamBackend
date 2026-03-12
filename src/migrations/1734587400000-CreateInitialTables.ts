@@ -45,7 +45,7 @@ export class CreateInitialTables1734587400000 implements MigrationInterface {
                 "budget" bigint,
                 "budget_currency" char(3),
                 "invite_code" varchar(32),
-                "status" varchar(20) NOT NULL DEFAULT 'planning',
+                "status" varchar(20) NOT NULL DEFAULT 'draft',
                 "owner_id" uuid NOT NULL,
                 "created_at" timestamp with time zone NOT NULL DEFAULT NOW(),
                 "updated_at" timestamp with time zone NOT NULL DEFAULT NOW(),

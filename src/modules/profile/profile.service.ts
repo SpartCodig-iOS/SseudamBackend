@@ -3,6 +3,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { UpdateProfileInput } from './schemas/profile.schemas';
 import { UserRecord } from '../user/types/user.types';
+import { User } from '../user/entities/user.entity';
 import { createClient } from '@supabase/supabase-js';
 import { env } from '../../config/env';
 import { randomUUID } from 'crypto';
@@ -313,10 +314,10 @@ export class ProfileService {
   }
 
   private async getProfileFromDB(userId: string): Promise<UserRecord | null> {
-    const profileRepository = this.dataSource.getRepository('Profile');
+    const profileRepository = this.dataSource.getRepository('User');
     const profile = await profileRepository.findOne({
       where: { id: userId },
-      select: ['id', 'email', 'name', 'avatarUrl', 'username', 'role', 'createdAt', 'updatedAt']
+      select: ['id', 'email', 'name', 'avatar_url', 'username', 'role', 'created_at', 'updated_at']
     });
 
     if (!profile) return null;
@@ -326,11 +327,11 @@ export class ProfileService {
       id: profile.id,
       email: profile.email,
       name: profile.name,
-      avatar_url: profile.avatarUrl,
+      avatar_url: profile.avatar_url,
       username: profile.username,
       role: profile.role ?? 'user',
-      created_at: profile.createdAt,
-      updated_at: profile.updatedAt,
+      created_at: profile.created_at,
+      updated_at: profile.updated_at,
       password_hash: '',
     };
   }
@@ -366,7 +367,7 @@ export class ProfileService {
       avatarURL = await this.uploadToSupabase(userId, file);
     }
 
-    const profileRepository = this.dataSource.getRepository('Profile');
+    const profileRepository = this.dataSource.getRepository(User);
 
     // TypeORM으로 업데이트 실행
     const updateData: any = { updatedAt: new Date() };
@@ -378,7 +379,7 @@ export class ProfileService {
     // 업데이트된 프로필 조회
     const updatedProfile = await profileRepository.findOne({
       where: { id: userId },
-      select: ['id', 'email', 'name', 'avatarUrl', 'username', 'role', 'createdAt', 'updatedAt']
+      select: ['id', 'email', 'name', 'avatar_url', 'username', 'role', 'created_at', 'updated_at']
     });
 
     if (!updatedProfile) {
@@ -390,11 +391,11 @@ export class ProfileService {
       id: updatedProfile.id,
       email: updatedProfile.email,
       name: updatedProfile.name,
-      avatar_url: updatedProfile.avatarUrl,
-      username: updatedProfile.username,
+      avatar_url: updatedProfile.avatar_url,
+      username: updatedProfile.username ?? '',
       role: updatedProfile.role ?? 'user',
-      created_at: updatedProfile.createdAt,
-      updated_at: updatedProfile.updatedAt,
+      created_at: updatedProfile.created_at,
+      updated_at: updatedProfile.updated_at,
       password_hash: '',
     };
 
@@ -591,13 +592,13 @@ export class ProfileService {
       }
 
       // 4. DB에서 avatar_url만 조회 (최소한의 쿼리)
-      const profileRepository = this.dataSource.getRepository('Profile');
+      const profileRepository = this.dataSource.getRepository(User);
       const profile = await profileRepository.findOne({
         where: { id: userId },
-        select: ['avatarUrl']
+        select: ['avatar_url']
       });
 
-      const dbAvatar = profile?.avatarUrl as string | null | undefined;
+      const dbAvatar = profile?.avatar_url as string | null | undefined;
       if (dbAvatar) {
         // Redis/메모리에 캐시해 다음 호출 가속화
         this.setCachedStorageAvatar(userId, dbAvatar);
@@ -650,10 +651,10 @@ export class ProfileService {
       this.setCachedStorageAvatar(userId, storageAvatar);
 
       // DB에도 저장 (실패 시 무시)
-      const profileRepository = this.dataSource.getRepository('Profile');
+      const profileRepository = this.dataSource.getRepository(User);
       profileRepository.update(
         { id: userId },
-        { avatarUrl: storageAvatar, updatedAt: new Date() }
+        { avatar_url: storageAvatar, updated_at: new Date() }
       ).catch((err: Error) => this.logger.warn(`[warmAvatarFromStorage] Persist failed for ${userId}: ${err.message}`));
     } catch (error) {
       this.logger.warn(`[warmAvatarFromStorage] Failed for ${userId}`, error as Error);

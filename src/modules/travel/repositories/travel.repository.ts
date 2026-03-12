@@ -186,7 +186,7 @@ export class TravelRepository extends BaseRepository<Travel> {
       })
       // 복합 인덱스 (status, startDate) 활용
       .andWhere('travel.status IN (:...statuses)', {
-        statuses: [TravelStatus.PLANNING, TravelStatus.ACTIVE]
+        statuses: [TravelStatus.DRAFT, TravelStatus.ACTIVE]
       })
       .orderBy('travel.startDate', 'ASC')
       .getMany();

@@ -48,21 +48,30 @@ export class TravelExpenseParticipantRepository extends BaseRepository<TravelExp
     await this.repository.delete({ expenseId });
   }
 
-  async replaceParticipants(expenseId: string, userIds: string[]): Promise<TravelExpenseParticipant[]> {
+  async replaceParticipants(expenseId: string, memberIds: string[]): Promise<TravelExpenseParticipant[]> {
+    let newParticipants: TravelExpenseParticipant[] = [];
+
     await this.repository.manager.transaction(async (manager) => {
       // Remove existing participants
       await manager.delete(TravelExpenseParticipant, { expenseId });
 
       // Add new participants
-      if (userIds.length > 0) {
-        const participants = userIds.map(userId =>
-          manager.create(TravelExpenseParticipant, { expenseId, userId })
+      if (memberIds.length > 0) {
+        const participants = memberIds.map(memberId =>
+          manager.create(TravelExpenseParticipant, { expenseId, memberId })
         );
-        await manager.save(participants);
+        newParticipants = await manager.save(participants);
       }
     });
 
-    return this.findByExpense(expenseId);
+    // Load relations for the created participants
+    return newParticipants.length > 0
+      ? await this.repository.find({
+          where: { expenseId },
+          relations: ['member'],
+          order: { createdAt: 'ASC' },
+        })
+      : [];
   }
 
   async isParticipant(expenseId: string, memberId: string): Promise<boolean> {

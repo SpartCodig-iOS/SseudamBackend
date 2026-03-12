@@ -14,10 +14,9 @@ import { TravelExpense } from '../../travel-expense/entities/travel-expense.enti
 import { TravelMember } from './travel-member.entity';
 
 export enum TravelStatus {
-  PLANNING = 'planning',
+  DRAFT = 'draft',
   ACTIVE = 'active',
-  COMPLETED = 'completed',
-  CANCELLED = 'cancelled',
+  ARCHIVED = 'archived',
 }
 
 @Entity('travels')
@@ -45,15 +44,15 @@ export class Travel {
   @Column({ type: 'date', name: 'end_date' })
   endDate!: string;
 
-  // DB 스키마: character varying (char 아님)
-  @Column({ type: 'varchar', name: 'country_code' })
+  // DB 스키마: character varying(2)
+  @Column({ type: 'varchar', length: 2, name: 'country_code' })
   countryCode!: string;
 
   @Column({ type: 'varchar', nullable: true, name: 'country_name_kr' })
   countryNameKr!: string | null;
 
-  // DB 스키마: character varying (char 아님)
-  @Column({ type: 'varchar', name: 'base_currency' })
+  // DB 스키마: character varying(3)
+  @Column({ type: 'varchar', length: 3, name: 'base_currency' })
   baseCurrency!: string;
 
   @Column({ type: 'decimal', precision: 15, scale: 6, name: 'base_exchange_rate' })
@@ -66,7 +65,7 @@ export class Travel {
   @Column({ type: 'bigint', nullable: true })
   budget!: number | null;
 
-  @Column({ type: 'varchar', nullable: true, name: 'budget_currency' })
+  @Column({ type: 'varchar', length: 3, nullable: true, name: 'budget_currency' })
   budgetCurrency!: string | null;
 
   // DB 스키마: text 타입
@@ -74,7 +73,7 @@ export class Travel {
   inviteCode!: string | null;
 
   // DB 스키마: text 타입 (enum 아님)
-  @Column({ type: 'text', default: TravelStatus.PLANNING })
+  @Column({ type: 'text', default: TravelStatus.DRAFT })
   status!: TravelStatus;
 
   @Column({ type: 'uuid', name: 'owner_id' })
@@ -89,7 +88,7 @@ export class Travel {
   // Relations
   @ManyToOne(() => User, (user) => user.travels, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'owner_id' })
-  user!: User;
+  owner!: User;
 
   @OneToMany(() => TravelExpense, (expense) => expense.travel, { cascade: true })
   expenses!: TravelExpense[];

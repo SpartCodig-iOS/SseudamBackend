@@ -23,10 +23,10 @@ export class TravelCurrencySnapshot {
   @Column({ type: 'uuid', name: 'travel_id' })
   travelId!: string;
 
-  @Column({ type: 'varchar', name: 'base_currency' })
+  @Column({ type: 'varchar', length: 3, name: 'base_currency' })
   baseCurrency!: string;
 
-  @Column({ type: 'varchar', name: 'destination_currency' })
+  @Column({ type: 'varchar', length: 3, name: 'destination_currency' })
   destinationCurrency!: string;
 
   @Column({ type: 'decimal', precision: 15, scale: 2, name: 'base_amount' })
