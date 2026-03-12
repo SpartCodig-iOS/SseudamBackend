@@ -44,11 +44,13 @@ export class TravelSettlement {
   amount!: number;
 
   @Column({
-    type: 'varchar',
-    length: 20,
+    type: 'text',
     default: SettlementStatus.PENDING,
   })
   status!: SettlementStatus;
+
+  @Column({ type: 'text', nullable: true })
+  note!: string | null;
 
   @Column({ type: 'timestamp with time zone', nullable: true, name: 'completed_at' })
   completedAt!: Date | null;

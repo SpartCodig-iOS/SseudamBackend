@@ -42,7 +42,7 @@ export class DeviceToken {
   /**
    * APNS 디바이스 토큰 (UNIQUE).
    */
-  @Column({ type: 'varchar', length: 512, name: 'device_token', unique: true })
+  @Column({ type: 'varchar', length: 255, name: 'device_token', unique: true })
   device_token!: string;
 
   /**

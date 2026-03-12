@@ -9,8 +9,8 @@ import {
 @Entity('app_version_history')
 @Index(['bundleId', 'recordedAt'])
 export class AppVersionHistory {
-  @PrimaryGeneratedColumn('increment')
-  id!: number;
+  @PrimaryGeneratedColumn('increment', { type: 'bigint' })
+  id!: string;
 
   @Column({ type: 'text', name: 'bundle_id' })
   bundleId!: string;

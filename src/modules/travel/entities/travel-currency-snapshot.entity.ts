@@ -17,8 +17,8 @@ import { Travel } from './travel.entity';
 // 복합 인덱스: 여행별 통화 스냅샷 조회 최적화
 @Index(['travelId', 'baseCurrency', 'destinationCurrency'])
 export class TravelCurrencySnapshot {
-  @PrimaryGeneratedColumn('uuid')
-  id!: string;
+  @PrimaryGeneratedColumn('increment')
+  id!: number;
 
   @Column({ type: 'uuid', name: 'travel_id' })
   travelId!: string;
@@ -29,14 +29,14 @@ export class TravelCurrencySnapshot {
   @Column({ type: 'varchar', length: 3, name: 'destination_currency' })
   destinationCurrency!: string;
 
-  @Column({ type: 'decimal', precision: 15, scale: 2, name: 'base_amount' })
+  @Column({ type: 'integer', default: 1000, name: 'base_amount' })
   baseAmount!: number;
 
   @Column({ type: 'decimal', precision: 15, scale: 6, name: 'base_exchange_rate' })
   baseExchangeRate!: number;
 
-  @CreateDateColumn({ type: 'timestamp with time zone', name: 'created_at' })
-  createdAt!: Date;
+  @CreateDateColumn({ type: 'timestamp with time zone', name: 'recorded_at' })
+  recordedAt!: Date;
 
   // Relations
   @ManyToOne(() => Travel, { onDelete: 'CASCADE' })

@@ -21,8 +21,17 @@ export class TravelExpenseParticipant {
   @Column({ type: 'uuid', name: 'expense_id' })
   expenseId!: string;
 
-  @Column({ type: 'uuid', name: 'member_id' })
-  memberId!: string;
+  @Column({ type: 'uuid', name: 'member_id', nullable: true })
+  memberId!: string | null;
+
+  @Column({ type: 'decimal', precision: 15, scale: 2, name: 'split_amount' })
+  splitAmount!: number;
+
+  @Column({ type: 'text', nullable: true, name: 'display_name' })
+  displayName!: string | null;
+
+  @Column({ type: 'uuid', name: 'user_id' })
+  userId!: string;
 
   // Relations
   @ManyToOne(() => TravelExpense, (expense) => expense.participants, { onDelete: 'CASCADE' })

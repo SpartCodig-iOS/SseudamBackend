@@ -3,7 +3,6 @@ import {
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
-  UpdateDateColumn,
   ManyToOne,
   Index,
   JoinColumn,
@@ -14,7 +13,7 @@ import { User } from '../../user/entities/user.entity';
 export enum TravelInviteStatus {
   ACTIVE = 'active',
   EXPIRED = 'expired',
-  DISABLED = 'disabled',
+  REVOKED = 'revoked',
 }
 
 @Entity('travel_invites')
@@ -35,8 +34,8 @@ export class TravelInvite {
   @Column({ type: 'text', unique: true, name: 'invite_code' })
   inviteCode!: string;
 
-  @Column({ type: 'uuid', name: 'created_by' })
-  createdBy!: string;
+  @Column({ type: 'uuid', name: 'created_by', nullable: true })
+  createdBy!: string | null;
 
   @Column({ type: 'text', default: TravelInviteStatus.ACTIVE })
   status!: TravelInviteStatus;
@@ -53,17 +52,14 @@ export class TravelInvite {
   @CreateDateColumn({ type: 'timestamp with time zone', name: 'created_at' })
   createdAt!: Date;
 
-  @UpdateDateColumn({ type: 'timestamp with time zone', name: 'updated_at' })
-  updatedAt!: Date;
-
   // Relations
   @ManyToOne(() => Travel, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'travel_id' })
   travel!: Travel;
 
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'created_by' })
-  creator!: User;
+  creator!: User | null;
 
   constructor(partial: Partial<TravelInvite> = {}) {
     Object.assign(this, partial);

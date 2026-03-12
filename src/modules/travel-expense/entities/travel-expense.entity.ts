@@ -70,6 +70,9 @@ export class TravelExpense {
   @Column({ type: 'uuid', nullable: true, name: 'payer_id' })
   payerId!: string | null;
 
+  @Column({ type: 'text', nullable: true, name: 'display_name' })
+  displayName!: string | null;
+
   @CreateDateColumn({ type: 'timestamp with time zone', name: 'created_at' })
   createdAt!: Date;
 

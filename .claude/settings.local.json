@@ -275,7 +275,14 @@
       "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"SELECT DISTINCT status FROM travels;\")",
       "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d app_version_history\")",
       "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d currency_rates\")",
-      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"SELECT COUNT\\(*\\) as users_count FROM users; SELECT COUNT\\(*\\) as profiles_count FROM profiles;\")"
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"SELECT COUNT\\(*\\) as users_count FROM users; SELECT COUNT\\(*\\) as profiles_count FROM profiles;\")",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d travel_invites\")",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d user_sessions\")",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d travel_settlements\")",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d device_tokens\")",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d oauth_refresh_tokens\")",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d app_versions\")",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d travel_currency_snapshots\")"
     ],
     "deny": [],
     "ask": []

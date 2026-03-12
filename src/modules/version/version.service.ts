@@ -71,7 +71,7 @@ export class VersionService {
         min_supported_version: appVersion.minSupportedVersion,
         force_update: appVersion.forceUpdate,
         release_notes: appVersion.releaseNotes,
-        updated_at: appVersion.updatedAt,
+        updated_at: appVersion.updated_at,
       };
     } catch (error) {
       // DB 문제 시 App Store 결과만으로 동작 (로그는 최소화)
