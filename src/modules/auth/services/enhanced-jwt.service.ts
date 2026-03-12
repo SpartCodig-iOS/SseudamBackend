@@ -97,44 +97,31 @@ export class EnhancedJwtService {
    * 토큰 검증 (blacklist 체크 포함)
    */
   async verifyToken(token: string, type: 'access' | 'refresh'): Promise<JwtPayload | null> {
-    this.logger.log(`🔐 ENHANCED VERIFY: Starting ${type} token verification (length: ${token.length})`);
-    this.logger.log(`🔐 JWT_SECRET: ${env.jwtSecret?.substring(0, 10)}...${env.jwtSecret?.substring(-10)} (length: ${env.jwtSecret?.length})`);
-
     try {
-      // 1. JWT 구조 검증
-      this.logger.log('🔐 ENHANCED VERIFY: Step 1 - JWT structure verification...');
       const payload = this.jwtService.verify(token) as JwtPayload;
-      this.logger.log(`✅ ENHANCED VERIFY: JWT structure valid - sub: ${payload.sub}, type: ${(payload as any).type}, tokenId: ${payload.tokenId}`);
 
-      // 2. 토큰 타입 검증
-      this.logger.log(`🔐 ENHANCED VERIFY: Step 2 - Token type check (expected: ${type}, got: ${(payload as any).type})`);
+      // 토큰 타입 검증
       if ((payload as any).type !== type) {
-        this.logger.log(`❌ ENHANCED VERIFY: Invalid token type - expected ${type}, got ${(payload as any).type}`);
+        this.logger.debug(`Invalid token type: expected ${type}, got ${(payload as any).type}`);
         return null;
       }
-      this.logger.log('✅ ENHANCED VERIFY: Token type valid');
 
-      // 3. 필수 필드 검증
-      this.logger.log(`🔐 ENHANCED VERIFY: Step 3 - Required fields check`);
+      // 필수 필드 검증
       if (!payload.tokenId || !payload.sub || !payload.sessionId) {
-        this.logger.log(`❌ ENHANCED VERIFY: Missing required fields - tokenId: ${!!payload.tokenId}, sub: ${!!payload.sub}, sessionId: ${!!payload.sessionId}`);
+        this.logger.debug(`Missing Enhanced JWT fields: tokenId=${!!payload.tokenId}, sub=${!!payload.sub}, sessionId=${!!payload.sessionId}`);
         return null;
       }
-      this.logger.log('✅ ENHANCED VERIFY: Required fields valid');
 
-      // 4. 블랙리스트 검증
-      this.logger.log(`🔐 ENHANCED VERIFY: Step 4 - Blacklist check for tokenId: ${payload.tokenId}`);
+      // 블랙리스트 검증
       const isBlacklisted = await this.blacklistService.isBlacklisted(payload.tokenId);
       if (isBlacklisted) {
-        this.logger.log(`❌ ENHANCED VERIFY: Token ${payload.tokenId} is blacklisted`);
+        this.logger.warn(`Token ${payload.tokenId} is blacklisted`);
         return null;
       }
-      this.logger.log('✅ ENHANCED VERIFY: Token not blacklisted');
 
-      this.logger.log('🎉 ENHANCED VERIFY: All checks passed!');
       return payload;
     } catch (error) {
-      this.logger.log(`❌ ENHANCED VERIFY: JWT structure verification failed - ${error instanceof Error ? error.message : String(error)}`);
+      this.logger.debug(`Enhanced JWT verification failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return null;
     }
   }
@@ -143,26 +130,21 @@ export class EnhancedJwtService {
    * Access Token 검증 (Enhanced + Legacy 토큰 지원)
    */
   async verifyAccessToken(token: string): Promise<JwtPayload | null> {
-    // 강제 로그 출력 (debug 대신 log 사용)
-    this.logger.log(`🔐 ENHANCED JWT: Starting verifyAccessToken (token length: ${token.length})`);
-
-    // 1. Enhanced JWT 토큰 시도 (type='access', tokenId, blacklist 체크)
+    // Enhanced JWT 먼저 시도
     const enhancedResult = await this.verifyToken(token, 'access');
     if (enhancedResult) {
-      this.logger.log('✅ Enhanced JWT token verification successful');
+      this.logger.debug('Enhanced JWT verification successful');
       return enhancedResult;
     }
 
-    // 2. Legacy JWT 토큰 시도 (type, tokenId 없는 토큰)
-    this.logger.log('🔄 ENHANCED JWT: Trying legacy JWT token verification...');
+    // Legacy JWT 시도
     const legacyResult = await this.verifyLegacyToken(token);
     if (legacyResult) {
-      this.logger.log('✅ 🎉 LEGACY JWT token verification SUCCESSFUL - user:', legacyResult.email);
-      this.logger.log('🎯 LEGACY JWT: Returning successful payload to AuthGuard');
+      this.logger.log(`Legacy JWT authentication successful for user: ${legacyResult.email}`);
       return legacyResult;
     }
 
-    this.logger.log('❌ ENHANCED JWT: Both Enhanced and Legacy JWT verification failed');
+    this.logger.warn(`JWT authentication failed - token length: ${token.length}`);
     return null;
   }
 
@@ -171,24 +153,11 @@ export class EnhancedJwtService {
    */
   private async verifyLegacyToken(token: string): Promise<JwtPayload | null> {
     try {
-      this.logger.debug('🔐 Legacy JWT: Structure verification...');
-
-      // JWT 구조 검증
       const payload = this.jwtService.verify(token) as any;
-
-      this.logger.debug(`Legacy JWT payload: ${JSON.stringify({
-        sub: payload.sub,
-        email: payload.email,
-        loginType: payload.loginType,
-        sessionId: payload.sessionId,
-        role: payload.role,
-        iat: payload.iat,
-        exp: payload.exp
-      }, null, 2)}`);
 
       // Legacy 토큰 필수 필드 검증
       if (!payload.sub || !payload.email || !payload.sessionId) {
-        this.logger.debug(`❌ Legacy JWT: Missing required fields - sub: ${!!payload.sub}, email: ${!!payload.email}, sessionId: ${!!payload.sessionId}`);
+        this.logger.debug(`Legacy JWT missing fields: sub=${!!payload.sub}, email=${!!payload.email}, sessionId=${!!payload.sessionId}`);
         return null;
       }
 
@@ -200,17 +169,16 @@ export class EnhancedJwtService {
         role: payload.role ?? 'user',
         loginType: payload.loginType ?? 'email',
         sessionId: payload.sessionId,
-        tokenId: `legacy-${payload.sub}-${payload.iat}`, // Legacy 토큰용 임시 ID
+        tokenId: `legacy-${payload.sub}-${payload.iat}`,
         iat: payload.iat,
         exp: payload.exp,
         iss: payload.iss ?? 'sseudam-backend',
         aud: payload.aud ?? 'sseudam-app',
       };
 
-      this.logger.debug('✅ Legacy JWT token successfully converted to Enhanced format');
       return enhancedPayload;
     } catch (error) {
-      this.logger.debug(`❌ Legacy JWT verification failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.logger.debug(`Legacy JWT verification failed: ${error instanceof Error ? error.message : error}`);
       return null;
     }
   }

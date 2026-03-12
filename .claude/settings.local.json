@@ -251,7 +251,9 @@
       "Bash(/tmp/summary_stats.sh:*)",
       "Bash(npm test:*)",
       "Bash(git reset:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(railway logs:*)",
+      "Bash(npm list:*)"
     ],
     "deny": [],
     "ask": []

@@ -10,6 +10,7 @@ import { CacheService } from '../services/cache.service';
 import { createHash } from 'crypto';
 import { UserRepository } from '../../modules/user/repositories/user.repository';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { authLogger } from '../../utils/logger';
 
 interface LocalAuthResult {
   user: UserRecord;
@@ -50,18 +51,30 @@ export class AuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
     const token = this.extractBearer(request.headers.authorization);
     if (!token) {
-      console.log('❌ AuthGuard: Missing bearer token for', request.url);
+      authLogger.warn({
+        url: request.url,
+        authHeader: request.headers.authorization ? 'present' : 'missing'
+      }, 'Missing bearer token');
       throw new UnauthorizedException('Missing bearer token');
     }
 
-    console.log('🔐 AuthGuard: Checking token for', request.url, 'token length:', token.length);
+    authLogger.debug({
+      url: request.url,
+      tokenLength: token.length,
+      tokenPrefix: token.substring(0, 10) + '...'
+    }, 'Token validation started');
 
     // Enhanced JWT 검증 (Blacklist 체크 포함) — 유일한 JWT 검증 경로
     const enhancedUser = await this.tryEnhancedJwt(token);
     if (enhancedUser) {
       const isLegacy = enhancedUser.user.id && token.includes('eyJ') && !token.includes('tokenId');
-      console.log(`✅ AuthGuard: ${isLegacy ? '🔄 LEGACY' : '🆕 ENHANCED'} JWT success for user:`, enhancedUser.user.email);
-      console.log(`🎯 AuthGuard: Setting currentUser and returning true for ${request.url}`);
+      authLogger.info({
+        type: isLegacy ? 'LEGACY' : 'ENHANCED',
+        userId: enhancedUser.user.id,
+        email: enhancedUser.user.email,
+        url: request.url,
+        sessionId: enhancedUser.sessionId
+      }, 'JWT authentication successful');
 
       try {
         this.setCachedUser(token, enhancedUser.user);
@@ -77,7 +90,10 @@ export class AuthGuard implements CanActivate {
       request.loginType = enhancedUser.loginType;
       return true;
     } else {
-      console.log('❌ AuthGuard: Enhanced JWT failed - trying Supabase fallback');
+      authLogger.debug({
+        url: request.url,
+        tokenLength: token.length
+      }, 'Enhanced JWT verification failed, trying Supabase fallback');
     }
 
     // Supabase 토큰 검증 (소셜 로그인 등 Enhanced JWT 미발급 토큰)
@@ -100,9 +116,19 @@ export class AuthGuard implements CanActivate {
         request.loginType = 'email';
         return true;
       }
-    } catch {
-      // Swallow to throw generic unauthorized below
+    } catch (error) {
+      authLogger.warn({
+        url: request.url,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }, 'Supabase authentication failed');
     }
+
+    authLogger.error({
+      url: request.url,
+      tokenLength: token.length,
+      tokenPrefix: token.substring(0, 20) + '...',
+      authHeader: request.headers.authorization ? 'present' : 'missing'
+    }, 'All authentication methods failed');
 
     throw new UnauthorizedException('Unauthorized');
   }
