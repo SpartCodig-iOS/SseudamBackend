@@ -75,16 +75,20 @@ export class ResponseOptimizerInterceptor implements NestInterceptor {
             );
           }
 
-          if (byteSize <= this.ETAG_MAX_BYTES) {
+          if (byteSize <= this.ETAG_MAX_BYTES && !response.headersSent) {
             const etag = this.generateETag(serialized);
+
+            // 304 체크를 먼저 수행
+            if (ifNoneMatch && ifNoneMatch === etag) {
+              response.status(304);
+              response.setHeader('ETag', etag);
+              response.end();
+              return null;
+            }
+
+            // 일반적인 경우 헤더 설정
             response.setHeader('ETag', etag);
             response.setHeader('X-Response-Size', `${byteSize}`);
-
-            // 304 Not Modified
-            if (ifNoneMatch && ifNoneMatch === etag && !response.headersSent) {
-              response.status(304).end();
-              return null; // rxjs가 더 이상 처리하지 않도록
-            }
           }
         }
 
