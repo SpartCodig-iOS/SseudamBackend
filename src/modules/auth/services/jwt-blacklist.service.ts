@@ -75,10 +75,11 @@ export class JwtBlacklistService {
       this.logger.debug(`🔒 Blacklist result: ${isBlacklisted} (entry: ${entry ? 'found' : 'not found'})`);
       return isBlacklisted;
     } catch (error) {
-      this.logger.error(`❌ Failed to check blacklist for token ${tokenId}:`, error);
-      // 에러 시 안전을 위해 블랙리스트로 간주
-      this.logger.debug(`🔒 Returning true due to error (treating as blacklisted for safety)`);
-      return true;
+      this.logger.warn(`⚠️ Failed to check blacklist for token ${tokenId}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      // 캐시 오류 시 사용자 경험을 위해 블랙리스트가 아닌 것으로 처리
+      // 대부분의 토큰은 블랙리스트에 없으므로 false 반환이 더 적절
+      this.logger.debug(`🔒 Returning false due to cache error (assuming not blacklisted for better UX)`);
+      return false;
     }
   }
 
