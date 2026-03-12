@@ -40,19 +40,19 @@ export interface PoolMonitorReport {
 
 const THRESHOLD = {
   /** 대기 중 연결이 이 값 이상이면 WARNING */
-  WAITING_WARN: 3,
+  WAITING_WARN: 1,   // 더 민감하게 조정
   /** 대기 중 연결이 이 값 이상이면 CRITICAL */
-  WAITING_CRITICAL: 8,
+  WAITING_CRITICAL: 3, // Railway 제한 고려하여 낮춤
   /** 활성 연결 비율이 이 값 이상이면 WARNING (%) */
-  UTILIZATION_WARN: 70,
+  UTILIZATION_WARN: 60, // 60%로 낮춤 (더 빠른 경고)
   /** 활성 연결 비율이 이 값 이상이면 CRITICAL (%) */
-  UTILIZATION_CRITICAL: 90,
+  UTILIZATION_CRITICAL: 80, // 80%로 낮춤 (Railway 환경)
   /** 유지할 히스토리 스냅샷 수 */
   HISTORY_SIZE: 60,
   /** 스냅샷 수집 간격 (ms) */
-  SNAPSHOT_INTERVAL_MS: 30_000, // 30초
+  SNAPSHOT_INTERVAL_MS: 15_000, // 15초로 단축 (더 빠른 감지)
   /** DB 연결 검증 간격 (ms) - 스냅샷과 독립적 */
-  PING_INTERVAL_MS: 60_000, // 1분
+  PING_INTERVAL_MS: 30_000, // 30초로 단축
 } as const;
 
 // ────────────────────────────────────────────────────────────

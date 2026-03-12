@@ -101,16 +101,19 @@ export const createDatabaseConfig = async (): Promise<TypeOrmModuleOptions> => {
     logging: isLocalEnv ? ['error', 'warn'] : false,
     autoLoadEntities: true,
 
-    // 연결 풀 설정
+    // 연결 풀 설정 (Railway 제한 고려)
     extra: {
-      max: env.nodeEnv === 'production' ? 20 : 5,
-      min: env.nodeEnv === 'production' ? 2 : 0,
-      idleTimeoutMillis: 30_000,
-      connectionTimeoutMillis: isLocalEnv ? 10_000 : 5_000,
-      statement_timeout: 30_000,
-      query_timeout: 30_000,
+      max: env.nodeEnv === 'production' ? 8 : 5,     // Railway 제한 고려하여 8개로 조정
+      min: env.nodeEnv === 'production' ? 1 : 0,     // 최소 1개로 조정
+      idleTimeoutMillis: 15_000,                     // 15초로 단축 (빠른 해제)
+      connectionTimeoutMillis: isLocalEnv ? 10_000 : 8_000,  // 8초로 조정
+      acquireTimeoutMillis: 10_000,                  // 연결 획득 타임아웃 추가
+      createTimeoutMillis: 5_000,                    // 연결 생성 타임아웃 추가
+      destroyTimeoutMillis: 3_000,                   // 연결 해제 타임아웃 추가
+      statement_timeout: 20_000,                     // 20초로 단축
+      query_timeout: 20_000,                         // 20초로 단축
       application_name: `SseudamBackend-${env.nodeEnv}`,
-      options: '-c statement_timeout=30s -c lock_timeout=10s',
+      options: '-c statement_timeout=20s -c lock_timeout=5s -c idle_in_transaction_session_timeout=10s',
     },
 
     // 연결 실패 시 재시도 (로컬 DB가 아직 기동 중일 수 있음)
