@@ -97,51 +97,43 @@ export class EnhancedJwtService {
    * 토큰 검증 (blacklist 체크 포함)
    */
   async verifyToken(token: string, type: 'access' | 'refresh'): Promise<JwtPayload | null> {
-    this.logger.debug(`🔐 EnhancedJwtService: Verifying ${type} token (length: ${token.length})`);
+    this.logger.log(`🔐 ENHANCED VERIFY: Starting ${type} token verification (length: ${token.length})`);
 
     try {
       // 1. JWT 구조 검증
-      this.logger.debug('🔐 Step 1: JWT structure verification...');
+      this.logger.log('🔐 ENHANCED VERIFY: Step 1 - JWT structure verification...');
       const payload = this.jwtService.verify(token) as JwtPayload;
-      this.logger.debug(`✅ JWT structure valid. Payload: ${JSON.stringify({
-        sub: payload.sub,
-        email: payload.email,
-        type: (payload as any).type,
-        tokenId: payload.tokenId,
-        sessionId: payload.sessionId,
-        iat: payload.iat,
-        exp: payload.exp
-      }, null, 2)}`);
+      this.logger.log(`✅ ENHANCED VERIFY: JWT structure valid - sub: ${payload.sub}, type: ${(payload as any).type}, tokenId: ${payload.tokenId}`);
 
       // 2. 토큰 타입 검증
-      this.logger.debug(`🔐 Step 2: Token type verification... Expected: ${type}, Got: ${(payload as any).type}`);
+      this.logger.log(`🔐 ENHANCED VERIFY: Step 2 - Token type check (expected: ${type}, got: ${(payload as any).type})`);
       if ((payload as any).type !== type) {
-        this.logger.debug(`❌ Invalid token type: expected ${type}, got ${(payload as any).type}`);
+        this.logger.log(`❌ ENHANCED VERIFY: Invalid token type - expected ${type}, got ${(payload as any).type}`);
         return null;
       }
-      this.logger.debug('✅ Token type valid');
+      this.logger.log('✅ ENHANCED VERIFY: Token type valid');
 
       // 3. 필수 필드 검증
-      this.logger.debug(`🔐 Step 3: Required fields verification...`);
+      this.logger.log(`🔐 ENHANCED VERIFY: Step 3 - Required fields check`);
       if (!payload.tokenId || !payload.sub || !payload.sessionId) {
-        this.logger.debug(`❌ Missing required fields - tokenId: ${!!payload.tokenId}, sub: ${!!payload.sub}, sessionId: ${!!payload.sessionId}`);
+        this.logger.log(`❌ ENHANCED VERIFY: Missing required fields - tokenId: ${!!payload.tokenId}, sub: ${!!payload.sub}, sessionId: ${!!payload.sessionId}`);
         return null;
       }
-      this.logger.debug('✅ Required fields valid');
+      this.logger.log('✅ ENHANCED VERIFY: Required fields valid');
 
       // 4. 블랙리스트 검증
-      this.logger.debug(`🔐 Step 4: Blacklist verification for tokenId: ${payload.tokenId}...`);
+      this.logger.log(`🔐 ENHANCED VERIFY: Step 4 - Blacklist check for tokenId: ${payload.tokenId}`);
       const isBlacklisted = await this.blacklistService.isBlacklisted(payload.tokenId);
       if (isBlacklisted) {
-        this.logger.debug(`❌ Token ${payload.tokenId} is blacklisted`);
+        this.logger.log(`❌ ENHANCED VERIFY: Token ${payload.tokenId} is blacklisted`);
         return null;
       }
-      this.logger.debug('✅ Token not blacklisted');
+      this.logger.log('✅ ENHANCED VERIFY: Token not blacklisted');
 
-      this.logger.debug('🎉 Token verification successful!');
+      this.logger.log('🎉 ENHANCED VERIFY: All checks passed!');
       return payload;
     } catch (error) {
-      this.logger.debug(`❌ Token verification failed at JWT structure verification: ${error instanceof Error ? error.message : String(error)}`);
+      this.logger.log(`❌ ENHANCED VERIFY: JWT structure verification failed - ${error instanceof Error ? error.message : String(error)}`);
       return null;
     }
   }
@@ -150,22 +142,25 @@ export class EnhancedJwtService {
    * Access Token 검증 (Enhanced + Legacy 토큰 지원)
    */
   async verifyAccessToken(token: string): Promise<JwtPayload | null> {
+    // 강제 로그 출력 (debug 대신 log 사용)
+    this.logger.log(`🔐 ENHANCED JWT: Starting verifyAccessToken (token length: ${token.length})`);
+
     // 1. Enhanced JWT 토큰 시도 (type='access', tokenId, blacklist 체크)
     const enhancedResult = await this.verifyToken(token, 'access');
     if (enhancedResult) {
-      this.logger.debug('✅ Enhanced JWT token verification successful');
+      this.logger.log('✅ Enhanced JWT token verification successful');
       return enhancedResult;
     }
 
     // 2. Legacy JWT 토큰 시도 (type, tokenId 없는 토큰)
-    this.logger.debug('🔄 Trying legacy JWT token verification...');
+    this.logger.log('🔄 ENHANCED JWT: Trying legacy JWT token verification...');
     const legacyResult = await this.verifyLegacyToken(token);
     if (legacyResult) {
-      this.logger.debug('✅ Legacy JWT token verification successful');
+      this.logger.log('✅ LEGACY JWT token verification successful');
       return legacyResult;
     }
 
-    this.logger.debug('❌ Both Enhanced and Legacy JWT token verification failed');
+    this.logger.log('❌ ENHANCED JWT: Both Enhanced and Legacy JWT verification failed');
     return null;
   }
 

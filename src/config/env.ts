@@ -224,8 +224,8 @@ export const env: NormalizedEnv = {
   databaseForceIPv4: raw.DATABASE_FORCE_IPv4 ?? false,
 
   jwtSecret,
-  accessTokenTTL: raw.ACCESS_TOKEN_TTL_SECONDS ?? 60 * 60 * 24,
-  refreshTokenTTL: raw.REFRESH_TOKEN_TTL_SECONDS ?? 60 * 60 * 24 * 60,
+  accessTokenTTL: raw.ACCESS_TOKEN_TTL_SECONDS ?? raw.TOKEN_EXPIRES_IN ?? 60 * 60 * 24,
+  refreshTokenTTL: raw.REFRESH_TOKEN_TTL_SECONDS ?? raw.REFRESH_EXPIRES_IN ?? 60 * 60 * 24 * 60,
 
   supabaseServiceRoleKey,
   supabaseUrl,

@@ -88,6 +88,8 @@ export const rawEnvSchema = z.object({
   JWT_SECRET: z.string().optional(),
   ACCESS_TOKEN_TTL_SECONDS: positiveIntSchema,
   REFRESH_TOKEN_TTL_SECONDS: positiveIntSchema,
+  TOKEN_EXPIRES_IN: positiveIntSchema,
+  REFRESH_EXPIRES_IN: positiveIntSchema,
 
   // ── Supabase ─────────────────────────────────
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
