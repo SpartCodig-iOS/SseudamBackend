@@ -61,6 +61,7 @@ export class AuthGuard implements CanActivate {
     if (enhancedUser) {
       const isLegacy = enhancedUser.user.id && token.includes('eyJ') && !token.includes('tokenId');
       console.log(`✅ AuthGuard: ${isLegacy ? '🔄 LEGACY' : '🆕 ENHANCED'} JWT success for user:`, enhancedUser.user.email);
+      console.log(`🎯 AuthGuard: Setting currentUser and returning true for ${request.url}`);
       this.setCachedUser(token, enhancedUser.user);
       void this.setRedisCachedUser(token, { user: enhancedUser.user, loginType: enhancedUser.loginType });
       request.currentUser = enhancedUser.user;

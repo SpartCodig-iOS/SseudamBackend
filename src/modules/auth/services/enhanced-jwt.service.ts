@@ -157,7 +157,8 @@ export class EnhancedJwtService {
     this.logger.log('🔄 ENHANCED JWT: Trying legacy JWT token verification...');
     const legacyResult = await this.verifyLegacyToken(token);
     if (legacyResult) {
-      this.logger.log('✅ LEGACY JWT token verification successful');
+      this.logger.log('✅ 🎉 LEGACY JWT token verification SUCCESSFUL - user:', legacyResult.email);
+      this.logger.log('🎯 LEGACY JWT: Returning successful payload to AuthGuard');
       return legacyResult;
     }
 
