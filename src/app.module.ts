@@ -118,6 +118,7 @@ export class AppModule implements NestModule {
         { path: 'api/v1/health', method: RequestMethod.GET },
         { path: 'health', method: RequestMethod.GET },
         { path: 'health/metrics', method: RequestMethod.GET },
+        { path: 'health/cache/clear/(.*)', method: RequestMethod.POST },
         { path: 'metrics', method: RequestMethod.GET },
         { path: 'api-docs/(.*)', method: RequestMethod.ALL },
         { path: 'api-docs', method: RequestMethod.ALL },
