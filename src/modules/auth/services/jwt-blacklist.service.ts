@@ -63,14 +63,21 @@ export class JwtBlacklistService {
    * 토큰이 블랙리스트에 있는지 확인
    */
   async isBlacklisted(tokenId: string): Promise<boolean> {
+    this.logger.debug(`🔒 Checking blacklist for tokenId: ${tokenId}`);
+
     try {
-      const entry = await this.cacheService.get<BlacklistEntry>(
-        `${this.BLACKLIST_PREFIX}${tokenId}`
-      );
-      return entry !== null;
+      const key = `${this.BLACKLIST_PREFIX}${tokenId}`;
+      this.logger.debug(`🔒 Looking up key: ${key}`);
+
+      const entry = await this.cacheService.get<BlacklistEntry>(key);
+      const isBlacklisted = entry !== null;
+
+      this.logger.debug(`🔒 Blacklist result: ${isBlacklisted} (entry: ${entry ? 'found' : 'not found'})`);
+      return isBlacklisted;
     } catch (error) {
-      this.logger.error(`Failed to check blacklist for token ${tokenId}:`, error);
+      this.logger.error(`❌ Failed to check blacklist for token ${tokenId}:`, error);
       // 에러 시 안전을 위해 블랙리스트로 간주
+      this.logger.debug(`🔒 Returning true due to error (treating as blacklisted for safety)`);
       return true;
     }
   }

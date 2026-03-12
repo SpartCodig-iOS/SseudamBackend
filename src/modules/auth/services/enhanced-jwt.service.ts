@@ -97,32 +97,51 @@ export class EnhancedJwtService {
    * 토큰 검증 (blacklist 체크 포함)
    */
   async verifyToken(token: string, type: 'access' | 'refresh'): Promise<JwtPayload | null> {
+    this.logger.debug(`🔐 EnhancedJwtService: Verifying ${type} token (length: ${token.length})`);
+
     try {
       // 1. JWT 구조 검증
+      this.logger.debug('🔐 Step 1: JWT structure verification...');
       const payload = this.jwtService.verify(token) as JwtPayload;
+      this.logger.debug(`✅ JWT structure valid. Payload: ${JSON.stringify({
+        sub: payload.sub,
+        email: payload.email,
+        type: (payload as any).type,
+        tokenId: payload.tokenId,
+        sessionId: payload.sessionId,
+        iat: payload.iat,
+        exp: payload.exp
+      }, null, 2)}`);
 
       // 2. 토큰 타입 검증
+      this.logger.debug(`🔐 Step 2: Token type verification... Expected: ${type}, Got: ${(payload as any).type}`);
       if ((payload as any).type !== type) {
-        this.logger.debug(`Invalid token type: expected ${type}, got ${(payload as any).type}`);
+        this.logger.debug(`❌ Invalid token type: expected ${type}, got ${(payload as any).type}`);
         return null;
       }
+      this.logger.debug('✅ Token type valid');
 
       // 3. 필수 필드 검증
+      this.logger.debug(`🔐 Step 3: Required fields verification...`);
       if (!payload.tokenId || !payload.sub || !payload.sessionId) {
-        this.logger.debug('Missing required fields in token payload');
+        this.logger.debug(`❌ Missing required fields - tokenId: ${!!payload.tokenId}, sub: ${!!payload.sub}, sessionId: ${!!payload.sessionId}`);
         return null;
       }
+      this.logger.debug('✅ Required fields valid');
 
       // 4. 블랙리스트 검증
+      this.logger.debug(`🔐 Step 4: Blacklist verification for tokenId: ${payload.tokenId}...`);
       const isBlacklisted = await this.blacklistService.isBlacklisted(payload.tokenId);
       if (isBlacklisted) {
-        this.logger.debug(`Token ${payload.tokenId} is blacklisted`);
+        this.logger.debug(`❌ Token ${payload.tokenId} is blacklisted`);
         return null;
       }
+      this.logger.debug('✅ Token not blacklisted');
 
+      this.logger.debug('🎉 Token verification successful!');
       return payload;
     } catch (error) {
-      this.logger.debug(`Token verification failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.logger.debug(`❌ Token verification failed at JWT structure verification: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     }
   }
