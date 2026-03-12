@@ -110,8 +110,13 @@ function buildCommonMocks() {
 function buildService(queryFn: (sql: string, params?: any[]) => Promise<any[]>) {
   const mocks = buildCommonMocks();
   const mockDataSource = buildMockDataSource(queryFn);
+  const mockExpenseRepository = {
+    findExpensesWithParticipants: async () => [],
+  } as any;
+
   return new TravelExpenseService(
     mockDataSource,
+    mockExpenseRepository,
     mocks.metaService,
     mocks.cacheService,
     mocks.eventEmitter,

@@ -48,7 +48,7 @@ export class TravelExpenseRepository extends BaseRepository<TravelExpense> {
     return await this.repository
       .createQueryBuilder('expense')
       .leftJoinAndSelect('expense.participants', 'participant')
-      .leftJoinAndSelect('participant.user', 'user')
+      .leftJoinAndSelect('participant.member', 'member')
       .leftJoinAndSelect('expense.payer', 'payer')
       .where('expense.travelId = :travelId', { travelId })
       .orderBy('expense.expenseDate', 'DESC')

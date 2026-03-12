@@ -56,6 +56,7 @@ export class TravelExpenseService {
   constructor(
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    private readonly expenseRepository: TravelExpenseRepository,
     private readonly metaService: MetaService,
     private readonly cacheService: CacheService,
     private readonly eventEmitter: EventEmitter2,

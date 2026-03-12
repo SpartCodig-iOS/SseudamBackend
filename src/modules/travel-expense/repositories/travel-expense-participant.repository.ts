@@ -16,31 +16,31 @@ export class TravelExpenseParticipantRepository extends BaseRepository<TravelExp
   async findByExpense(expenseId: string): Promise<TravelExpenseParticipant[]> {
     return this.repository.find({
       where: { expenseId },
-      relations: ['user'],
+      relations: ['member'],
       order: { createdAt: 'ASC' },
     });
   }
 
-  async findByUser(userId: string): Promise<TravelExpenseParticipant[]> {
+  async findByUser(memberId: string): Promise<TravelExpenseParticipant[]> {
     return this.repository.find({
-      where: { userId },
+      where: { memberId },
       relations: ['expense', 'expense.travel'],
       order: { createdAt: 'DESC' },
     });
   }
 
-  async addParticipants(expenseId: string, userIds: string[]): Promise<TravelExpenseParticipant[]> {
-    if (userIds.length === 0) return [];
+  async addParticipants(expenseId: string, memberIds: string[]): Promise<TravelExpenseParticipant[]> {
+    if (memberIds.length === 0) return [];
 
-    const participants = userIds.map(userId =>
-      this.repository.create({ expenseId, userId })
+    const participants = memberIds.map(memberId =>
+      this.repository.create({ expenseId, memberId })
     );
 
     return this.repository.save(participants);
   }
 
-  async removeParticipant(expenseId: string, userId: string): Promise<boolean> {
-    const result = await this.repository.delete({ expenseId, userId });
+  async removeParticipant(expenseId: string, memberId: string): Promise<boolean> {
+    const result = await this.repository.delete({ expenseId, memberId });
     return result.affected !== 0;
   }
 
@@ -65,9 +65,9 @@ export class TravelExpenseParticipantRepository extends BaseRepository<TravelExp
     return this.findByExpense(expenseId);
   }
 
-  async isParticipant(expenseId: string, userId: string): Promise<boolean> {
+  async isParticipant(expenseId: string, memberId: string): Promise<boolean> {
     const count = await this.repository.count({
-      where: { expenseId, userId },
+      where: { expenseId, memberId },
     });
     return count > 0;
   }
@@ -89,7 +89,7 @@ export class TravelExpenseParticipantRepository extends BaseRepository<TravelExp
     // In() 연산자로 다중 expenseId 를 올바르게 처리
     const participants = await this.repository.find({
       where: { expenseId: In(expenseIds) },
-      relations: ['user'],
+      relations: ['member'],
     });
 
     const participantMap = new Map<string, TravelExpenseParticipant[]>();

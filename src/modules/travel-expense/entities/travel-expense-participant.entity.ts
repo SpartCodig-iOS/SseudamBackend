@@ -12,9 +12,9 @@ import { TravelExpense } from './travel-expense.entity';
 import { User } from '../../user/entities/user.entity';
 
 @Entity('travel_expense_participants')
-@Unique(['expenseId', 'userId'])
+@Unique(['expenseId', 'memberId'])
 @Index(['expenseId'])
-@Index(['userId'])
+@Index(['memberId'])
 export class TravelExpenseParticipant {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -22,8 +22,8 @@ export class TravelExpenseParticipant {
   @Column({ type: 'uuid', name: 'expense_id' })
   expenseId!: string;
 
-  @Column({ type: 'uuid', name: 'user_id' })
-  userId!: string;
+  @Column({ type: 'uuid', name: 'member_id' })
+  memberId!: string;
 
   @CreateDateColumn({ type: 'timestamp with time zone', name: 'created_at' })
   createdAt!: Date;
@@ -34,8 +34,8 @@ export class TravelExpenseParticipant {
   expense!: TravelExpense;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'user_id' })
-  user!: User;
+  @JoinColumn({ name: 'member_id' })
+  member!: User;
 
   constructor(partial: Partial<TravelExpenseParticipant> = {}) {
     Object.assign(this, partial);
