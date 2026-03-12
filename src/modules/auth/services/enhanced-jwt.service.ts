@@ -130,21 +130,40 @@ export class EnhancedJwtService {
    * Access Token 검증 (Enhanced + Legacy 토큰 지원)
    */
   async verifyAccessToken(token: string): Promise<JwtPayload | null> {
+    this.logger.debug(`🔍 JWT verification starting for token: ${token.substring(0, 20)}...`);
+
     // Enhanced JWT 먼저 시도
     const enhancedResult = await this.verifyToken(token, 'access');
     if (enhancedResult) {
-      this.logger.debug('Enhanced JWT verification successful');
+      this.logger.debug('✅ Enhanced JWT verification successful');
       return enhancedResult;
     }
 
     // Legacy JWT 시도
     const legacyResult = await this.verifyLegacyToken(token);
     if (legacyResult) {
-      this.logger.log(`Legacy JWT authentication successful for user: ${legacyResult.email}`);
+      this.logger.log(`✅ Legacy JWT authentication successful for user: ${legacyResult.email}`);
       return legacyResult;
     }
 
-    this.logger.warn(`JWT authentication failed - token length: ${token.length}`);
+    // 디버깅: JWT 디코딩 시도 (검증 없이)
+    try {
+      const decoded = this.jwtService.decode(token) as any;
+      if (decoded) {
+        this.logger.warn(`❌ JWT verification failed but decode successful:`, {
+          sub: decoded.sub,
+          email: decoded.email ? 'present' : 'missing',
+          iat: decoded.iat,
+          exp: decoded.exp,
+          isExpired: Date.now() / 1000 > (decoded.exp || 0),
+          tokenAge: decoded.iat ? Math.floor((Date.now() / 1000) - decoded.iat) : 'unknown',
+        });
+      }
+    } catch (decodeError) {
+      this.logger.error(`❌ JWT decode also failed: ${decodeError instanceof Error ? decodeError.message : decodeError}`);
+    }
+
+    this.logger.warn(`❌ All JWT authentication methods failed - token length: ${token.length}`);
     return null;
   }
 
@@ -153,11 +172,24 @@ export class EnhancedJwtService {
    */
   private async verifyLegacyToken(token: string): Promise<JwtPayload | null> {
     try {
+      this.logger.debug(`🔍 Legacy JWT verification starting. Token length: ${token.length}`);
+
       const payload = this.jwtService.verify(token) as any;
+
+      this.logger.debug(`🔍 Legacy JWT payload extracted:`, {
+        sub: payload.sub,
+        email: payload.email ? 'present' : 'missing',
+        sessionId: payload.sessionId,
+        loginType: payload.loginType,
+        iat: payload.iat,
+        exp: payload.exp,
+        hasTokenId: !!payload.tokenId,
+        hasType: !!payload.type
+      });
 
       // Legacy 토큰 필수 필드 검증
       if (!payload.sub || !payload.email || !payload.sessionId) {
-        this.logger.debug(`Legacy JWT missing fields: sub=${!!payload.sub}, email=${!!payload.email}, sessionId=${!!payload.sessionId}`);
+        this.logger.warn(`❌ Legacy JWT missing required fields: sub=${!!payload.sub}, email=${!!payload.email}, sessionId=${!!payload.sessionId}`);
         return null;
       }
 
@@ -176,9 +208,14 @@ export class EnhancedJwtService {
         aud: payload.aud ?? 'sseudam-app',
       };
 
+      this.logger.debug(`✅ Legacy JWT verification successful for user: ${enhancedPayload.email}`);
       return enhancedPayload;
     } catch (error) {
-      this.logger.debug(`Legacy JWT verification failed: ${error instanceof Error ? error.message : error}`);
+      this.logger.error(`❌ Legacy JWT verification failed: ${error instanceof Error ? error.message : error}`, {
+        tokenLength: token.length,
+        tokenStart: token.substring(0, 20) + '...',
+        errorType: error instanceof Error ? error.constructor.name : typeof error
+      });
       return null;
     }
   }
