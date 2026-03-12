@@ -408,7 +408,14 @@ export class TravelExpenseService {
       const payerProfile = this.getMemberProfile(context, payerId);
       const expenseMembers = context.memberIds
         .map((memberId) => this.getMemberProfile(context, memberId))
-        .filter((member): member is TravelExpenseMember => member !== null);
+        .filter((member): member is TravelExpenseMember => {
+          // null 체크와 빈 객체 체크
+          if (!member || (typeof member === 'object' && Object.keys(member).length === 0)) {
+            return false;
+          }
+          // userId 필드 유효성 체크
+          return member.userId && typeof member.userId === 'string';
+        });
       const participants = participantIds
         .map((memberId) => this.toParticipant(this.getMemberProfile(context, memberId)))
         .filter(Boolean) as TravelExpenseParticipant[];
@@ -556,10 +563,17 @@ export class TravelExpenseService {
         }
       ) ?? [];
 
-      // ExpenseMembers (전체 여행 멤버)
+      // ExpenseMembers (전체 여행 멤버) - 빈 객체 완전 제거
       const expenseMembers = context.memberIds
         .map((memberId) => this.getMemberProfile(context, memberId))
-        .filter((member): member is TravelExpenseMember => member !== null);
+        .filter((member): member is TravelExpenseMember => {
+          // null 체크와 빈 객체 체크
+          if (!member || (typeof member === 'object' && Object.keys(member).length === 0)) {
+            return false;
+          }
+          // userId 필드 유효성 체크
+          return member.userId && typeof member.userId === 'string';
+        });
 
       return {
         id: expense.id,
@@ -602,7 +616,14 @@ export class TravelExpenseService {
   private transformCachedExpenses(cached: any[], context: TravelContext): TravelExpense[] {
     const expenseMembers = context.memberIds
       .map((memberId) => this.getMemberProfile(context, memberId))
-      .filter((member): member is TravelExpenseMember => member !== null);
+      .filter((member): member is TravelExpenseMember => {
+        // null 체크와 빈 객체 체크
+        if (!member || (typeof member === 'object' && Object.keys(member).length === 0)) {
+          return false;
+        }
+        // userId 필드 유효성 체크
+        return member.userId && typeof member.userId === 'string';
+      });
 
     return cached.map((item) => {
       const { payerId: _legacyPayerId, ...rest } = item as any;
@@ -664,7 +685,14 @@ export class TravelExpenseService {
     if (cached) {
       const expenseMembers = context.memberIds
         .map((memberId) => this.getMemberProfile(context, memberId))
-        .filter((member): member is TravelExpenseMember => member !== null);
+        .filter((member): member is TravelExpenseMember => {
+          // null 체크와 빈 객체 체크
+          if (!member || (typeof member === 'object' && Object.keys(member).length === 0)) {
+            return false;
+          }
+          // userId 필드 유효성 체크
+          return member.userId && typeof member.userId === 'string';
+        });
       return cached.map((item) => {
         const { payerId: _legacyPayerId, ...rest } = item as any;
         const payerProfile =
@@ -721,7 +749,14 @@ export class TravelExpenseService {
 
     const expenseMembers = context.memberIds
       .map((memberId) => this.getMemberProfile(context, memberId))
-      .filter((member): member is TravelExpenseMember => member !== null);
+      .filter((member): member is TravelExpenseMember => {
+        // null 체크와 빈 객체 체크
+        if (!member || (typeof member === 'object' && Object.keys(member).length === 0)) {
+          return false;
+        }
+        // userId 필드 유효성 체크
+        return member.userId && typeof member.userId === 'string';
+      });
 
     const items = await Promise.all(combinedRows.map(async (row: any) => {
       const amount = Number(row.amount);
@@ -832,7 +867,14 @@ export class TravelExpenseService {
       const updatePayerProfile = this.getMemberProfile(context, payerId);
       const updateExpenseMembers = context.memberIds
         .map((memberId) => this.getMemberProfile(context, memberId))
-        .filter((member): member is TravelExpenseMember => member !== null);
+        .filter((member): member is TravelExpenseMember => {
+          // null 체크와 빈 객체 체크
+          if (!member || (typeof member === 'object' && Object.keys(member).length === 0)) {
+            return false;
+          }
+          // userId 필드 유효성 체크
+          return member.userId && typeof member.userId === 'string';
+        });
       const updateParticipants = participantIds
         .map((memberId) => this.toParticipant(this.getMemberProfile(context, memberId)))
         .filter(Boolean) as TravelExpenseParticipant[];

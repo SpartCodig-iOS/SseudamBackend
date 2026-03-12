@@ -188,14 +188,11 @@ export class EnhancedJwtService {
         currentTime: Math.floor(Date.now() / 1000)
       });
 
-      // 더 관대한 필드 검증 (sessionId 없어도 허용)
-      if (!payload.sub || !payload.email) {
-        this.logger.warn(`❌ Legacy JWT missing critical fields: sub=${!!payload.sub}, email=${!!payload.email}`);
+      // 정상적인 필드 검증 (sessionId는 반드시 있어야 함)
+      if (!payload.sub || !payload.email || !payload.sessionId) {
+        this.logger.warn(`❌ Legacy JWT missing required fields: sub=${!!payload.sub}, email=${!!payload.email}, sessionId=${!!payload.sessionId}`);
         return null;
       }
-
-      // sessionId가 없는 경우 임시 생성
-      const finalSessionId = payload.sessionId || `temp-session-${payload.sub}-${payload.iat}`;
 
       // Legacy 토큰을 Enhanced JWT 형식으로 변환
       const enhancedPayload: JwtPayload = {
@@ -204,7 +201,7 @@ export class EnhancedJwtService {
         name: payload.name ?? null,
         role: payload.role ?? 'member', // 기본값을 user → member로 변경
         loginType: payload.loginType ?? 'apple', // 기본값을 email → apple로 변경 (대부분 Apple 로그인)
-        sessionId: finalSessionId,
+        sessionId: payload.sessionId,
         tokenId: `legacy-${payload.sub}-${payload.iat}`,
         iat: payload.iat,
         exp: payload.exp,
