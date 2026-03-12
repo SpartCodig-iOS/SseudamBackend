@@ -50,6 +50,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (exception instanceof ZodError) {
       const issues = exception.issues.map(formatZodIssue);
       logger.info('Validation failed', { issues, requestId });
+      if (response.headersSent) {
+        logger.warn('Cannot send ZodError response, headers already sent', { requestId });
+        return;
+      }
       return response.status(HttpStatus.BAD_REQUEST).json({
         code: HttpStatus.BAD_REQUEST,
         message: '요청 데이터 형식이 올바르지 않습니다.',
@@ -77,6 +81,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
         logger.info('Handled error response', { status, message, requestId });
       }
 
+      if (response.headersSent) {
+        logger.warn('Cannot send HttpException response, headers already sent', { requestId, status });
+        return;
+      }
+
       return response.status(status).json({
         code: status,
         data,
@@ -91,6 +100,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if ((exception as any)?.code && (exception as any)?.severity) {
       const mapped = normalizeDbError(exception as DatabaseError);
       if (mapped) {
+        if (response.headersSent) {
+          logger.warn('Cannot send DB error response, headers already sent', { requestId, code: mapped.status });
+          return;
+        }
         return response.status(mapped.status).json({
           code: mapped.status,
           data: [],
@@ -101,6 +114,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
     logger.error('Unhandled exception', { message, stack: (exception as Error)?.stack, requestId });
     this.capture(exception);
+
+    if (response.headersSent) {
+      logger.warn('Cannot send general error response, headers already sent', { requestId, status });
+      return;
+    }
 
     return response.status(status).json({
       code: status,
