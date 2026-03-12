@@ -62,8 +62,17 @@ export class AuthGuard implements CanActivate {
       const isLegacy = enhancedUser.user.id && token.includes('eyJ') && !token.includes('tokenId');
       console.log(`✅ AuthGuard: ${isLegacy ? '🔄 LEGACY' : '🆕 ENHANCED'} JWT success for user:`, enhancedUser.user.email);
       console.log(`🎯 AuthGuard: Setting currentUser and returning true for ${request.url}`);
-      this.setCachedUser(token, enhancedUser.user);
-      void this.setRedisCachedUser(token, { user: enhancedUser.user, loginType: enhancedUser.loginType });
+
+      try {
+        this.setCachedUser(token, enhancedUser.user);
+        // Redis 캐시 오류가 인증 성공을 방해하지 않도록 안전하게 처리
+        this.setRedisCachedUser(token, { user: enhancedUser.user, loginType: enhancedUser.loginType }).catch(err => {
+          console.warn('Redis cache failed, but authentication succeeded:', err.message);
+        });
+      } catch (error) {
+        console.warn('Cache operation failed, but authentication succeeded:', error instanceof Error ? error.message : 'Unknown error');
+      }
+
       request.currentUser = enhancedUser.user;
       request.loginType = enhancedUser.loginType;
       return true;
@@ -76,8 +85,17 @@ export class AuthGuard implements CanActivate {
       const supabaseUser = await this.supabaseService.getUserFromToken(token);
       if (supabaseUser?.email) {
         const userRecord = await this.hydrateUserRole(fromSupabaseUser(supabaseUser));
-        this.setCachedUser(token, userRecord);
-        void this.setRedisCachedUser(token, { user: userRecord, loginType: 'email' });
+
+        try {
+          this.setCachedUser(token, userRecord);
+          // Redis 캐시 오류가 인증 성공을 방해하지 않도록 안전하게 처리
+          this.setRedisCachedUser(token, { user: userRecord, loginType: 'email' }).catch(err => {
+            console.warn('Redis cache failed for Supabase user, but authentication succeeded:', err.message);
+          });
+        } catch (error) {
+          console.warn('Cache operation failed for Supabase user, but authentication succeeded:', error instanceof Error ? error.message : 'Unknown error');
+        }
+
         request.currentUser = userRecord;
         request.loginType = 'email';
         return true;
