@@ -32,6 +32,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const requestId = RequestContext.getRequestId();
+
+    // 헤더 중복 전송 방지: 이미 응답이 시작된 경우 처리 중단
+    if (response.headersSent) {
+      logger.warn('Response headers already sent, skipping exception handler', { requestId });
+      return;
+    }
     const normalizeDbError = (err: DatabaseError) => {
       const code = err.code;
       // PostgreSQL 에러코드 매핑 (https://www.postgresql.org/docs/current/errcodes-appendix.html)
