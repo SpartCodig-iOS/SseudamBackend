@@ -189,6 +189,78 @@ export class HealthController {
     }));
   }
 
+  @Get('health/debug/expenses/:travelId')
+  @HttpCode(HttpStatus.OK)
+  async debugExpenses(@Req() req: Request, @Res() res: Response) {
+    assertMetricsAccess(req);
+
+    const travelId = req.params.travelId;
+
+    try {
+      const pool = await getPool();
+      if (!pool) {
+        return res.status(500).json({ error: 'Database pool not available' });
+      }
+
+      // 여행 경비 및 참가자 데이터 조회
+      const expenseQuery = `
+        SELECT
+          e.id,
+          e.title,
+          e.amount,
+          e.currency,
+          e.payer_id,
+          e.author_id,
+          e.created_at,
+          e.expense_date,
+          (SELECT COUNT(*) FROM travel_expense_participants tep WHERE tep.expense_id = e.id) as participant_count,
+          json_agg(
+            json_build_object(
+              'member_id', tep.member_id,
+              'split_amount', tep.split_amount
+            )
+          ) FILTER (WHERE tep.member_id IS NOT NULL) as participants
+        FROM travel_expenses e
+        LEFT JOIN travel_expense_participants tep ON tep.expense_id = e.id
+        WHERE e.travel_id = $1
+        GROUP BY e.id
+        ORDER BY e.created_at DESC;
+      `;
+
+      const memberQuery = `
+        SELECT
+          tm.user_id,
+          p.name,
+          p.email,
+          p.avatar_url
+        FROM travel_members tm
+        LEFT JOIN profiles p ON p.id = tm.user_id
+        WHERE tm.travel_id = $1;
+      `;
+
+      const [expenseResult, memberResult] = await Promise.all([
+        pool.query(expenseQuery, [travelId]),
+        pool.query(memberQuery, [travelId])
+      ]);
+
+      return res.json({
+        travelId,
+        expenses: expenseResult.rows,
+        members: memberResult.rows,
+        summary: {
+          totalExpenses: expenseResult.rows.length,
+          totalMembers: memberResult.rows.length
+        }
+      });
+
+    } catch (error) {
+      return res.status(500).json({
+        error: 'Database query failed',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  }
+
   @Get('health/metrics')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '시스템 상태 JSON 메트릭 (내부 전용) — Prometheus 형식은 GET /metrics 사용' })

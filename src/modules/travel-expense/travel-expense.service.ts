@@ -10,6 +10,7 @@ import { AnalyticsService } from '../../common/services/analytics.service';
 import { ProfileService } from '../profile/profile.service';
 import { QueueEventService } from '../queue/services/queue-event.service';
 import { AppMetricsService } from '../../common/metrics/app-metrics.service';
+import { TravelExpenseRepository } from './repositories/travel-expense.repository';
 
 interface TravelContext {
   id: string;

@@ -41,6 +41,21 @@ export class TravelExpenseRepository extends BaseRepository<TravelExpense> {
     super(travelExpenseRepository);
   }
 
+  /**
+   * TypeORM 관계를 사용한 경비 조회 (참여자 포함)
+   */
+  async findExpensesWithParticipants(travelId: string): Promise<TravelExpense[]> {
+    return await this.repository
+      .createQueryBuilder('expense')
+      .leftJoinAndSelect('expense.participants', 'participant')
+      .leftJoinAndSelect('participant.user', 'user')
+      .leftJoinAndSelect('expense.payer', 'payer')
+      .where('expense.travelId = :travelId', { travelId })
+      .orderBy('expense.expenseDate', 'DESC')
+      .addOrderBy('expense.createdAt', 'DESC')
+      .getMany();
+  }
+
   async findExpensesByTravel(travelId: string, options: ExpenseListOptions = {}): Promise<[TravelExpense[], number]> {
     const {
       authorId,
