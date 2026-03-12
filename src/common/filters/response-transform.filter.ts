@@ -73,9 +73,13 @@ export class ResponseTransformInterceptor implements NestInterceptor {
           count: data.data.length,
         };
 
-        // 큰 배열에 대한 압축 힌트
-        if (data.data.length > 50) {
-          response.set('X-Large-Response', 'true');
+        // 큰 배열에 대한 압축 힌트 (헤더가 이미 전송되지 않은 경우에만)
+        if (data.data.length > 50 && !response.headersSent) {
+          try {
+            response.set('X-Large-Response', 'true');
+          } catch (error) {
+            // 헤더 설정 실패 시 무시
+          }
         }
       }
 
