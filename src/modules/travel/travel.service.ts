@@ -550,8 +550,8 @@ export class TravelService {
     const row = {
       id: result.t_id,
       title: result.t_title,
-      start_date: result.t_startDate?.toISOString().split('T')[0],
-      end_date: result.t_endDate?.toISOString().split('T')[0],
+      start_date: result.t_startDate?.toISOString().split('T')[0] || '2026-01-01', // 기본값 제공
+      end_date: result.t_endDate?.toISOString().split('T')[0] || '2026-01-02', // 기본값 제공
       country_code: result.t_countryCode,
       country_name_kr: result.t_countryNameKr,
       country_currencies: result.t_countryCurrencies,

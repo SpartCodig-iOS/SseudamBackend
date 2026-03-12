@@ -50,6 +50,7 @@ export interface TravelExpenseMember {
 
 export interface TravelExpenseParticipant {
   memberId: string;
+  userId: string; // iOS 클라이언트가 요구하는 필드
   name: string | null;
 }
 
@@ -289,7 +290,11 @@ export class TravelExpenseService {
 
   private toParticipant(member: TravelExpenseMember | null): TravelExpenseParticipant | null {
     if (!member) return null;
-    return { memberId: member.userId, name: member.name };
+    return {
+      memberId: member.userId,
+      userId: member.userId, // iOS 클라이언트가 필요로 하는 필드
+      name: member.name
+    };
   }
 
   private async invalidateExpenseCaches(travelId: string, expenseId?: string): Promise<void> {
@@ -546,6 +551,7 @@ export class TravelExpenseService {
       const participants = expense.participants?.map((p: any) =>
         this.toParticipant(this.getMemberProfile(context, p.memberId)) ?? {
           memberId: p.memberId,
+          userId: p.memberId, // iOS 클라이언트가 필요로 하는 필드 추가
           name: p.member?.name ?? null,
         }
       ) ?? [];
@@ -735,6 +741,7 @@ export class TravelExpenseService {
       const participants = participantList.map((p: any) =>
         this.toParticipant(this.getMemberProfile(context, p.memberId)) ?? {
           memberId: p.memberId,
+          userId: p.memberId, // iOS 클라이언트가 필요로 하는 필드 추가
           name: p.name ?? null,
         }
       );
