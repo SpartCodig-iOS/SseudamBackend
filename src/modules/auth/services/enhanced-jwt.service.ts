@@ -219,10 +219,73 @@ export class EnhancedJwtService {
   }
 
   /**
-   * Refresh Token 검증
+   * Refresh Token 검증 (Enhanced + Legacy 토큰 지원)
    */
   async verifyRefreshToken(token: string): Promise<JwtPayload | null> {
-    return this.verifyToken(token, 'refresh');
+    // 1. Enhanced JWT 토큰 시도 (type='refresh', tokenId, blacklist 체크)
+    const enhancedResult = await this.verifyToken(token, 'refresh');
+    if (enhancedResult) {
+      this.logger.debug('✅ Enhanced Refresh JWT token verification successful');
+      return enhancedResult;
+    }
+
+    // 2. Legacy Refresh JWT 토큰 시도 (typ='refresh' 필드 확인)
+    this.logger.debug('🔄 Trying legacy Refresh JWT token verification...');
+    const legacyResult = await this.verifyLegacyRefreshToken(token);
+    if (legacyResult) {
+      this.logger.debug('✅ Legacy Refresh JWT token verification successful');
+      return legacyResult;
+    }
+
+    this.logger.debug('❌ Both Enhanced and Legacy Refresh JWT token verification failed');
+    return null;
+  }
+
+  /**
+   * Legacy Refresh JWT 토큰 검증 (typ='refresh' 필드만 확인)
+   */
+  private async verifyLegacyRefreshToken(token: string): Promise<JwtPayload | null> {
+    try {
+      this.logger.debug('🔐 Legacy Refresh JWT: Structure verification...');
+
+      // JWT 구조 검증
+      const payload = this.jwtService.verify(token) as any;
+
+      this.logger.debug(`Legacy Refresh JWT payload: ${JSON.stringify({
+        sub: payload.sub,
+        typ: payload.typ,
+        sessionId: payload.sessionId,
+        iat: payload.iat,
+        exp: payload.exp
+      }, null, 2)}`);
+
+      // Legacy Refresh 토큰 필수 필드 검증
+      if (!payload.sub || !payload.sessionId || payload.typ !== 'refresh') {
+        this.logger.debug(`❌ Legacy Refresh JWT: Missing required fields or invalid type - sub: ${!!payload.sub}, sessionId: ${!!payload.sessionId}, typ: ${payload.typ}`);
+        return null;
+      }
+
+      // Legacy Refresh 토큰을 Enhanced JWT 형식으로 변환
+      const enhancedPayload: JwtPayload = {
+        sub: payload.sub,
+        email: payload.email ?? `user-${payload.sub}@legacy.local`,
+        name: payload.name ?? null,
+        role: payload.role ?? 'user',
+        loginType: payload.loginType ?? 'email',
+        sessionId: payload.sessionId,
+        tokenId: `legacy-refresh-${payload.sub}-${payload.iat}`, // Legacy Refresh 토큰용 임시 ID
+        iat: payload.iat,
+        exp: payload.exp,
+        iss: payload.iss ?? 'sseudam-backend',
+        aud: payload.aud ?? 'sseudam-app',
+      };
+
+      this.logger.debug('✅ Legacy Refresh JWT token successfully converted to Enhanced format');
+      return enhancedPayload;
+    } catch (error) {
+      this.logger.debug(`❌ Legacy Refresh JWT verification failed: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
   }
 
   /**

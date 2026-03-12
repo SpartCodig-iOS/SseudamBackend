@@ -383,8 +383,9 @@ export class AuthService {
   // ---------------------------------------------------------------------------
 
   async refresh(refreshToken: string): Promise<RefreshPayload> {
-    const payload = this.jwtTokenService.verifyRefreshToken(refreshToken);
-    if (!payload.sub || !payload.sessionId) {
+    // Enhanced JWT Service 사용 (Legacy JWT 지원 포함)
+    const payload = await this.enhancedJwtService.verifyRefreshToken(refreshToken);
+    if (!payload || !payload.sub || !payload.sessionId) {
       throw new UnauthorizedException('Invalid refresh token');
     }
 

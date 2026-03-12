@@ -639,7 +639,7 @@ export class AuthController {
   }
 
   /**
-   * Authorization 헤더의 Bearer 토큰이 있으면 검증하여 userId를 반환
+   * Authorization 헤더의 Bearer 토큰이 있으면 검증하여 userId를 반환 (Enhanced + Legacy JWT 지원)
    */
   private async resolveUserIdFromHeader(req: RequestWithUser): Promise<string | null> {
     const authHeader = req.headers?.authorization ?? '';
@@ -650,7 +650,8 @@ export class AuthController {
     if (!token) return null;
 
     try {
-      const payload = this.jwtTokenService.verifyAccessToken(token);
+      // Enhanced JWT Service 사용 (Legacy JWT 지원 포함)
+      const payload = await this.enhancedJwtService.verifyAccessToken(token);
       if (!payload?.sub || !payload.sessionId) return null;
 
       // 세션이 유효한지 확인 (만료/취소된 세션이면 무시)
