@@ -421,7 +421,9 @@ export class TravelExpenseService {
       }
 
       payerProfile = this.getMemberProfile(context, payerId);
-      expenseMembers = context.memberIds.map((memberId) => this.getMemberProfile(context, memberId)!);
+      expenseMembers = context.memberIds
+        .map((memberId) => this.getMemberProfile(context, memberId))
+        .filter((member): member is TravelExpenseMember => member !== null);
       participants = participantIds
         .map((memberId) => this.toParticipant(this.getMemberProfile(context, memberId)))
         .filter(Boolean) as TravelExpenseParticipant[];
@@ -530,7 +532,9 @@ export class TravelExpenseService {
 
     const cached = await this.getCachedExpenseList(cacheKey);
     if (cached) {
-      const expenseMembers = context.memberIds.map((memberId) => this.getMemberProfile(context, memberId)!);
+      const expenseMembers = context.memberIds
+        .map((memberId) => this.getMemberProfile(context, memberId))
+        .filter((member): member is TravelExpenseMember => member !== null);
       return cached.map((item) => {
         const { payerId: _legacyPayerId, ...rest } = item as any;
         const payerProfile =
@@ -602,7 +606,9 @@ export class TravelExpenseService {
       queryParams,
     );
 
-    const expenseMembers = context.memberIds.map((memberId) => this.getMemberProfile(context, memberId)!);
+    const expenseMembers = context.memberIds
+      .map((memberId) => this.getMemberProfile(context, memberId))
+      .filter((member): member is TravelExpenseMember => member !== null);
 
     const items = await Promise.all(combinedRows.map(async (row: any) => {
       const amount = Number(row.amount);
@@ -758,7 +764,9 @@ export class TravelExpenseService {
       }
 
       updatePayerProfile = this.getMemberProfile(context, payerId);
-      updateExpenseMembers = context.memberIds.map((memberId) => this.getMemberProfile(context, memberId)!);
+      updateExpenseMembers = context.memberIds
+        .map((memberId) => this.getMemberProfile(context, memberId))
+        .filter((member): member is TravelExpenseMember => member !== null);
       updateParticipants = participantIds
         .map((memberId) => this.toParticipant(this.getMemberProfile(context, memberId)))
         .filter(Boolean) as TravelExpenseParticipant[];
