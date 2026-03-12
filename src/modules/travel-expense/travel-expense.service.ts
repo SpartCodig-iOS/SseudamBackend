@@ -176,12 +176,6 @@ export class TravelExpenseService {
     const rawMembers: Array<{ id: string; name?: string | null; email?: string | null; avatar_url?: string | null }> = row.member_data ?? [];
     const memberIds = rawMembers.map((member) => member.id);
 
-    // 디버깅: 멤버 데이터 로딩 확인
-    console.log(`[TravelExpenseService] Travel ${travelId} members loaded:`, {
-      totalMembers: rawMembers.length,
-      memberIds: memberIds,
-      memberDetails: rawMembers.map(m => ({ id: m.id, name: m.name, hasAvatar: !!m.avatar_url }))
-    });
 
     if (!memberIds.includes(userId)) {
       throw new BadRequestException('해당 여행에 접근 권한이 없습니다.');
@@ -268,30 +262,15 @@ export class TravelExpenseService {
   }
 
   private getMemberProfile(context: TravelContext, memberId: string): TravelExpenseMember | null {
-    console.log(`[getMemberProfile] Checking member ${memberId}:`, {
-      isInContext: context.memberIds.includes(memberId),
-      availableMembers: context.memberIds,
-      memberData: {
-        name: context.memberNameMap.get(memberId),
-        email: context.memberEmailMap.get(memberId),
-        avatarUrl: context.memberAvatarMap.get(memberId)
-      }
-    });
-
     if (!context.memberIds.includes(memberId)) {
-      console.log(`[getMemberProfile] Member ${memberId} not found in context.memberIds`);
       return null;
     }
-
-    const profile = {
+    return {
       userId: memberId,
       name: context.memberNameMap.get(memberId) ?? null,
       email: context.memberEmailMap.get(memberId) ?? null,
       avatarUrl: context.memberAvatarMap.get(memberId) ?? null,
     };
-
-    console.log(`[getMemberProfile] Returning profile for ${memberId}:`, profile);
-    return profile;
   }
 
   private normalizeMember(member: any): TravelExpenseMember | null {
