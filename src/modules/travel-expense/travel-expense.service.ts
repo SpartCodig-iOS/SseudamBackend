@@ -297,6 +297,33 @@ export class TravelExpenseService {
     };
   }
 
+  /**
+   * TravelExpenseMember 유효성 검증 (빈 객체와 필수 필드 체크)
+   */
+  private isValidExpenseMember(member: any): member is TravelExpenseMember {
+    // null이나 undefined 체크
+    if (!member) {
+      return false;
+    }
+
+    // 빈 객체 체크 (더 효율적인 방법)
+    if (typeof member === 'object' && !member.userId) {
+      return false;
+    }
+
+    // userId 필드 유효성 체크
+    return typeof member.userId === 'string' && member.userId.length > 0;
+  }
+
+  /**
+   * context.memberIds로부터 유효한 ExpenseMembers 배열 생성
+   */
+  private getValidExpenseMembers(context: TravelContext): TravelExpenseMember[] {
+    return context.memberIds
+      .map((memberId) => this.getMemberProfile(context, memberId))
+      .filter((member): member is TravelExpenseMember => this.isValidExpenseMember(member));
+  }
+
   private async invalidateExpenseCaches(travelId: string, expenseId?: string): Promise<void> {
     // 리스트 캐시 삭제
     await this.cacheService.delPattern(`${this.EXPENSE_LIST_PREFIX}:${travelId}:*`).catch(() => undefined);
@@ -406,16 +433,7 @@ export class TravelExpenseService {
       }
 
       const payerProfile = this.getMemberProfile(context, payerId);
-      const expenseMembers = context.memberIds
-        .map((memberId) => this.getMemberProfile(context, memberId))
-        .filter((member): member is TravelExpenseMember => {
-          // null 체크와 빈 객체 체크
-          if (!member || (typeof member === 'object' && Object.keys(member).length === 0)) {
-            return false;
-          }
-          // userId 필드 유효성 체크
-          return member.userId && typeof member.userId === 'string';
-        });
+      const expenseMembers = this.getValidExpenseMembers(context);
       const participants = participantIds
         .map((memberId) => this.toParticipant(this.getMemberProfile(context, memberId)))
         .filter(Boolean) as TravelExpenseParticipant[];
@@ -564,16 +582,7 @@ export class TravelExpenseService {
       ) ?? [];
 
       // ExpenseMembers (전체 여행 멤버) - 빈 객체 완전 제거
-      const expenseMembers = context.memberIds
-        .map((memberId) => this.getMemberProfile(context, memberId))
-        .filter((member): member is TravelExpenseMember => {
-          // null 체크와 빈 객체 체크
-          if (!member || (typeof member === 'object' && Object.keys(member).length === 0)) {
-            return false;
-          }
-          // userId 필드 유효성 체크
-          return member.userId && typeof member.userId === 'string';
-        });
+      const expenseMembers = this.getValidExpenseMembers(context);
 
       return {
         id: expense.id,
@@ -614,16 +623,7 @@ export class TravelExpenseService {
    * 캐시된 데이터를 TravelExpense 형식으로 변환
    */
   private transformCachedExpenses(cached: any[], context: TravelContext): TravelExpense[] {
-    const expenseMembers = context.memberIds
-      .map((memberId) => this.getMemberProfile(context, memberId))
-      .filter((member): member is TravelExpenseMember => {
-        // null 체크와 빈 객체 체크
-        if (!member || (typeof member === 'object' && Object.keys(member).length === 0)) {
-          return false;
-        }
-        // userId 필드 유효성 체크
-        return member.userId && typeof member.userId === 'string';
-      });
+    const expenseMembers = this.getValidExpenseMembers(context);
 
     return cached.map((item) => {
       const { payerId: _legacyPayerId, ...rest } = item as any;
@@ -683,16 +683,7 @@ export class TravelExpenseService {
 
     const cached = await this.getCachedExpenseList(cacheKey);
     if (cached) {
-      const expenseMembers = context.memberIds
-        .map((memberId) => this.getMemberProfile(context, memberId))
-        .filter((member): member is TravelExpenseMember => {
-          // null 체크와 빈 객체 체크
-          if (!member || (typeof member === 'object' && Object.keys(member).length === 0)) {
-            return false;
-          }
-          // userId 필드 유효성 체크
-          return member.userId && typeof member.userId === 'string';
-        });
+      const expenseMembers = this.getValidExpenseMembers(context);
       return cached.map((item) => {
         const { payerId: _legacyPayerId, ...rest } = item as any;
         const payerProfile =
@@ -747,16 +738,7 @@ export class TravelExpenseService {
     // 변환 로직을 재사용 가능한 형태로 개선
     const combinedRows = expenses.map(expense => this.transformExpenseToResponse(expense));
 
-    const expenseMembers = context.memberIds
-      .map((memberId) => this.getMemberProfile(context, memberId))
-      .filter((member): member is TravelExpenseMember => {
-        // null 체크와 빈 객체 체크
-        if (!member || (typeof member === 'object' && Object.keys(member).length === 0)) {
-          return false;
-        }
-        // userId 필드 유효성 체크
-        return member.userId && typeof member.userId === 'string';
-      });
+    const expenseMembers = this.getValidExpenseMembers(context);
 
     const items = await Promise.all(combinedRows.map(async (row: any) => {
       const amount = Number(row.amount);
@@ -865,16 +847,7 @@ export class TravelExpenseService {
       await this.participantRepository.replaceParticipants(expenseId, participantIds);
 
       const updatePayerProfile = this.getMemberProfile(context, payerId);
-      const updateExpenseMembers = context.memberIds
-        .map((memberId) => this.getMemberProfile(context, memberId))
-        .filter((member): member is TravelExpenseMember => {
-          // null 체크와 빈 객체 체크
-          if (!member || (typeof member === 'object' && Object.keys(member).length === 0)) {
-            return false;
-          }
-          // userId 필드 유효성 체크
-          return member.userId && typeof member.userId === 'string';
-        });
+      const updateExpenseMembers = this.getValidExpenseMembers(context);
       const updateParticipants = participantIds
         .map((memberId) => this.toParticipant(this.getMemberProfile(context, memberId)))
         .filter(Boolean) as TravelExpenseParticipant[];
