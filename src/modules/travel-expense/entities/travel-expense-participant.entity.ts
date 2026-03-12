@@ -2,7 +2,6 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   Column,
-  CreateDateColumn,
   ManyToOne,
   Index,
   JoinColumn,
@@ -24,9 +23,6 @@ export class TravelExpenseParticipant {
 
   @Column({ type: 'uuid', name: 'member_id' })
   memberId!: string;
-
-  @CreateDateColumn({ type: 'timestamp with time zone', name: 'created_at' })
-  createdAt!: Date;
 
   // Relations
   @ManyToOne(() => TravelExpense, (expense) => expense.participants, { onDelete: 'CASCADE' })

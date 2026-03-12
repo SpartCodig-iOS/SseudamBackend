@@ -241,11 +241,11 @@ export class ProfileService {
       return fallbackUser;
     }
 
-    // 5. 최후의 수단: 기본 프로필 생성
+    // 5. 최후의 수단: 기본 프로필 생성 (신규 사용자)
     return {
       id: userId,
       email: '',
-      name: null,
+      name: '',  // null 대신 빈 문자열
       avatar_url: null,
       username: userId,
       password_hash: '',
@@ -370,9 +370,9 @@ export class ProfileService {
     const profileRepository = this.dataSource.getRepository(User);
 
     // TypeORM으로 업데이트 실행
-    const updateData: any = { updatedAt: new Date() };
+    const updateData: any = { updated_at: new Date() };
     if (payload.name !== undefined) updateData.name = payload.name;
-    if (avatarURL !== undefined) updateData.avatarUrl = avatarURL;
+    if (avatarURL !== undefined) updateData.avatar_url = avatarURL;
 
     await profileRepository.update({ id: userId }, updateData);
 

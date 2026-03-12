@@ -101,19 +101,23 @@ export const createDatabaseConfig = async (): Promise<TypeOrmModuleOptions> => {
     logging: isLocalEnv ? ['error', 'warn'] : false,
     autoLoadEntities: true,
 
-    // 연결 풀 설정 (Railway 제한 고려)
+    // 연결 풀 설정 (Railway 극한 최적화)
     extra: {
-      max: env.nodeEnv === 'production' ? 8 : 5,     // Railway 제한 고려하여 8개로 조정
-      min: env.nodeEnv === 'production' ? 1 : 0,     // 최소 1개로 조정
-      idleTimeoutMillis: 15_000,                     // 15초로 단축 (빠른 해제)
-      connectionTimeoutMillis: isLocalEnv ? 10_000 : 8_000,  // 8초로 조정
-      acquireTimeoutMillis: 10_000,                  // 연결 획득 타임아웃 추가
-      createTimeoutMillis: 5_000,                    // 연결 생성 타임아웃 추가
-      destroyTimeoutMillis: 3_000,                   // 연결 해제 타임아웃 추가
-      statement_timeout: 20_000,                     // 20초로 단축
-      query_timeout: 20_000,                         // 20초로 단축
+      max: env.nodeEnv === 'production' ? 6 : 5,     // 6개로 더 제한 (100% 사용률 방지)
+      min: 0,                                        // 최소 0개 (완전 해제)
+      idleTimeoutMillis: 8_000,                      // 8초로 더 단축 (aggressive 해제)
+      connectionTimeoutMillis: isLocalEnv ? 10_000 : 5_000,  // 5초로 단축
+      acquireTimeoutMillis: 8_000,                   // 8초로 단축 (빠른 실패)
+      createTimeoutMillis: 3_000,                    // 3초로 단축
+      destroyTimeoutMillis: 2_000,                   // 2초로 단축
+      statement_timeout: 15_000,                     // 15초로 더 단축
+      query_timeout: 15_000,                         // 15초로 더 단축
       application_name: `SseudamBackend-${env.nodeEnv}`,
-      options: '-c statement_timeout=20s -c lock_timeout=5s -c idle_in_transaction_session_timeout=10s',
+      options: '-c statement_timeout=15s -c lock_timeout=3s -c idle_in_transaction_session_timeout=8s',
+      // Railway 최적화: 강제 연결 해제
+      evictionRunIntervalMillis: 5_000,              // 5초마다 정리
+      softIdleTimeoutMillis: 5_000,                  // 5초 idle시 우선 해제 대상
+      testOnBorrow: true,                            // 연결 검증 (dead connection 방지)
     },
 
     // 연결 실패 시 재시도 (로컬 DB가 아직 기동 중일 수 있음)

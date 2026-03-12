@@ -70,7 +70,7 @@ export class ProfileController {
       id: profile.id,
       userId: profile.username || profile.email?.split('@')[0] || req.currentUser.username || 'user',
       email: profile.email || '',
-      name: profile.name,
+      name: profile.name || '',  // null 처리 추가
       avatarURL: resolvedAvatar, // 🚀 빠른 아바타 (캐시 우선)
       role: profile.role || req.currentUser.role || 'user',
       createdAt: formatDate(profile.created_at),

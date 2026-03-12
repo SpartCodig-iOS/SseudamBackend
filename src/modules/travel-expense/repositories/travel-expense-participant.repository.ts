@@ -17,7 +17,7 @@ export class TravelExpenseParticipantRepository extends BaseRepository<TravelExp
     return this.repository.find({
       where: { expenseId },
       relations: ['member'],
-      order: { createdAt: 'ASC' },
+      order: { memberId: 'ASC' },
     });
   }
 
@@ -25,7 +25,7 @@ export class TravelExpenseParticipantRepository extends BaseRepository<TravelExp
     return this.repository.find({
       where: { memberId },
       relations: ['expense', 'expense.travel'],
-      order: { createdAt: 'DESC' },
+      order: { memberId: 'ASC' },
     });
   }
 
@@ -69,7 +69,7 @@ export class TravelExpenseParticipantRepository extends BaseRepository<TravelExp
       ? await this.repository.find({
           where: { expenseId },
           relations: ['member'],
-          order: { createdAt: 'ASC' },
+          order: { memberId: 'ASC' },
         })
       : [];
   }
