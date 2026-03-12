@@ -11,6 +11,8 @@ import { ProfileService } from '../profile/profile.service';
 import { QueueEventService } from '../queue/services/queue-event.service';
 import { AppMetricsService } from '../../common/metrics/app-metrics.service';
 import { TravelExpenseRepository } from './repositories/travel-expense.repository';
+import { TravelExpenseParticipantRepository } from './repositories/travel-expense-participant.repository';
+import { TravelExpense as TravelExpenseEntity } from './entities/travel-expense.entity';
 
 interface TravelContext {
   id: string;
@@ -57,6 +59,7 @@ export class TravelExpenseService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly expenseRepository: TravelExpenseRepository,
+    private readonly participantRepository: TravelExpenseParticipantRepository,
     private readonly metaService: MetaService,
     private readonly cacheService: CacheService,
     private readonly eventEmitter: EventEmitter2,
@@ -376,132 +379,251 @@ export class TravelExpenseService {
       'KRW',
       context.baseExchangeRate,
     );
-    const splitAmount = Number((convertedAmount / participantIds.length).toFixed(2));
 
-    let expense: any;
-    let participants: TravelExpenseParticipant[] = [];
-    let payerProfile: TravelExpenseMember | null = null;
-    let expenseMembers: TravelExpenseMember[] = [];
+    const result = await this.dataSource.transaction(async (manager) => {
+      // TypeORM을 사용하여 지출 생성
+      const expenseEntity = new TravelExpenseEntity({
+        travelId,
+        title: payload.title,
+        note: payload.note ?? null,
+        amount: payload.amount,
+        currency: payload.currency.toUpperCase(),
+        convertedAmount,
+        expenseDate,
+        category: payload.category as any,
+        payerId,
+        authorId: userId,
+      });
 
-    await this.dataSource.transaction(async (manager) => {
-      const expenseResult = await manager.query(
-        `INSERT INTO travel_expenses
-           (travel_id, title, note, amount, currency, converted_amount, expense_date, category, payer_id, author_id)
-         VALUES
-           ($1, $2, $3, $4, $5, $6, to_date($7, 'YYYY-MM-DD'), $8, $9, $10)
-         RETURNING
-           id::text,
-           title,
-           note,
-           amount,
-           currency,
-           converted_amount,
-           expense_date::date::text,
-           category,
-           payer_id::text,
-           author_id::text`,
-        [
-          travelId,
-          payload.title,
-          payload.note ?? null,
-          payload.amount,
-          payload.currency.toUpperCase(),
-          convertedAmount,
-          expenseDate,
-          payload.category ?? null,
-          payerId,
-          userId,
-        ],
-      );
+      const savedExpense = await manager.save(TravelExpenseEntity, expenseEntity);
 
-      expense = Array.isArray(expenseResult) ? expenseResult[0] : expenseResult?.rows?.[0];
-      // 배치 INSERT로 성능 최적화
+      // TypeORM을 사용하여 참여자 추가
       if (participantIds.length > 0) {
-        await manager.query(
-          `INSERT INTO travel_expense_participants (expense_id, member_id, split_amount)
-           SELECT $1, unnest($2::uuid[]), $3`,
-          [expense.id, participantIds, splitAmount],
-        );
+        await this.participantRepository.addParticipants(savedExpense.id, participantIds);
       }
 
-      payerProfile = this.getMemberProfile(context, payerId);
-      expenseMembers = context.memberIds
+      const payerProfile = this.getMemberProfile(context, payerId);
+      const expenseMembers = context.memberIds
         .map((memberId) => this.getMemberProfile(context, memberId))
         .filter((member): member is TravelExpenseMember => member !== null);
-      participants = participantIds
+      const participants = participantIds
         .map((memberId) => this.toParticipant(this.getMemberProfile(context, memberId)))
         .filter(Boolean) as TravelExpenseParticipant[];
+
+      return {
+        id: savedExpense.id,
+        title: savedExpense.title,
+        note: savedExpense.note,
+        amount: Number(savedExpense.amount),
+        currency: savedExpense.currency,
+        convertedAmount: Number(savedExpense.convertedAmount),
+        expenseDate: savedExpense.expenseDate,
+        category: savedExpense.category,
+        authorId: savedExpense.authorId,
+        payerName: payerProfile?.name ?? null,
+        payer: payerProfile,
+        participants,
+        expenseMembers,
+      };
     });
 
-    {
-      const result: TravelExpense = {
+    // 생성 후 캐시 무효화 (동기)로 즉시 반영
+    await this.invalidateExpenseCaches(travelId);
+
+    // 지출 추가 알림 이벤트 발송 (딥링크 포함)
+    const currentUserName = this.getMemberProfile(context, userId)?.name || '사용자';
+    await this.pushNotificationService.sendExpenseNotification(
+      'expense_added',
+      travelId,
+      result.id, // expenseId for deep link
+      userId,
+      currentUserName,
+      payload.title,
+      context.memberIds,
+      payload.amount,
+      payload.currency
+    );
+
+    // Analytics 전송 (비동기)
+    this.analyticsService.trackEvent(
+      'expense_created',
+      {
+        travel_id: travelId,
+        expense_id: result.id,
+        amount: payload.amount,
+        currency: payload.currency.toUpperCase(),
+        participant_count: participantIds.length,
+      },
+      { userId },
+    ).catch(() => undefined);
+
+    // 🎯 백그라운드 경비 추가 이벤트 발송 (기존 동작에 영향 없음)
+    this.queueEventService.emitExpenseAdded({
+      travelId,
+      expenseId: result.id,
+      title: payload.title,
+      amount: payload.amount,
+      currency: payload.currency,
+      convertedAmount,
+      payerId: payerId,
+      payerName: context.memberNameMap.get(payerId) || '알 수 없는 사용자',
+      participantIds: participantIds,
+    }).catch(error => {
+      // Queue 실패해도 API는 정상 응답
+      console.warn(`Failed to emit expense added event: ${error.message}`);
+    });
+
+    this.metricsService?.recordExpenseAdded(payload.currency, payload.category ?? null);
+    return result;
+  }
+
+  async listExpenses(
+    travelId: string,
+    userId: string,
+    pagination: { startDate?: string; endDate?: string } = {},
+  ): Promise<TravelExpense[]> {
+    const context = await this.getTravelContext(travelId, userId);
+
+    // TypeORM을 사용한 새로운 구현
+    return this.listExpensesWithTypeORM(travelId, context, pagination);
+  }
+
+  /**
+   * TypeORM을 사용한 경비 목록 조회
+   */
+  private async listExpensesWithTypeORM(
+    travelId: string,
+    context: TravelContext,
+    pagination: { startDate?: string; endDate?: string } = {}
+  ): Promise<TravelExpense[]> {
+    // 캐시 확인
+    const { startDate, endDate } = pagination;
+    const cacheKey = `${travelId}:${startDate || ''}:${endDate || ''}`;
+    const cached = await this.getCachedExpenseList(cacheKey);
+
+    if (cached) {
+      return this.transformCachedExpenses(cached, context);
+    }
+
+    // TypeORM으로 데이터 조회
+    const expenses = await this.expenseRepository.findExpensesWithParticipants(travelId);
+
+    // 날짜 필터 적용
+    const filteredExpenses = this.applyDateFilter(expenses, startDate, endDate);
+
+    // TravelExpense 형식으로 변환
+    const transformedExpenses = await this.transformToTravelExpenses(filteredExpenses, context);
+
+    // 캐시에 저장
+    await this.setCachedExpenseList(cacheKey, transformedExpenses);
+
+    return transformedExpenses;
+  }
+
+  /**
+   * TypeORM 엔티티를 TravelExpense 인터페이스로 변환
+   */
+  private async transformToTravelExpenses(
+    expenses: any[], // TypeORM TravelExpense entities
+    context: TravelContext
+  ): Promise<TravelExpense[]> {
+    return Promise.all(expenses.map(async (expense) => {
+      // 환율 변환
+      const convertedAmount = await this.convertAmount(
+        Number(expense.amount),
+        expense.currency,
+        context.baseCurrency,
+        context.baseExchangeRate
+      );
+
+      // Payer 정보
+      const payerProfile = this.getMemberProfile(context, expense.payerId) ?? {
+        userId: expense.payerId,
+        name: expense.payer?.name ?? null,
+        email: expense.payer?.email ?? null,
+        avatarUrl: expense.payer?.avatar_url ?? null,
+      };
+
+      // Participants 정보
+      const participants = expense.participants?.map((p: any) =>
+        this.toParticipant(this.getMemberProfile(context, p.memberId)) ?? {
+          memberId: p.memberId,
+          name: p.member?.name ?? null,
+        }
+      ) ?? [];
+
+      // ExpenseMembers (전체 여행 멤버)
+      const expenseMembers = context.memberIds
+        .map((memberId) => this.getMemberProfile(context, memberId))
+        .filter((member): member is TravelExpenseMember => member !== null);
+
+      return {
         id: expense.id,
         title: expense.title,
         note: expense.note,
         amount: Number(expense.amount),
         currency: expense.currency,
-        convertedAmount: Number(expense.converted_amount),
-        expenseDate,
+        convertedAmount,
+        expenseDate: expense.expenseDate,
         category: expense.category,
-        authorId: expense.author_id,
-        payerName: (payerProfile as TravelExpenseMember | null)?.name ?? null,
-        payer: payerProfile as TravelExpenseMember | null,
+        authorId: expense.authorId,
+        payerId: expense.payerId,
+        payerName: payerProfile?.name ?? null,
+        payer: payerProfile,
         participants,
         expenseMembers,
       };
-
-      // 생성 후 캐시 무효화 (동기)로 즉시 반영
-      await this.invalidateExpenseCaches(travelId);
-
-      // 지출 추가 알림 이벤트 발송 (딥링크 포함)
-      const currentUserName = this.getMemberProfile(context, userId)?.name || '사용자';
-      await this.pushNotificationService.sendExpenseNotification(
-        'expense_added',
-        travelId,
-        result.id, // expenseId for deep link
-        userId,
-        currentUserName,
-        payload.title,
-        context.memberIds,
-        payload.amount,
-        payload.currency
-      );
-
-      // Analytics 전송 (비동기)
-      this.analyticsService.trackEvent(
-        'expense_created',
-        {
-          travel_id: travelId,
-          expense_id: result.id,
-          amount: payload.amount,
-          currency: payload.currency.toUpperCase(),
-          participant_count: participantIds.length,
-        },
-        { userId },
-      ).catch(() => undefined);
-
-      // 🎯 백그라운드 경비 추가 이벤트 발송 (기존 동작에 영향 없음)
-      this.queueEventService.emitExpenseAdded({
-        travelId,
-        expenseId: result.id,
-        title: payload.title,
-        amount: payload.amount,
-        currency: payload.currency,
-        convertedAmount,
-        payerId: payerId,
-        payerName: context.memberNameMap.get(payerId) || '알 수 없는 사용자',
-        participantIds: participantIds,
-      }).catch(error => {
-        // Queue 실패해도 API는 정상 응답
-        console.warn(`Failed to emit expense added event: ${error.message}`);
-      });
-
-      this.metricsService?.recordExpenseAdded(payload.currency, payload.category ?? null);
-      return result;
-    }
+    }));
   }
 
-  async listExpenses(
+  /**
+   * 날짜 필터 적용
+   */
+  private applyDateFilter(expenses: any[], startDate?: string, endDate?: string): any[] {
+    if (!startDate && !endDate) return expenses;
+
+    return expenses.filter(expense => {
+      const expenseDate = new Date(expense.expenseDate);
+
+      if (startDate && expenseDate < new Date(startDate)) return false;
+      if (endDate && expenseDate > new Date(endDate)) return false;
+
+      return true;
+    });
+  }
+
+  /**
+   * 캐시된 데이터를 TravelExpense 형식으로 변환
+   */
+  private transformCachedExpenses(cached: any[], context: TravelContext): TravelExpense[] {
+    const expenseMembers = context.memberIds
+      .map((memberId) => this.getMemberProfile(context, memberId))
+      .filter((member): member is TravelExpenseMember => member !== null);
+
+    return cached.map((item) => {
+      const { payerId: _legacyPayerId, ...rest } = item as any;
+      const payerProfile =
+        this.normalizeMember(rest.payer) ??
+        this.getMemberProfile(context, (_legacyPayerId as string) || rest.payer?.memberId || rest.payer?.userId) ??
+        null;
+
+      // expenseMembers는 항상 전체 여행 멤버로 설정 (캐시 손상 방지)
+      const finalExpenseMembers: TravelExpenseMember[] = expenseMembers;
+
+      return {
+        ...rest,
+        payer: payerProfile,
+        payerName: rest.payerName ?? payerProfile?.name ?? null,
+        expenseMembers: finalExpenseMembers,
+        participants: rest.participants?.map((p: any) => this.toParticipant(this.getMemberProfile(context, p.memberId)) ?? p) ?? [],
+      };
+    });
+  }
+
+  /**
+   * 기존 Raw SQL 기반 구현 (백업용)
+   */
+  private async listExpensesLegacy(
     travelId: string,
     userId: string,
     pagination: { startDate?: string; endDate?: string } = {},
@@ -691,18 +813,8 @@ export class TravelExpenseService {
     const context = await this.getTravelContext(travelId, userId);
 
     // 2. 기존 지출 정보 조회 및 권한 확인
-    const existingExpenseRows = await this.dataSource.query(
-      `SELECT
-         e.id::text,
-         e.travel_id::text,
-         e.author_id::text
-       FROM travel_expenses e
-       WHERE e.id = $1 AND e.travel_id = $2`,
-      [expenseId, travelId],
-    );
-
-    const existingExpense = existingExpenseRows[0];
-    if (!existingExpense) {
+    const existingExpense = await this.expenseRepository.findExpenseWithDetails(expenseId);
+    if (!existingExpense || existingExpense.travelId !== travelId) {
       throw new NotFoundException('지출을 찾을 수 없습니다.');
     }
 
@@ -722,127 +834,87 @@ export class TravelExpenseService {
       'KRW',
       context.baseExchangeRate,
     );
-    const splitAmount = Number((convertedAmount / participantIds.length).toFixed(2));
 
     // 4. 트랜잭션으로 지출 수정
-    let updatedExpense: any;
-    let updateParticipants: TravelExpenseParticipant[] = [];
-    let updatePayerProfile: TravelExpenseMember | null = null;
-    let updateExpenseMembers: TravelExpenseMember[] = [];
+    const result = await this.dataSource.transaction(async (manager) => {
+      // TypeORM을 사용하여 기존 지출 정보 업데이트
+      await manager.update(TravelExpenseEntity, expenseId, {
+        title: payload.title,
+        note: payload.note ?? null,
+        amount: payload.amount,
+        currency: payload.currency.toUpperCase(),
+        convertedAmount,
+        expenseDate,
+        category: payload.category as any,
+        payerId,
+        updatedAt: new Date(),
+      });
 
-    await this.dataSource.transaction(async (manager) => {
-      // 기존 지출 정보 업데이트
-      const expenseResult = await manager.query(
-        `UPDATE travel_expenses
-         SET title = $3,
-             note = $4,
-             amount = $5,
-             currency = $6,
-             converted_amount = $7,
-             expense_date = to_date($8, 'YYYY-MM-DD'),
-             category = $9,
-             payer_id = $10,
-             updated_at = NOW()
-         WHERE id = $1 AND travel_id = $2
-         RETURNING
-           id::text,
-           title,
-           note,
-           amount,
-           currency,
-           converted_amount,
-           expense_date::date::text,
-           category,
-           payer_id::text,
-           author_id::text`,
-        [
-          expenseId,
-          travelId,
-          payload.title,
-          payload.note ?? null,
-          payload.amount,
-          payload.currency.toUpperCase(),
-          convertedAmount,
-          expenseDate,
-          payload.category ?? null,
-          payerId,
-        ],
-      );
-
-      updatedExpense = Array.isArray(expenseResult) ? expenseResult[0] : expenseResult?.rows?.[0];
-
-      // 기존 참여자 정보 삭제 후 새로 추가
-      await manager.query(
-        `DELETE FROM travel_expense_participants WHERE expense_id = $1`,
-        [expenseId],
-      );
-
-      if (participantIds.length > 0) {
-        await manager.query(
-          `INSERT INTO travel_expense_participants (expense_id, member_id, split_amount)
-           SELECT $1, unnest($2::uuid[]), $3`,
-          [updatedExpense.id, participantIds, splitAmount],
-        );
+      // 업데이트된 지출 조회
+      const updatedExpense = await manager.findOne(TravelExpenseEntity, { where: { id: expenseId } });
+      if (!updatedExpense) {
+        throw new NotFoundException('지출 업데이트에 실패했습니다.');
       }
 
-      updatePayerProfile = this.getMemberProfile(context, payerId);
-      updateExpenseMembers = context.memberIds
+      // TypeORM을 사용하여 참여자 교체
+      await this.participantRepository.replaceParticipants(expenseId, participantIds);
+
+      const updatePayerProfile = this.getMemberProfile(context, payerId);
+      const updateExpenseMembers = context.memberIds
         .map((memberId) => this.getMemberProfile(context, memberId))
         .filter((member): member is TravelExpenseMember => member !== null);
-      updateParticipants = participantIds
+      const updateParticipants = participantIds
         .map((memberId) => this.toParticipant(this.getMemberProfile(context, memberId)))
         .filter(Boolean) as TravelExpenseParticipant[];
-    });
 
-    {
-      const result: TravelExpense = {
+      return {
         id: updatedExpense.id,
         title: updatedExpense.title,
         note: updatedExpense.note,
         amount: Number(updatedExpense.amount),
         currency: updatedExpense.currency,
-        convertedAmount: Number(updatedExpense.converted_amount),
-        expenseDate,
+        convertedAmount: Number(updatedExpense.convertedAmount),
+        expenseDate: updatedExpense.expenseDate,
         category: updatedExpense.category,
-        authorId: updatedExpense.author_id,
-        payerName: (updatePayerProfile as TravelExpenseMember | null)?.name ?? null,
-        payer: updatePayerProfile as TravelExpenseMember | null,
+        authorId: updatedExpense.authorId,
+        payerName: updatePayerProfile?.name ?? null,
+        payer: updatePayerProfile,
         participants: updateParticipants,
         expenseMembers: updateExpenseMembers,
       };
+    });
 
-      // 수정 후 캐시 무효화 (동기로 처리해 즉시 반영)
-      await this.invalidateExpenseCaches(travelId, expenseId);
+    // 수정 후 캐시 무효화 (동기로 처리해 즉시 반영)
+    await this.invalidateExpenseCaches(travelId, expenseId);
 
-      // 지출 수정 알림 이벤트 발송 (딥링크 포함)
-      const currentUserName = this.getMemberProfile(context, userId)?.name || '사용자';
-      await this.pushNotificationService.sendExpenseNotification(
-        'expense_updated',
-        travelId,
-        expenseId,
-        userId,
-        currentUserName,
-        payload.title,
-        context.memberIds,
-        payload.amount,
-        payload.currency
-      );
+    // 지출 수정 알림 이벤트 발송 (딥링크 포함)
+    const currentUserName = this.getMemberProfile(context, userId)?.name || '사용자';
+    await this.pushNotificationService.sendExpenseNotification(
+      'expense_updated',
+      travelId,
+      expenseId,
+      userId,
+      currentUserName,
+      payload.title,
+      context.memberIds,
+      payload.amount,
+      payload.currency
+    );
 
-      // Analytics 전송 (비동기)
-      this.analyticsService.trackEvent(
-        'expense_updated',
-        {
-          travel_id: travelId,
-          expense_id: updatedExpense.id,
-          amount: payload.amount,
-          currency: payload.currency.toUpperCase(),
-          participant_count: participantIds.length,
-        },
-        { userId },
-      ).catch(() => undefined);
+    // Analytics 전송 (비동기)
+    this.analyticsService.trackEvent(
+      'expense_updated',
+      {
+        travel_id: travelId,
+        expense_id: result.id,
+        amount: payload.amount,
+        currency: payload.currency.toUpperCase(),
+        participant_count: participantIds.length,
+      },
+      { userId },
+    ).catch(() => undefined);
 
-      return result;
-    }
+    return result;
   }
 
   /**
@@ -854,44 +926,28 @@ export class TravelExpenseService {
     const context = await this.getTravelContext(travelId, userId);
 
     // 2. 지출 정보 조회 및 권한 확인
-    const expenseRows = await this.dataSource.query(
-      `SELECT
-         e.id::text,
-         e.travel_id::text,
-         e.title,
-         e.payer_id::text,
-         e.author_id::text
-       FROM travel_expenses e
-       WHERE e.id = $1 AND e.travel_id = $2`,
-      [expenseId, travelId],
-    );
-
-    const expense = expenseRows[0];
-    if (!expense) {
+    const expense = await this.expenseRepository.findExpenseWithDetails(expenseId);
+    if (!expense || expense.travelId !== travelId) {
       throw new NotFoundException('지출을 찾을 수 없습니다.');
     }
 
     // 3. 권한 확인: 지출 작성자만 삭제 가능
-    if (expense.author_id !== userId) {
+    if (expense.authorId !== userId) {
       throw new ForbiddenException('지출 작성자만 삭제할 수 있습니다.');
     }
 
     // 4. 트랜잭션으로 지출 및 관련 데이터 삭제
     await this.dataSource.transaction(async (manager) => {
-      // 참여자 정보 먼저 삭제 (외래키 제약)
-      await manager.query(
-        `DELETE FROM travel_expense_participants WHERE expense_id = $1`,
-        [expenseId],
-      );
+      // TypeORM을 사용하여 참여자 정보 먼저 삭제 (외래키 제약)
+      await this.participantRepository.removeAllParticipants(expenseId);
 
-      // 지출 정보 삭제
-      const deleteResult = await manager.query(
-        `DELETE FROM travel_expenses WHERE id = $1 AND travel_id = $2`,
-        [expenseId, travelId],
-      );
+      // TypeORM을 사용하여 지출 정보 삭제
+      const deleteResult = await manager.delete(TravelExpenseEntity, {
+        id: expenseId,
+        travelId,
+      });
 
-      const affectedRows = Array.isArray(deleteResult) ? deleteResult[1] : deleteResult?.rowCount ?? 0;
-      if (affectedRows === 0) {
+      if (deleteResult.affected === 0) {
         throw new NotFoundException('삭제할 지출을 찾을 수 없습니다.');
       }
     });

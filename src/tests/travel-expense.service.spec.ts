@@ -63,7 +63,13 @@ function buildMockDataSource(queryFn: (sql: string, params?: any[]) => Promise<a
   return {
     query: queryFn,
     transaction: async (cb: (manager: any) => Promise<any>) =>
-      cb({ query: queryFn }),
+      cb({
+        query: queryFn,
+        save: async (entity: any, data: any) => data,
+        update: async (entity: any, id: any, data: any) => ({ affected: 1 }),
+        findOne: async (entity: any, options: any) => ({ id: 'test', ...options.where }),
+        delete: async (entity: any, criteria: any) => ({ affected: 1 }),
+      }),
   } as any;
 }
 
@@ -110,13 +116,70 @@ function buildCommonMocks() {
 function buildService(queryFn: (sql: string, params?: any[]) => Promise<any[]>) {
   const mocks = buildCommonMocks();
   const mockDataSource = buildMockDataSource(queryFn);
+
   const mockExpenseRepository = {
-    findExpensesWithParticipants: async () => [],
+    findExpensesWithParticipants: async (travelId: string) => {
+      // 쿼리 함수로 확인 - 빈 결과를 반환하는 경우를 처리
+      const testResults = await queryFn('FROM travel_expenses');
+      if (testResults.length === 0) {
+        return [];
+      }
+
+      // TypeORM 기반으로 모의 데이터 반환
+      if (travelId === TRAVEL_ID) {
+        return [{
+          id: EXPENSE_ID,
+          title: '라멘',
+          note: null,
+          amount: 1200,
+          currency: 'JPY',
+          convertedAmount: 11400,
+          expenseDate: '2025-11-01',
+          category: 'food_and_drink',
+          authorId: USER_ID,
+          payerId: USER_ID,
+          participants: [{
+            memberId: USER_ID,
+            member: { id: USER_ID, name: '홍길동' }
+          }],
+          payer: { id: USER_ID, name: '홍길동', email: null, avatar_url: null }
+        }];
+      }
+      return [];
+    },
+    findExpenseWithDetails: async (expenseId: string) => {
+      if (expenseId === EXPENSE_ID) {
+        return {
+          id: EXPENSE_ID,
+          title: '라멘',
+          travelId: TRAVEL_ID,
+          authorId: USER_ID,
+          payerId: USER_ID,
+        };
+      }
+      if (expenseId === 'non-existent-expense') {
+        return null;
+      }
+      return {
+        id: expenseId,
+        title: '테스트',
+        travelId: TRAVEL_ID,
+        authorId: USER_ID,
+        payerId: USER_ID,
+      };
+    },
+  } as any;
+
+  const mockParticipantRepository = {
+    addParticipants: async () => [],
+    replaceParticipants: async () => [],
+    removeAllParticipants: async () => undefined,
   } as any;
 
   return new TravelExpenseService(
     mockDataSource,
     mockExpenseRepository,
+    mockParticipantRepository,
     mocks.metaService,
     mocks.cacheService,
     mocks.eventEmitter,
