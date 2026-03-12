@@ -98,6 +98,7 @@ export class EnhancedJwtService {
    */
   async verifyToken(token: string, type: 'access' | 'refresh'): Promise<JwtPayload | null> {
     this.logger.log(`🔐 ENHANCED VERIFY: Starting ${type} token verification (length: ${token.length})`);
+    this.logger.log(`🔐 JWT_SECRET: ${env.jwtSecret?.substring(0, 10)}...${env.jwtSecret?.substring(-10)} (length: ${env.jwtSecret?.length})`);
 
     try {
       // 1. JWT 구조 검증
