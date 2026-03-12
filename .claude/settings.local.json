@@ -272,7 +272,10 @@
       "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d travel_members\")",
       "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d travel_expenses\")",
       "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d travels\")",
-      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"SELECT DISTINCT status FROM travels;\")"
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"SELECT DISTINCT status FROM travels;\")",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d app_version_history\")",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d currency_rates\")",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"SELECT COUNT\\(*\\) as users_count FROM users; SELECT COUNT\\(*\\) as profiles_count FROM profiles;\")"
     ],
     "deny": [],
     "ask": []
