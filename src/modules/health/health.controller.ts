@@ -261,6 +261,52 @@ export class HealthController {
     }
   }
 
+  @Post('health/cache/clear/:travelId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '여행 캐시 강제 삭제 (내부 전용)' })
+  async clearTravelCache(@Req() req: Request, @Res() res: Response) {
+    assertMetricsAccess(req);
+
+    const travelId = req.params.travelId;
+
+    try {
+      if (!travelId || !travelId.match(/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i)) {
+        return res.status(400).json({ error: 'Invalid travel ID format' });
+      }
+
+      // Clear all travel-related caches using CacheService methods
+      await this.cacheService.invalidateTravelCache(travelId);
+
+      // Also clear specific expense patterns
+      const additionalPatterns = [
+        `expense:list:${travelId}:*`,
+        `expense:detail:${travelId}:*`,
+        `expense:context:${travelId}`,
+      ];
+
+      let totalDeleted = 0;
+      for (const pattern of additionalPatterns) {
+        totalDeleted += await this.cacheService.delPattern(pattern);
+      }
+
+      return res.json({
+        success: true,
+        travelId,
+        message: 'Travel cache cleared successfully',
+        deletedPatterns: totalDeleted,
+        timestamp: new Date().toISOString()
+      });
+
+    } catch (error) {
+      return res.status(500).json({
+        success: false,
+        travelId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        timestamp: new Date().toISOString()
+      });
+    }
+  }
+
   @Get('health/metrics')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '시스템 상태 JSON 메트릭 (내부 전용) — Prometheus 형식은 GET /metrics 사용' })
