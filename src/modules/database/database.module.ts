@@ -6,10 +6,14 @@ import { createDatabaseConfig } from '../../config/database.config';
 import { User } from '../user/entities/user.entity';
 import { Travel } from '../travel/entities/travel.entity';
 import { TravelMember } from '../travel/entities/travel-member.entity';
+import { TravelInvite } from '../travel/entities/travel-invite.entity';
+import { TravelCurrencySnapshot } from '../travel/entities/travel-currency-snapshot.entity';
+import { CurrencyRate } from '../travel/entities/currency-rate.entity';
 import { TravelExpense } from '../travel-expense/entities/travel-expense.entity';
 import { TravelExpenseParticipant } from '../travel-expense/entities/travel-expense-participant.entity';
 import { TravelSettlement } from '../travel-settlement/entities/travel-settlement.entity';
 import { AppVersion } from '../meta/entities/app-version.entity';
+import { AppVersionHistory } from '../meta/entities/app-version-history.entity';
 import { UserSession } from '../auth/entities/user-session.entity';
 import { DeviceToken } from '../oauth/entities/device-token.entity';
 import { OAuthToken } from '../oauth/entities/oauth-token.entity';
@@ -35,10 +39,14 @@ import { OAuthTokenRepository } from '../oauth/repositories/oauth-token.reposito
       User,
       Travel,
       TravelMember,
+      TravelInvite,
+      TravelCurrencySnapshot,
+      CurrencyRate,
       TravelExpense,
       TravelExpenseParticipant,
       TravelSettlement,
       AppVersion,
+      AppVersionHistory,
       UserSession,
       DeviceToken,
       OAuthToken,
