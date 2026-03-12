@@ -147,10 +147,75 @@ export class EnhancedJwtService {
   }
 
   /**
-   * Access Token 검증
+   * Access Token 검증 (Enhanced + Legacy 토큰 지원)
    */
   async verifyAccessToken(token: string): Promise<JwtPayload | null> {
-    return this.verifyToken(token, 'access');
+    // 1. Enhanced JWT 토큰 시도 (type='access', tokenId, blacklist 체크)
+    const enhancedResult = await this.verifyToken(token, 'access');
+    if (enhancedResult) {
+      this.logger.debug('✅ Enhanced JWT token verification successful');
+      return enhancedResult;
+    }
+
+    // 2. Legacy JWT 토큰 시도 (type, tokenId 없는 토큰)
+    this.logger.debug('🔄 Trying legacy JWT token verification...');
+    const legacyResult = await this.verifyLegacyToken(token);
+    if (legacyResult) {
+      this.logger.debug('✅ Legacy JWT token verification successful');
+      return legacyResult;
+    }
+
+    this.logger.debug('❌ Both Enhanced and Legacy JWT token verification failed');
+    return null;
+  }
+
+  /**
+   * Legacy JWT 토큰 검증 (tokenId, type 필드 없는 구버전 토큰)
+   */
+  private async verifyLegacyToken(token: string): Promise<JwtPayload | null> {
+    try {
+      this.logger.debug('🔐 Legacy JWT: Structure verification...');
+
+      // JWT 구조 검증
+      const payload = this.jwtService.verify(token) as any;
+
+      this.logger.debug(`Legacy JWT payload: ${JSON.stringify({
+        sub: payload.sub,
+        email: payload.email,
+        loginType: payload.loginType,
+        sessionId: payload.sessionId,
+        role: payload.role,
+        iat: payload.iat,
+        exp: payload.exp
+      }, null, 2)}`);
+
+      // Legacy 토큰 필수 필드 검증
+      if (!payload.sub || !payload.email || !payload.sessionId) {
+        this.logger.debug(`❌ Legacy JWT: Missing required fields - sub: ${!!payload.sub}, email: ${!!payload.email}, sessionId: ${!!payload.sessionId}`);
+        return null;
+      }
+
+      // Legacy 토큰을 Enhanced JWT 형식으로 변환
+      const enhancedPayload: JwtPayload = {
+        sub: payload.sub,
+        email: payload.email,
+        name: payload.name ?? null,
+        role: payload.role ?? 'user',
+        loginType: payload.loginType ?? 'email',
+        sessionId: payload.sessionId,
+        tokenId: `legacy-${payload.sub}-${payload.iat}`, // Legacy 토큰용 임시 ID
+        iat: payload.iat,
+        exp: payload.exp,
+        iss: payload.iss ?? 'sseudam-backend',
+        aud: payload.aud ?? 'sseudam-app',
+      };
+
+      this.logger.debug('✅ Legacy JWT token successfully converted to Enhanced format');
+      return enhancedPayload;
+    } catch (error) {
+      this.logger.debug(`❌ Legacy JWT verification failed: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
   }
 
   /**
