@@ -1,4 +1,5 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { RequestWithUser } from '../types/request.types';
 import { LoginType } from '../../modules/auth/types/auth.types';
 import { EnhancedJwtService } from '../../modules/auth/services/enhanced-jwt.service';
@@ -8,6 +9,7 @@ import { UserRecord } from '../../modules/user/types/user.types';
 import { CacheService } from '../services/cache.service';
 import { createHash } from 'crypto';
 import { UserRepository } from '../../modules/user/repositories/user.repository';
+import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 
 interface LocalAuthResult {
   user: UserRecord;
@@ -28,6 +30,7 @@ export class AuthGuard implements CanActivate {
   private readonly REDIS_TTL_SECONDS = 5 * 60;
 
   constructor(
+    private readonly reflector: Reflector,
     private readonly enhancedJwtService: EnhancedJwtService,
     private readonly supabaseService: SupabaseService,
     private readonly cacheService: CacheService,
@@ -35,6 +38,15 @@ export class AuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    // Public 데코레이터가 있는 경우 인증 건너뛰기
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) {
+      return true;
+    }
+
     const request = context.switchToHttp().getRequest<RequestWithUser>();
     const token = this.extractBearer(request.headers.authorization);
     if (!token) {

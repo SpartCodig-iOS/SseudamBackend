@@ -14,6 +14,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { UnauthorizedException } from '@nestjs/common';
 import { AuthGuard } from '../common/guards/auth.guard';
+// TODO: Fix AuthGuard tests after adding Reflector parameter
 import type { ExecutionContext } from '@nestjs/common';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -112,6 +113,7 @@ const VALID_SUPABASE_USER = {
 
 test('AuthGuard: Authorization 헤더 없으면 UnauthorizedException 발생', async () => {
   const guard = new AuthGuard(
+    { getAllAndOverride: () => false } as any, // Reflector mock
     buildMockEnhancedJwtService(),
     buildMockSupabaseService(),
     buildMockCacheService(),
@@ -213,6 +215,7 @@ test('AuthGuard: Enhanced JWT 실패 후 Supabase 검증 성공 → currentUser 
 
 test('AuthGuard: "Basic xxx" 형식 헤더 → UnauthorizedException (Bearer 아님)', async () => {
   const guard = new AuthGuard(
+    { getAllAndOverride: () => false } as any, // Reflector mock
     buildMockEnhancedJwtService(),
     buildMockSupabaseService(),
     buildMockCacheService(),
@@ -230,6 +233,7 @@ test('AuthGuard: "Basic xxx" 형식 헤더 → UnauthorizedException (Bearer 아
 
 test('AuthGuard: "Bearer " (토큰 없음) 형식 헤더 → UnauthorizedException', async () => {
   const guard = new AuthGuard(
+    { getAllAndOverride: () => false } as any, // Reflector mock
     buildMockEnhancedJwtService(),
     buildMockSupabaseService(),
     buildMockCacheService(),
