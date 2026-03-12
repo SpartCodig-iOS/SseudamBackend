@@ -50,17 +50,24 @@ export class AuthGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
     const token = this.extractBearer(request.headers.authorization);
     if (!token) {
+      console.log('❌ AuthGuard: Missing bearer token for', request.url);
       throw new UnauthorizedException('Missing bearer token');
     }
+
+    console.log('🔐 AuthGuard: Checking token for', request.url, 'token length:', token.length);
 
     // Enhanced JWT 검증 (Blacklist 체크 포함) — 유일한 JWT 검증 경로
     const enhancedUser = await this.tryEnhancedJwt(token);
     if (enhancedUser) {
+      const isLegacy = enhancedUser.user.id && token.includes('eyJ') && !token.includes('tokenId');
+      console.log(`✅ AuthGuard: ${isLegacy ? '🔄 LEGACY' : '🆕 ENHANCED'} JWT success for user:`, enhancedUser.user.email);
       this.setCachedUser(token, enhancedUser.user);
       void this.setRedisCachedUser(token, { user: enhancedUser.user, loginType: enhancedUser.loginType });
       request.currentUser = enhancedUser.user;
       request.loginType = enhancedUser.loginType;
       return true;
+    } else {
+      console.log('❌ AuthGuard: Enhanced JWT failed - trying Supabase fallback');
     }
 
     // Supabase 토큰 검증 (소셜 로그인 등 Enhanced JWT 미발급 토큰)
