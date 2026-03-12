@@ -154,30 +154,28 @@ export class TravelExpenseService {
       // ignore and fallback to DB
     }
 
-    const rows = await this.dataSource.query(
-      `SELECT
-         t.id::text,
-         t.base_currency,
-         t.base_exchange_rate,
-         json_agg(
-           json_build_object(
-             'id', tm.user_id::text,
-             'name', p.name,
-             'email', p.email,
-             'avatar_url', p.avatar_url
-           )
-         ) AS member_data
-       FROM travels t
-       INNER JOIN travel_members tm ON tm.travel_id = t.id
-       LEFT JOIN profiles p ON p.id = tm.user_id
-       WHERE t.id = $1
-       GROUP BY t.id`,
-      [travelId],
-    );
-    const row = rows[0];
-    if (!row) {
-      throw new NotFoundException('여행을 찾을 수 없습니다.');
+    // TypeORM으로 travel과 members 조회 - 기존 최적화된 메서드 사용
+    const travel = await this.dataSource.getRepository('Travel').findOne({
+      where: { id: travelId },
+      relations: ['members', 'members.user']
+    });
+
+    if (!travel) {
+      throw new NotFoundException(`Travel not found: ${travelId}`);
     }
+
+    // Travel context 직접 생성 (불필요한 배열 제거)
+    const row = {
+      id: travel.id,
+      base_currency: travel.baseCurrency,
+      base_exchange_rate: travel.baseExchangeRate,
+      member_data: travel.members.map((member: any) => ({
+        id: member.userId,
+        name: member.user?.name || null,
+        email: member.user?.email || null,
+        avatar_url: member.user?.avatarUrl || null
+      }))
+    };
     const rawMembers: Array<{ id: string; name?: string | null; email?: string | null; avatar_url?: string | null }> = row.member_data ?? [];
     const memberIds = rawMembers.map((member) => member.id);
 
@@ -704,51 +702,16 @@ export class TravelExpenseService {
       });
     }
 
-    // 최적화: 모든 데이터를 한 번에 조회 (JOIN + JSON 집계) - 페이지네이션 없이 전체 반환
-    const combinedRows = await this.dataSource.query(
-      `WITH expense_list AS (
-        SELECT
-          e.id::text,
-          e.title,
-          e.note,
-          e.amount,
-          e.currency,
-          e.converted_amount,
-          to_char(e.expense_date::date, 'YYYY-MM-DD') as expense_date,
-          e.category,
-          e.author_id::text,
-          e.payer_id::text,
-          COALESCE(e.display_name, payer.name) AS payer_name,
-          payer.email AS payer_email,
-          payer.avatar_url AS payer_avatar,
-          ROW_NUMBER() OVER (ORDER BY e.expense_date::date DESC, e.created_at DESC) as row_num
-        FROM travel_expenses e
-        LEFT JOIN profiles payer ON payer.id = e.payer_id
-        WHERE e.travel_id = $1 ${dateFilter}
-      )
-       SELECT
-         el.*,
-        COALESCE(
-          json_agg(
-            json_build_object(
-              'memberId', tep.member_id::text,
-              'name', COALESCE(tep.display_name, p.name),
-              'email', p.email,
-              'avatarUrl', p.avatar_url
-            )
-            ORDER BY p.name
-          ) FILTER (WHERE tep.member_id IS NOT NULL),
-          '[]'::json
-        ) as participants
-       FROM expense_list el
-       LEFT JOIN travel_expense_participants tep ON tep.expense_id = el.id::uuid
-       LEFT JOIN profiles p ON p.id = tep.member_id
-       GROUP BY el.id, el.title, el.note, el.amount, el.currency, el.converted_amount,
-                el.expense_date, el.category, el.author_id, el.payer_id, el.payer_name, el.payer_email, el.payer_avatar,
-                el.row_num
-       ORDER BY el.row_num`,
-      queryParams,
-    );
+    // TypeORM으로 expenses와 participants 조회 - 데이터베이스 레벨에서 날짜 필터링
+    let expenses: TravelExpenseEntity[];
+    if (startDate && endDate) {
+      expenses = await this.expenseRepository.findExpensesByDateRange(travelId, startDate, endDate);
+    } else {
+      expenses = await this.expenseRepository.findExpensesWithParticipants(travelId);
+    }
+
+    // 변환 로직을 재사용 가능한 형태로 개선
+    const combinedRows = expenses.map(expense => this.transformExpenseToResponse(expense));
 
     const expenseMembers = context.memberIds
       .map((memberId) => this.getMemberProfile(context, memberId))
@@ -976,5 +939,34 @@ export class TravelExpenseService {
       },
       { userId },
     ).catch(() => undefined);
+  }
+
+  /**
+   * 개선된 expense 변환 메서드 - 날짜 처리 최적화 및 재사용 가능
+   */
+  private transformExpenseToResponse(expense: any) {
+    return {
+      id: expense.id,
+      title: expense.title,
+      note: expense.note,
+      amount: expense.amount,
+      currency: expense.currency,
+      converted_amount: expense.convertedAmount,
+      expense_date: expense.expenseDate instanceof Date
+        ? expense.expenseDate.toISOString().split('T')[0]
+        : expense.expenseDate,
+      category: expense.category,
+      author_id: expense.authorId,
+      payer_id: expense.payerId,
+      payer_name: expense.payer?.name || null,
+      payer_email: expense.payer?.email || null,
+      payer_avatar: expense.payer?.avatarUrl || null,
+      participants: expense.participants?.map((participant: any) => ({
+        memberId: participant.memberId,
+        name: participant.member?.name || null,
+        email: participant.member?.email || null,
+        avatarUrl: participant.member?.avatarUrl || null
+      })) || []
+    };
   }
 }

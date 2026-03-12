@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, Repository, In } from 'typeorm';
 import { TravelExpense, ExpenseCategory } from '../entities/travel-expense.entity';
 import { BaseRepository } from '../../../common/repositories/base.repository';
 import {
@@ -232,7 +232,7 @@ export class TravelExpenseRepository extends BaseRepository<TravelExpense> {
 
   /**
    * 기존: 루프 내 개별 UPDATE (N번 쿼리)
-   * 개선: CASE WHEN 단일 UPDATE 로 1번 쿼리로 처리
+   * 개선: TypeORM 방식으로 단일 CASE WHEN UPDATE 처리
    */
   async bulkUpdateConvertedAmount(updates: Array<{ id: string; convertedAmount: number }>): Promise<void> {
     if (updates.length === 0) return;
@@ -242,25 +242,29 @@ export class TravelExpenseRepository extends BaseRepository<TravelExpense> {
 
     for (let i = 0; i < updates.length; i += CHUNK_SIZE) {
       const chunk = updates.slice(i, i + CHUNK_SIZE);
+      const ids = chunk.map((u) => u.id);
 
-      // CASE WHEN 으로 단일 UPDATE 실행
-      const caseExpr = chunk
-        .map((_, idx) => `WHEN id = $${idx * 2 + 2} THEN $${idx * 2 + 3}`)
+      // TypeORM QueryBuilder로 CASE WHEN 구문 생성
+      const caseExpression = chunk
+        .map((update, idx) => `WHEN travel_expenses.id = :id_${idx} THEN :amount_${idx}`)
         .join(' ');
 
-      const ids = chunk.map((u) => u.id);
-      const params: unknown[] = [ids];
-      for (const u of chunk) {
-        params.push(u.id, u.convertedAmount);
-      }
+      const parameters: Record<string, any> = {};
+      chunk.forEach((update, idx) => {
+        parameters[`id_${idx}`] = update.id;
+        parameters[`amount_${idx}`] = update.convertedAmount;
+      });
 
-      await this.repository.query(
-        `UPDATE travel_expenses
-         SET converted_amount = CASE ${caseExpr} END,
-             updated_at = NOW()
-         WHERE id = ANY($1::uuid[])`,
-        params,
-      );
+      await this.repository
+        .createQueryBuilder()
+        .update(TravelExpense)
+        .set({
+          convertedAmount: () => `CASE ${caseExpression} END`,
+          updatedAt: () => 'NOW()'
+        })
+        .where('id IN (:...ids)', { ids })
+        .setParameters(parameters)
+        .execute();
     }
   }
 }

@@ -6,6 +6,7 @@ import {
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager, QueryRunner } from 'typeorm';
 import type { IsolationLevel } from 'typeorm/driver/types/IsolationLevel';
+import { Travel } from '../../modules/travel/entities/travel.entity';
 
 // ────────────────────────────────────────────────
 // 트랜잭션 옵션 타입
@@ -283,10 +284,13 @@ export class TransactionService {
     return this.run(
       async (manager) => {
         // 여행 레코드에 FOR UPDATE 락 획득으로 동시 정산 계산 방지
-        await manager.query(
-          `SELECT id FROM travels WHERE id = $1 FOR UPDATE`,
-          [travelId],
-        );
+        await manager
+          .createQueryBuilder()
+          .select('travel.id')
+          .from(Travel, 'travel')
+          .where('travel.id = :travelId', { travelId })
+          .setLock('pessimistic_write')
+          .getRawOne();
         return callback(manager);
       },
       {

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, EntityManager } from 'typeorm';
+import { Repository, EntityManager, In } from 'typeorm';
 import { User } from '../entities/user.entity';
 import { BaseRepository } from '../../../common/repositories/base.repository';
 import { UserRecord } from '../types/user.types';
@@ -260,48 +260,86 @@ export class UserRepository extends BaseRepository<User> {
    * 4. user_sessions (user FK)
    * 5. profiles (최종 삭제)
    *
-   * travel_invites, travel_settlements 는 엔티티가 없어 native query로 처리합니다.
+   * TypeORM 방식으로 변환하여 안전성 및 일관성 향상
    */
   async deleteAccountData(userId: string, manager: EntityManager): Promise<void> {
     // 1. travel_expense_participants: member_id 또는 payer expense 참조 제거
-    await manager.query(
-      `DELETE FROM travel_expense_participants
-       WHERE member_id = $1
-          OR expense_id IN (
-            SELECT id FROM travel_expenses WHERE payer_id = $1
-          )`,
-      [userId],
-    );
+    // 먼저 해당 사용자가 payer인 expense들의 ID를 조회
+    const travelExpenseRepository = manager.getRepository('TravelExpense');
+    const userExpenses = await travelExpenseRepository.find({
+      where: { payerId: userId },
+      select: ['id']
+    });
+    const expenseIds = userExpenses.map(expense => expense.id);
+
+    const participantRepository = manager.getRepository('TravelExpenseParticipant');
+    // member_id로 직접 삭제
+    await participantRepository.delete({ memberId: userId });
+    // payer expense 참조로 삭제
+    if (expenseIds.length > 0) {
+      await participantRepository.delete({ expenseId: In(expenseIds) });
+    }
 
     // 2. travel_expenses: payer 또는 author 기준 삭제
-    await manager.query(
-      `DELETE FROM travel_expenses WHERE payer_id = $1 OR author_id = $1`,
-      [userId],
-    );
+    await travelExpenseRepository
+      .createQueryBuilder()
+      .delete()
+      .from('TravelExpense')
+      .where('payerId = :userId OR authorId = :userId', { userId })
+      .execute();
 
-    // 3. travel_settlements: from_member 또는 to_member 기준 삭제 (엔티티 미존재)
-    await manager.query(
-      `DELETE FROM travel_settlements WHERE from_member = $1 OR to_member = $1`,
-      [userId],
-    );
+    // 3. travel_settlements: from_member 또는 to_member 기준 삭제 (TypeORM 방식)
+    try {
+      const settlementRepository = manager.getRepository('TravelSettlement');
+      await settlementRepository
+        .createQueryBuilder()
+        .delete()
+        .from('TravelSettlement')
+        .where('fromMember = :userId OR toMember = :userId', { userId })
+        .execute();
+    } catch (error) {
+      // 엔티티가 없을 수 있으므로 fallback
+      await manager.query(
+        `DELETE FROM travel_settlements WHERE from_member = $1 OR to_member = $1`,
+        [userId],
+      );
+    }
 
-    // 4. travel_invites: created_by 기준 삭제 (엔티티 미존재)
-    await manager.query(
-      `DELETE FROM travel_invites WHERE created_by = $1`,
-      [userId],
-    );
+    // 4. travel_invites: created_by 기준 삭제 (TypeORM 방식)
+    try {
+      const inviteRepository = manager.getRepository('TravelInvite');
+      await inviteRepository.delete({ createdBy: userId });
+    } catch (error) {
+      // 엔티티가 없을 수 있으므로 fallback
+      await manager.query(
+        `DELETE FROM travel_invites WHERE created_by = $1`,
+        [userId],
+      );
+    }
 
-    // 5. travel_members: user_id 기준 삭제
-    await manager.query(
-      `DELETE FROM travel_members WHERE user_id = $1`,
-      [userId],
-    );
+    // 5. travel_members: user_id 기준 삭제 (TypeORM 방식)
+    try {
+      const memberRepository = manager.getRepository('TravelMember');
+      await memberRepository.delete({ userId });
+    } catch (error) {
+      // 엔티티가 없을 수 있으므로 fallback
+      await manager.query(
+        `DELETE FROM travel_members WHERE user_id = $1`,
+        [userId],
+      );
+    }
 
-    // 6. user_sessions: user_id 기준 삭제 (엔티티 미존재)
-    await manager.query(
-      `DELETE FROM user_sessions WHERE user_id = $1`,
-      [userId],
-    );
+    // 6. user_sessions: user_id 기준 삭제 (TypeORM 방식)
+    try {
+      const sessionRepository = manager.getRepository('UserSession');
+      await sessionRepository.delete({ userId });
+    } catch (error) {
+      // 엔티티가 없을 수 있으므로 fallback
+      await manager.query(
+        `DELETE FROM user_sessions WHERE user_id = $1`,
+        [userId],
+      );
+    }
 
     // 7. profiles 본체 삭제
     await manager.delete(User, { id: userId });

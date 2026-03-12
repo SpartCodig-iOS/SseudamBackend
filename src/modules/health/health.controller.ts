@@ -20,6 +20,8 @@ import { AdaptiveCacheService } from '../../common/services/adaptive-cache.servi
 import { PoolMonitorService } from './pool-monitor.service';
 import { getPool } from '../../db/pool';
 import { env } from '../../config/env';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 
 /**
  * 내부 전용 /metrics 엔드포인트 접근을 제한하는 IP 허용 목록 및 API 키 검증
@@ -89,6 +91,7 @@ export class HealthController {
     private readonly smartCacheService: SmartCacheService,
     private readonly adaptiveCacheService: AdaptiveCacheService,
     private readonly poolMonitorService: PoolMonitorService,
+    @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
   private async checkDatabaseHealth(): Promise<'ok' | 'unavailable'> {
@@ -198,65 +201,32 @@ export class HealthController {
     const travelId = req.params.travelId;
 
     try {
-      const pool = await getPool();
-      if (!pool) {
-        return res.status(500).json({ error: 'Database pool not available' });
-      }
+      // TypeORM을 사용한 간단한 존재 확인
+      const travelRepository = this.dataSource.getRepository('Travel');
+      const travel = await travelRepository.findOne({
+        where: { id: travelId },
+        select: ['id'] // 필요한 필드만 선택
+      });
 
-      // 여행 경비 및 참가자 데이터 조회
-      const expenseQuery = `
-        SELECT
-          e.id,
-          e.title,
-          e.amount,
-          e.currency,
-          e.payer_id,
-          e.author_id,
-          e.created_at,
-          e.expense_date,
-          (SELECT COUNT(*) FROM travel_expense_participants tep WHERE tep.expense_id = e.id) as participant_count,
-          json_agg(
-            json_build_object(
-              'member_id', tep.member_id,
-              'split_amount', tep.split_amount
-            )
-          ) FILTER (WHERE tep.member_id IS NOT NULL) as participants
-        FROM travel_expenses e
-        LEFT JOIN travel_expense_participants tep ON tep.expense_id = e.id
-        WHERE e.travel_id = $1
-        GROUP BY e.id
-        ORDER BY e.created_at DESC;
-      `;
+      const travelExists = !!travel;
 
-      const memberQuery = `
-        SELECT
-          tm.user_id,
-          p.name,
-          p.email,
-          p.avatar_url
-        FROM travel_members tm
-        LEFT JOIN profiles p ON p.id = tm.user_id
-        WHERE tm.travel_id = $1;
-      `;
-
-      const [expenseResult, memberResult] = await Promise.all([
-        pool.query(expenseQuery, [travelId]),
-        pool.query(memberQuery, [travelId])
-      ]);
+      // 추가적으로 경비 개수도 확인
+      const expenseRepository = this.dataSource.getRepository('TravelExpense');
+      const expenseCount = await expenseRepository.count({
+        where: { travelId }
+      });
 
       return res.json({
         travelId,
-        expenses: expenseResult.rows,
-        members: memberResult.rows,
-        summary: {
-          totalExpenses: expenseResult.rows.length,
-          totalMembers: memberResult.rows.length
-        }
+        travelExists,
+        expenseCount,
+        timestamp: new Date().toISOString(),
+        status: travelExists ? 'found' : 'not_found'
       });
 
     } catch (error) {
       return res.status(500).json({
-        error: 'Database query failed',
+        error: 'TypeORM query failed',
         message: error instanceof Error ? error.message : 'Unknown error'
       });
     }

@@ -286,11 +286,13 @@ export class SocialAuthService {
     }
 
     try {
-      const rows = await this.dataSource.query(
-        `SELECT 1 FROM profiles WHERE id = $1 LIMIT 1`,
-        [userId],
-      );
-      const exists = Boolean(rows[0]);
+      // TypeORM count를 사용한 효율적인 존재 확인
+      const profileRepository = this.dataSource.getRepository('User');
+      const count = await profileRepository.count({
+        where: { id: userId },
+        take: 1 // 성능 최적화
+      });
+      const exists = count > 0;
       this.profileExistenceCache.set(userId, {
         exists,
         expiresAt: Date.now() + this.PROFILE_EXISTS_TTL,
@@ -1292,13 +1294,13 @@ export class SocialAuthService {
         return cached;
       }
 
-      // 2. DB에서 빠른 확인 (EXISTS 쿼리)
-      const rows = await this.dataSource.query(
-        'SELECT EXISTS(SELECT 1 FROM profiles WHERE id = $1) as exists',
-        [userId],
-      );
+      // 2. TypeORM으로 빠른 확인
+      const profileRepository = this.dataSource.getRepository('User');
+      const count = await profileRepository.count({
+        where: { id: userId }
+      });
 
-      const exists = Boolean(rows[0]?.exists);
+      const exists = count > 0;
 
       // 3. Redis에 캐싱 (30분 TTL)
       await this.cacheService.set(cacheKey, exists, { ttl: 1800 });

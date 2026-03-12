@@ -57,19 +57,23 @@ export class VersionService {
   private async fetchDbVersion(bundleId: string) {
     try {
       await this.ensureAppVersionTable();
-      const rows = await this.dataSource.query(
-        `SELECT bundle_id,
-                latest_version,
-                min_supported_version,
-                force_update,
-                release_notes,
-                updated_at
-         FROM app_versions
-         WHERE bundle_id = $1
-         LIMIT 1`,
-        [bundleId],
-      );
-      return rows[0] ?? null;
+      const appVersionRepository = this.dataSource.getRepository('AppVersion');
+      const appVersion = await appVersionRepository.findOne({
+        where: { bundleId },
+        select: ['bundleId', 'latestVersion', 'minSupportedVersion', 'forceUpdate', 'releaseNotes', 'updatedAt']
+      });
+
+      if (!appVersion) return null;
+
+      // raw SQL 결과와 같은 형태로 변환
+      return {
+        bundle_id: appVersion.bundleId,
+        latest_version: appVersion.latestVersion,
+        min_supported_version: appVersion.minSupportedVersion,
+        force_update: appVersion.forceUpdate,
+        release_notes: appVersion.releaseNotes,
+        updated_at: appVersion.updatedAt,
+      };
     } catch (error) {
       // DB 문제 시 App Store 결과만으로 동작 (로그는 최소화)
       return null;
@@ -214,23 +218,18 @@ export class VersionService {
 
   private async upsertDbVersion(data: AppVersionMeta): Promise<void> {
     await this.ensureAppVersionTable();
-    await this.dataSource.query(
-      `INSERT INTO app_versions (bundle_id, latest_version, min_supported_version, force_update, release_notes)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (bundle_id)
-       DO UPDATE SET
-         latest_version = EXCLUDED.latest_version,
-         min_supported_version = EXCLUDED.min_supported_version,
-         force_update = EXCLUDED.force_update,
-         release_notes = EXCLUDED.release_notes,
-         updated_at = NOW()`,
-      [
-        data.bundleId,
-        data.latestVersion,
-        data.minSupportedVersion,
-        data.forceUpdate,
-        data.releaseNotes,
-      ],
+    const appVersionRepository = this.dataSource.getRepository('AppVersion');
+
+    await appVersionRepository.upsert(
+      {
+        bundleId: data.bundleId,
+        latestVersion: data.latestVersion,
+        minSupportedVersion: data.minSupportedVersion,
+        forceUpdate: data.forceUpdate,
+        releaseNotes: data.releaseNotes,
+        updatedAt: new Date(),
+      },
+      ['bundleId'] // conflict target
     );
   }
 
@@ -240,28 +239,25 @@ export class VersionService {
   }): Promise<void> {
     const bundleId = 'io.sseudam.co';
     await this.ensureAppVersionTable();
-    const lastUpdated = this.toIsoString(new Date());
+    const lastUpdated = new Date();
     const minSupported = '17.0';
     const forceUpdate = true;
 
-    await this.dataSource.query(
-      `INSERT INTO app_versions (bundle_id, latest_version, min_supported_version, force_update, release_notes, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (bundle_id)
-       DO UPDATE SET
-         latest_version = EXCLUDED.latest_version,
-         min_supported_version = COALESCE(EXCLUDED.min_supported_version, app_versions.min_supported_version),
-         force_update = EXCLUDED.force_update,
-         release_notes = EXCLUDED.release_notes,
-         updated_at = EXCLUDED.updated_at`,
-      [
+    const appVersionRepository = this.dataSource.getRepository('AppVersion');
+
+    // TypeORM upsert with conditional update (COALESCE 로직 포함)
+    const existingRecord = await appVersionRepository.findOne({ where: { bundleId } });
+
+    await appVersionRepository.upsert(
+      {
         bundleId,
-        payload.latestVersion,
-        minSupported,
+        latestVersion: payload.latestVersion,
+        minSupportedVersion: existingRecord?.minSupportedVersion ?? minSupported,
         forceUpdate,
-        payload.releaseNotes ?? null,
-        lastUpdated,
-      ],
+        releaseNotes: payload.releaseNotes ?? null,
+        updatedAt: lastUpdated,
+      },
+      ['bundleId'] // conflict target
     );
 
     // Clear cache for this bundle

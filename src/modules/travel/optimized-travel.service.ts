@@ -3,11 +3,14 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 import { CacheService } from '../../common/services/cache.service';
 import { MetaService } from '../meta/meta.service';
+import { Travel } from './entities/travel.entity';
+import { TravelMember } from './entities/travel-member.entity';
+import { User } from '../user/entities/user.entity';
 
-interface TravelMember {
+interface TravelMemberSummary {
   userId: string;
   name: string | null;
   role: string;
@@ -31,7 +34,7 @@ interface OptimizedTravelSummary {
   role: string;
   createdAt: string;
   ownerName: string | null;
-  members?: TravelMember[]; // 멤버 정보 (includeMembers=true 시)
+  members?: TravelMemberSummary[]; // 멤버 정보 (includeMembers=true 시)
   memberCount?: number; // 멤버 수만 반환 (includeMembers=false 시)
 }
 
@@ -139,15 +142,21 @@ export class OptimizedTravelService {
   }
 
   private async getTotalTravelsCount(userId: string, status?: 'active' | 'archived'): Promise<any[]> {
-    const statusCondition = this.buildStatusCondition(status, 't');
-    return this.dataSource.query(
-      `SELECT COUNT(*)::int AS total
-       FROM travel_members tm
-       INNER JOIN travels t ON t.id = tm.travel_id
-       WHERE tm.user_id = $1
-       ${statusCondition}`,
-      [userId],
-    );
+    let queryBuilder = this.dataSource.createQueryBuilder()
+      .select('COUNT(*)', 'total')
+      .from('travel_members', 'tm')
+      .innerJoin('travels', 't', 't.id = tm.travel_id')
+      .where('tm.user_id = :userId', { userId });
+
+    // 상태 조건 추가
+    if (status === 'active') {
+      queryBuilder = queryBuilder.andWhere('t.end_date >= CURRENT_DATE');
+    } else if (status === 'archived') {
+      queryBuilder = queryBuilder.andWhere('t.end_date < CURRENT_DATE');
+    }
+
+    const result = await queryBuilder.getRawOne();
+    return [{ total: parseInt(result.total) }];
   }
 
   private async getTravelsList(
@@ -158,116 +167,148 @@ export class OptimizedTravelService {
     status: 'active' | 'archived' | undefined,
     sort: 'recent' | 'start_date' | 'start_date_desc',
   ): Promise<any[]> {
-    const statusCondition = this.buildStatusCondition(status, 't');
-    const orderClause = this.buildOrderClause(sort);
+    // 상태 조건과 정렬은 아래에서 TypeORM 방식으로 처리
 
     if (includeMembers) {
-      // 멤버 정보 포함 (최적화된 쿼리)
-      return this.dataSource.query(
-          `SELECT
-             t.id::text AS id,
-             t.title,
-             to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date,
-             to_char(t.end_date::date, 'YYYY-MM-DD') AS end_date,
-             t.country_code,
-             t.country_name_kr,
-             t.country_currencies,
-             t.base_currency,
-             t.base_exchange_rate,
-             t.budget,
-             t.budget_currency,
-             ti.invite_code,
-             CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS status,
-             tm.role,
-             t.created_at::text,
-             owner_profile.name AS owner_name,
-             COALESCE(members.members, '[]'::json) AS members
-           FROM travels t
-         INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
-         INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
-         LEFT JOIN travel_invites ti ON ti.travel_id = t.id AND ti.status = 'active'
-           LEFT JOIN LATERAL (
-            SELECT json_agg(
-                     json_build_object(
-                       'userId', tm2.user_id,
-                       'name', COALESCE(tm2.display_name, p.name),
-                        'role', tm2.role
-                   )
-                   ORDER BY tm2.joined_at
-                 ) AS members
+      // 멤버 정보 포함 (최적화된 쿼리를 TypeORM QueryBuilder로 변환)
+      let queryBuilder = this.dataSource
+        .createQueryBuilder()
+        .select([
+          `t.id AS id`,
+          `t.title AS title`,
+          `to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date`,
+          `to_char(t.end_date::date, 'YYYY-MM-DD') AS end_date`,
+          `t.country_code AS country_code`,
+          `t.country_name_kr AS country_name_kr`,
+          `t.country_currencies AS country_currencies`,
+          `t.base_currency AS base_currency`,
+          `t.base_exchange_rate AS base_exchange_rate`,
+          `t.budget AS budget`,
+          `t.budget_currency AS budget_currency`,
+          `ti.invite_code AS invite_code`,
+          `CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS status`,
+          `tm.role AS role`,
+          `t.created_at AS created_at`,
+          `owner_profile.name AS owner_name`,
+          `COALESCE(members.members, '[]'::json) AS members`,
+        ])
+        .from(Travel, 't')
+        .innerJoin(TravelMember, 'tm', 'tm.travel_id = t.id AND tm.user_id = :userId', { userId })
+        .innerJoin(User, 'owner_profile', 'owner_profile.id = t.owner_id')
+        .leftJoin(
+          '(SELECT travel_id, invite_code FROM travel_invites WHERE status = :inviteStatus)',
+          'ti',
+          'ti.travel_id = t.id',
+          { inviteStatus: 'active' }
+        )
+        .leftJoin(
+          `(SELECT
+             tm2.travel_id,
+             json_agg(
+               json_build_object(
+                 'userId', tm2.user_id,
+                 'name', COALESCE(tm2.display_name, p.name),
+                 'role', tm2.role
+               )
+               ORDER BY tm2.joined_at
+             ) AS members
            FROM travel_members tm2
            LEFT JOIN profiles p ON p.id = tm2.user_id
-           WHERE tm2.travel_id = t.id
-         ) AS members ON TRUE
-         WHERE 1 = 1
-         ${statusCondition}
-         ${orderClause}
-         LIMIT $2 OFFSET $3`,
-        [userId, limit, offset],
-      );
+           GROUP BY tm2.travel_id)`,
+          'members',
+          'members.travel_id = t.id'
+        );
+
+      // 상태 조건 추가
+      if (status === 'active') {
+        queryBuilder = queryBuilder.andWhere('t.end_date >= CURRENT_DATE');
+      } else if (status === 'archived') {
+        queryBuilder = queryBuilder.andWhere('t.end_date < CURRENT_DATE');
+      }
+
+      // 정렬 조건 추가
+      switch (sort) {
+        case 'start_date':
+          queryBuilder = queryBuilder.orderBy('t.start_date', 'ASC').addOrderBy('t.created_at', 'DESC');
+          break;
+        case 'start_date_desc':
+          queryBuilder = queryBuilder.orderBy('t.start_date', 'DESC').addOrderBy('t.created_at', 'DESC');
+          break;
+        default:
+          queryBuilder = queryBuilder.orderBy('t.created_at', 'DESC');
+      }
+
+      return queryBuilder
+        .limit(limit)
+        .offset(offset)
+        .getRawMany();
     } else {
       // 멤버 정보 없이 빠른 조회 (성능 최적화: DB에서 status 계산)
-      return this.dataSource.query(
-        `SELECT
-           t.id::text AS id,
-           t.title,
-           to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date,
-           to_char(t.end_date::date, 'YYYY-MM-DD') AS end_date,
-           t.country_code,
-           t.country_name_kr,
-           t.country_currencies,
-           t.base_currency,
-           t.base_exchange_rate,
-           t.budget,
-           t.budget_currency,
-           ti.invite_code,
-           CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS status,
-           tm.role,
-           t.created_at::text,
-           owner_profile.name AS owner_name,
-           member_counts.member_count
-         FROM travels t
-           INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
-           INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
-             LEFT JOIN travel_invites ti ON ti.travel_id = t.id AND ti.status = 'active'
-             LEFT JOIN (
-               SELECT travel_id, COUNT(*)::int AS member_count
-               FROM travel_members
-               GROUP BY travel_id
-             ) AS member_counts ON member_counts.travel_id = t.id
-           WHERE 1 = 1
-           ${statusCondition}
-           ${orderClause}
-           LIMIT $2 OFFSET $3`,
-        [userId, limit, offset],
-      );
-    }
-  }
+      let queryBuilder = this.dataSource
+        .createQueryBuilder()
+        .select([
+          `t.id AS id`,
+          `t.title AS title`,
+          `to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date`,
+          `to_char(t.end_date::date, 'YYYY-MM-DD') AS end_date`,
+          `t.country_code AS country_code`,
+          `t.country_name_kr AS country_name_kr`,
+          `t.country_currencies AS country_currencies`,
+          `t.base_currency AS base_currency`,
+          `t.base_exchange_rate AS base_exchange_rate`,
+          `t.budget AS budget`,
+          `t.budget_currency AS budget_currency`,
+          `ti.invite_code AS invite_code`,
+          `CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS status`,
+          `tm.role AS role`,
+          `t.created_at AS created_at`,
+          `owner_profile.name AS owner_name`,
+          `member_counts.member_count AS member_count`,
+        ])
+        .from(Travel, 't')
+        .innerJoin(TravelMember, 'tm', 'tm.travel_id = t.id AND tm.user_id = :userId', { userId })
+        .innerJoin(User, 'owner_profile', 'owner_profile.id = t.owner_id')
+        .leftJoin(
+          '(SELECT travel_id, invite_code FROM travel_invites WHERE status = :inviteStatus)',
+          'ti',
+          'ti.travel_id = t.id',
+          { inviteStatus: 'active' }
+        )
+        .leftJoin(
+          '(SELECT travel_id, COUNT(*)::int AS member_count FROM travel_members GROUP BY travel_id)',
+          'member_counts',
+          'member_counts.travel_id = t.id'
+        );
 
-  private buildOrderClause(sort: 'recent' | 'start_date' | 'start_date_desc'): string {
-    switch (sort) {
-      case 'start_date':
-        return 'ORDER BY t.start_date ASC, t.created_at DESC';
-      case 'start_date_desc':
-        return 'ORDER BY t.start_date DESC, t.created_at DESC';
-      default:
-        return 'ORDER BY t.created_at DESC';
+      // 상태 조건 추가
+      if (status === 'active') {
+        queryBuilder = queryBuilder.andWhere('t.end_date >= CURRENT_DATE');
+      } else if (status === 'archived') {
+        queryBuilder = queryBuilder.andWhere('t.end_date < CURRENT_DATE');
+      }
+
+      // 정렬 조건 추가
+      switch (sort) {
+        case 'start_date':
+          queryBuilder = queryBuilder.orderBy('t.start_date', 'ASC').addOrderBy('t.created_at', 'DESC');
+          break;
+        case 'start_date_desc':
+          queryBuilder = queryBuilder.orderBy('t.start_date', 'DESC').addOrderBy('t.created_at', 'DESC');
+          break;
+        default:
+          queryBuilder = queryBuilder.orderBy('t.created_at', 'DESC');
+      }
+
+      return queryBuilder
+        .limit(limit)
+        .offset(offset)
+        .getRawMany();
     }
   }
 
   // 공통 트랜잭션 래퍼 (TypeORM DataSource 방식)
   private async withTransaction<T>(callback: (manager: any) => Promise<T>): Promise<T> {
     return this.dataSource.transaction(callback);
-  }
-
-  private buildStatusCondition(status: 'active' | 'archived' | undefined, alias: string): string {
-    if (status === 'active') {
-      return `AND ${alias}.end_date >= CURRENT_DATE`;
-    }
-    if (status === 'archived') {
-      return `AND ${alias}.end_date < CURRENT_DATE`;
-    }
-    return '';
   }
 
   private transformTravelRow = (row: any): OptimizedTravelSummary => {
@@ -299,7 +340,7 @@ export class OptimizedTravelService {
         userId: m.userId,
         name: m.name ?? null,
         role: m.role,
-      }));
+      } as TravelMemberSummary));
     } else if (row.member_count !== undefined) {
       result.memberCount = row.member_count;
     }
@@ -322,44 +363,49 @@ export class OptimizedTravelService {
       this.logger.warn(`Travel detail cache read failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
 
-    const result = await this.dataSource.query(
-       `SELECT
-          t.id::text AS id,
-          t.title,
-          to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date,
-          to_char(t.end_date::date, 'YYYY-MM-DD') AS end_date,
-          t.country_code,
-          t.country_name_kr,
-          t.country_currencies,
-          t.base_currency,
-         t.base_exchange_rate,
-         t.budget,
-         t.budget_currency,
-         t.invite_code,
-         t.status,
-         t.created_at::text,
-         tm.role,
-         owner_profile.name AS owner_name,
-         COALESCE(members.members, '[]'::json) AS members
-       FROM travels t
-       INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $2
-       INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
-       LEFT JOIN LATERAL (
-            SELECT json_agg(
-                     json_build_object(
-                       'userId', tm2.user_id,
-                       'name', COALESCE(tm2.display_name, p.name),
-                        'role', tm2.role
-                    )
-                    ORDER BY tm2.joined_at
-                  ) AS members
-           FROM travel_members tm2
-           LEFT JOIN profiles p ON p.id = tm2.user_id
-         WHERE tm2.travel_id = t.id
-       ) AS members ON TRUE
-       WHERE t.id = $1`,
-      [travelId, userId],
-    );
+    const result = await this.dataSource
+      .createQueryBuilder()
+      .select([
+        `t.id AS id`,
+        `t.title AS title`,
+        `to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date`,
+        `to_char(t.end_date::date, 'YYYY-MM-DD') AS end_date`,
+        `t.country_code AS country_code`,
+        `t.country_name_kr AS country_name_kr`,
+        `t.country_currencies AS country_currencies`,
+        `t.base_currency AS base_currency`,
+        `t.base_exchange_rate AS base_exchange_rate`,
+        `t.budget AS budget`,
+        `t.budget_currency AS budget_currency`,
+        `t.invite_code AS invite_code`,
+        `t.status AS status`,
+        `t.created_at AS created_at`,
+        `tm.role AS role`,
+        `owner_profile.name AS owner_name`,
+        `COALESCE(members.members, '[]'::json) AS members`,
+      ])
+      .from(Travel, 't')
+      .innerJoin(TravelMember, 'tm', 'tm.travel_id = t.id AND tm.user_id = :userId', { userId })
+      .innerJoin(User, 'owner_profile', 'owner_profile.id = t.owner_id')
+      .leftJoin(
+        `(SELECT
+           tm2.travel_id,
+           json_agg(
+             json_build_object(
+               'userId', tm2.user_id,
+               'name', COALESCE(tm2.display_name, p.name),
+               'role', tm2.role
+             )
+             ORDER BY tm2.joined_at
+           ) AS members
+         FROM travel_members tm2
+         LEFT JOIN profiles p ON p.id = tm2.user_id
+         GROUP BY tm2.travel_id)`,
+        'members',
+        'members.travel_id = t.id'
+      )
+      .where('t.id = :travelId', { travelId })
+      .getRawMany();
 
     if (!result || result.length === 0) {
       return null;
@@ -424,29 +470,28 @@ export class OptimizedTravelService {
 
     // 캐시되지 않은 여행들을 배치로 조회
     if (uncachedIds.length > 0) {
-      const placeholders = uncachedIds.map((_: any, i: number) => `$${i + 1}`).join(',');
-
-      const batchRows = await this.dataSource.query(
-        `SELECT
-           t.id::text AS id,
-           t.title,
-           to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date,
-           to_char(t.end_date::date, 'YYYY-MM-DD') AS end_date,
-           t.country_code,
-           t.country_name_kr,
-           t.base_currency,
-           t.base_exchange_rate,
-           t.budget,
-           t.budget_currency,
-           t.invite_code,
-           t.status,
-           t.created_at::text,
-           owner_profile.name AS owner_name
-         FROM travels t
-         INNER JOIN profiles owner_profile ON owner_profile.id = t.owner_id
-         WHERE t.id IN (${placeholders})`,
-        uncachedIds,
-      );
+      const batchRows = await this.dataSource
+        .createQueryBuilder()
+        .select([
+          `t.id AS id`,
+          `t.title AS title`,
+          `to_char(t.start_date::date, 'YYYY-MM-DD') AS start_date`,
+          `to_char(t.end_date::date, 'YYYY-MM-DD') AS end_date`,
+          `t.country_code AS country_code`,
+          `t.country_name_kr AS country_name_kr`,
+          `t.base_currency AS base_currency`,
+          `t.base_exchange_rate AS base_exchange_rate`,
+          `t.budget AS budget`,
+          `t.budget_currency AS budget_currency`,
+          `t.invite_code AS invite_code`,
+          `t.status AS status`,
+          `t.created_at AS created_at`,
+          `owner_profile.name AS owner_name`,
+        ])
+        .from(Travel, 't')
+        .innerJoin(User, 'owner_profile', 'owner_profile.id = t.owner_id')
+        .where('t.id IN (:...travelIds)', { travelIds: uncachedIds })
+        .getRawMany();
 
       // 조회 결과를 캐시에 저장
       for (const row of batchRows) {

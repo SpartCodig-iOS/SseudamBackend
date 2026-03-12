@@ -313,34 +313,24 @@ export class ProfileService {
   }
 
   private async getProfileFromDB(userId: string): Promise<UserRecord | null> {
-    const rows = await this.dataSource.query(
-      `SELECT
-         id::text,
-         email,
-         name,
-         avatar_url,
-         username,
-         role,
-         created_at,
-         updated_at
-       FROM profiles
-       WHERE id = $1
-       LIMIT 1`,
-      [userId],
-    );
+    const profileRepository = this.dataSource.getRepository('Profile');
+    const profile = await profileRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'email', 'name', 'avatarUrl', 'username', 'role', 'createdAt', 'updatedAt']
+    });
 
-    const row = rows[0];
-    if (!row) return null;
+    if (!profile) return null;
 
+    // raw SQL 결과와 같은 형태로 변환
     return {
-      id: row.id,
-      email: row.email,
-      name: row.name,
-      avatar_url: row.avatar_url,
-      username: row.username,
-      role: row.role ?? 'user',
-      created_at: row.created_at,
-      updated_at: row.updated_at,
+      id: profile.id,
+      email: profile.email,
+      name: profile.name,
+      avatar_url: profile.avatarUrl,
+      username: profile.username,
+      role: profile.role ?? 'user',
+      created_at: profile.createdAt,
+      updated_at: profile.updatedAt,
       password_hash: '',
     };
   }
@@ -376,34 +366,35 @@ export class ProfileService {
       avatarURL = await this.uploadToSupabase(userId, file);
     }
 
-    const rows = await this.dataSource.query(
-      `UPDATE profiles
-       SET
-         name = COALESCE($2, name),
-         avatar_url = COALESCE($3, avatar_url),
-         updated_at = NOW()
-       WHERE id = $1
-       RETURNING
-         id::text,
-         email,
-         name,
-         avatar_url,
-         username,
-         role,
-         created_at,
-         updated_at`,
-      [userId, payload.name ?? null, avatarURL],
-    );
-    const row = rows[0];
+    const profileRepository = this.dataSource.getRepository('Profile');
+
+    // TypeORM으로 업데이트 실행
+    const updateData: any = { updatedAt: new Date() };
+    if (payload.name !== undefined) updateData.name = payload.name;
+    if (avatarURL !== undefined) updateData.avatarUrl = avatarURL;
+
+    await profileRepository.update({ id: userId }, updateData);
+
+    // 업데이트된 프로필 조회
+    const updatedProfile = await profileRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'email', 'name', 'avatarUrl', 'username', 'role', 'createdAt', 'updatedAt']
+    });
+
+    if (!updatedProfile) {
+      throw new Error('Profile update failed');
+    }
+
+    // raw SQL 결과와 같은 형태로 변환
     const updated: UserRecord = {
-      id: row.id,
-      email: row.email,
-      name: row.name,
-      avatar_url: row.avatar_url,
-      username: row.username,
-      role: row.role ?? 'user',
-      created_at: row.created_at,
-      updated_at: row.updated_at,
+      id: updatedProfile.id,
+      email: updatedProfile.email,
+      name: updatedProfile.name,
+      avatar_url: updatedProfile.avatarUrl,
+      username: updatedProfile.username,
+      role: updatedProfile.role ?? 'user',
+      created_at: updatedProfile.createdAt,
+      updated_at: updatedProfile.updatedAt,
       password_hash: '',
     };
 
@@ -600,12 +591,13 @@ export class ProfileService {
       }
 
       // 4. DB에서 avatar_url만 조회 (최소한의 쿼리)
-      const avatarRows = await this.dataSource.query(
-        `SELECT avatar_url FROM profiles WHERE id = $1 LIMIT 1`,
-        [userId],
-      );
+      const profileRepository = this.dataSource.getRepository('Profile');
+      const profile = await profileRepository.findOne({
+        where: { id: userId },
+        select: ['avatarUrl']
+      });
 
-      const dbAvatar = avatarRows[0]?.avatar_url as string | null | undefined;
+      const dbAvatar = profile?.avatarUrl as string | null | undefined;
       if (dbAvatar) {
         // Redis/메모리에 캐시해 다음 호출 가속화
         this.setCachedStorageAvatar(userId, dbAvatar);
@@ -658,9 +650,10 @@ export class ProfileService {
       this.setCachedStorageAvatar(userId, storageAvatar);
 
       // DB에도 저장 (실패 시 무시)
-      this.dataSource.query(
-        `UPDATE profiles SET avatar_url = $2, updated_at = NOW() WHERE id = $1`,
-        [userId, storageAvatar],
+      const profileRepository = this.dataSource.getRepository('Profile');
+      profileRepository.update(
+        { id: userId },
+        { avatarUrl: storageAvatar, updatedAt: new Date() }
       ).catch((err: Error) => this.logger.warn(`[warmAvatarFromStorage] Persist failed for ${userId}: ${err.message}`));
     } catch (error) {
       this.logger.warn(`[warmAvatarFromStorage] Failed for ${userId}`, error as Error);

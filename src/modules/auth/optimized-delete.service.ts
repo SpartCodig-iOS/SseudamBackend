@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 import { UserRecord } from '../user/types/user.types';
 import { LoginType } from './types/auth.types';
 import { SupabaseService } from '../../common/services/supabase.service';
@@ -94,17 +94,25 @@ export class OptimizedDeleteService {
   }
 
   /**
-   * 사용자 프로필 데이터 조회 (최적화된 쿼리)
+   * 사용자 프로필 데이터 조회 (TypeORM으로 최적화된 쿼리)
    */
   private async fetchUserProfileData(userId: string) {
     try {
-      const rows = await this.dataSource.query(
-        `SELECT login_type, avatar_url
-         FROM profiles
-         WHERE id = $1 LIMIT 1`,
-        [userId],
-      );
-      return rows[0] || null;
+      const profileRepository = this.dataSource.getRepository('Profile');
+      const profile = await profileRepository.findOne({
+        where: { id: userId },
+        select: ['loginType', 'avatarUrl']
+      });
+
+      if (!profile) {
+        return null;
+      }
+
+      // raw SQL 결과와 같은 형태로 변환
+      return {
+        login_type: profile.loginType,
+        avatar_url: profile.avatarUrl
+      };
     } catch (error) {
       this.logger.warn(`Failed to fetch profile data: ${error instanceof Error ? error.message : 'Unknown error'}`);
       return null;
@@ -165,65 +173,129 @@ export class OptimizedDeleteService {
   }
 
   /**
-   * 최적화된 로컬 데이터 삭제 (단일 트랜잭션)
+   * 최적화된 로컬 데이터 삭제 (단일 트랜잭션, TypeORM으로 변환)
    */
   private async performFastLocalDeletion(userId: string): Promise<string[]> {
     let travelIdArray: string[] = [];
 
     await this.dataSource.transaction(async (manager) => {
       // 사용자가 참여한 모든 여행 ID 수집 (캐시 무효화용)
-      const targetTravels = await manager.query(
-        'SELECT travel_id::text AS id FROM travel_members WHERE user_id = $1',
-        [userId],
-      );
-      travelIdArray = (targetTravels as Array<{ id: string }>).map((r) => r.id);
+      const travelMemberRepository = manager.getRepository('TravelMember');
+      const targetTravels = await travelMemberRepository.find({
+        where: { userId },
+        select: ['travelId']
+      });
+      travelIdArray = targetTravels.map(tm => tm.travelId);
 
       // 1) 사용자 세션/토큰 정리 (존재하지 않는 테이블은 건너뜀)
-      await manager.query(`DELETE FROM user_sessions WHERE user_id = $1`, [userId]);
-      const oauthTable = await manager.query(
-        `SELECT to_regclass('oauth_tokens')::text AS name`,
-      );
-      if ((oauthTable as Array<{ name: string | null }>)[0]?.name) {
-        await manager.query(`DELETE FROM oauth_tokens WHERE user_id = $1`, [userId]);
+      try {
+        const userSessionRepository = manager.getRepository('UserSession');
+        await userSessionRepository.delete({ userId });
+      } catch (error) {
+        // 테이블이 존재하지 않을 수 있음
+        this.logger.debug('UserSession table not found, skipping');
       }
-      await manager.query(`DELETE FROM device_tokens WHERE user_id = $1`, [userId]).catch(() => undefined);
-      await manager.query(`UPDATE travel_invites SET created_by = NULL WHERE created_by = $1`, [userId]);
+
+      try {
+        // OAuth 토큰 테이블 존재 여부 확인 후 삭제
+        const oauthTokenRepository = manager.getRepository('OAuthToken');
+        const count = await oauthTokenRepository.count();
+        if (count >= 0) { // 테이블이 존재함
+          await oauthTokenRepository.delete({ userId });
+        }
+      } catch (error) {
+        // 테이블이 존재하지 않을 수 있음
+        this.logger.debug('OAuthToken table not found, skipping');
+      }
+
+      try {
+        const deviceTokenRepository = manager.getRepository('DeviceToken');
+        await deviceTokenRepository.delete({ userId });
+      } catch (error) {
+        // 테이블이 존재하지 않을 수 있음
+        this.logger.debug('DeviceToken table not found, skipping');
+      }
+
+      try {
+        const travelInviteRepository = manager.getRepository('TravelInvite');
+        await travelInviteRepository.update(
+          { createdBy: userId },
+          { createdBy: null }
+        );
+      } catch (error) {
+        this.logger.debug('TravelInvite update failed, skipping');
+      }
 
       // 2) 사용자가 포함된 여행 및 하위 데이터 삭제
       if (travelIdArray.length > 0) {
-        await manager.query(
-          `DELETE FROM travel_expense_participants
-             WHERE expense_id IN (SELECT id FROM travel_expenses WHERE travel_id = ANY($1::uuid[]))`,
-          [travelIdArray],
-        );
-        await manager.query(
-          `DELETE FROM travel_expenses WHERE travel_id = ANY($1::uuid[])`,
-          [travelIdArray],
-        );
-        await manager.query(
-          `DELETE FROM travel_settlements WHERE travel_id = ANY($1::uuid[])`,
-          [travelIdArray],
-        );
-        await manager.query(
-          `DELETE FROM travel_invites WHERE travel_id = ANY($1::uuid[])`,
-          [travelIdArray],
-        );
-        await manager.query(
-          `DELETE FROM travel_members WHERE travel_id = ANY($1::uuid[])`,
-          [travelIdArray],
-        );
-        await manager.query(
-          `DELETE FROM travels WHERE id = ANY($1::uuid[])`,
-          [travelIdArray],
-        );
+        // 경비 참가자 삭제 (경비가 해당 여행들에 속하는 것들)
+        const travelExpenseRepository = manager.getRepository('TravelExpense');
+        const expenseIds = await travelExpenseRepository.find({
+          where: { travelId: In(travelIdArray) },
+          select: ['id']
+        });
+        const expenseIdList = expenseIds.map(e => e.id);
+
+        if (expenseIdList.length > 0) {
+          const participantRepository = manager.getRepository('TravelExpenseParticipant');
+          await participantRepository.delete({
+            expenseId: In(expenseIdList)
+          });
+        }
+
+        // 여행 경비 삭제
+        await travelExpenseRepository.delete({
+          travelId: In(travelIdArray)
+        });
+
+        // 여행 정산 삭제
+        const travelSettlementRepository = manager.getRepository('TravelSettlement');
+        await travelSettlementRepository.delete({
+          travelId: In(travelIdArray)
+        });
+
+        // 여행 초대 삭제
+        const travelInviteRepository = manager.getRepository('TravelInvite');
+        await travelInviteRepository.delete({
+          travelId: In(travelIdArray)
+        });
+
+        // 여행 멤버 삭제
+        await travelMemberRepository.delete({
+          travelId: In(travelIdArray)
+        });
+
+        // 여행 삭제
+        const travelRepository = manager.getRepository('Travel');
+        await travelRepository.delete({
+          id: In(travelIdArray)
+        });
       }
 
       // 3) 잔여 사용자 데이터 삭제
-      await manager.query(`DELETE FROM travel_expense_participants WHERE member_id = $1`, [userId]);
-      await manager.query(`DELETE FROM travel_expenses WHERE payer_id = $1 OR author_id = $1`, [userId]);
-      await manager.query(`DELETE FROM travel_settlements WHERE from_member = $1 OR to_member = $1`, [userId]);
-      await manager.query(`DELETE FROM travel_members WHERE user_id = $1`, [userId]);
-      await manager.query(`DELETE FROM profiles WHERE id = $1`, [userId]);
+      const participantRepository = manager.getRepository('TravelExpenseParticipant');
+      await participantRepository.delete({ memberId: userId });
+
+      const expenseRepository = manager.getRepository('TravelExpense');
+      await expenseRepository
+        .createQueryBuilder()
+        .delete()
+        .from('TravelExpense')
+        .where('payerId = :userId OR authorId = :userId', { userId })
+        .execute();
+
+      const settlementRepository = manager.getRepository('TravelSettlement');
+      await settlementRepository
+        .createQueryBuilder()
+        .delete()
+        .from('TravelSettlement')
+        .where('fromMember = :userId OR toMember = :userId', { userId })
+        .execute();
+
+      await travelMemberRepository.delete({ userId });
+
+      const profileRepository = manager.getRepository('Profile');
+      await profileRepository.delete({ id: userId });
     });
 
     this.logger.debug(`Local data anonymization completed for user ${userId}`);

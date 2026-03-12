@@ -6,6 +6,9 @@ import { env } from '../../config/env';
 import { getPool } from '../../db/pool';
 import { OAuthTokenService } from '../../modules/oauth/services/oauth-token.service';
 import { ImageProcessor } from '../utils/image-processor';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource, In } from 'typeorm';
+import { User as UserEntity } from '../../modules/user/entities/user.entity';
 
 @Injectable()
 export class SupabaseService {
@@ -17,6 +20,8 @@ export class SupabaseService {
 
   constructor(
     private readonly oauthTokenService: OAuthTokenService,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
   ) {
     if (!env.supabaseUrl || !env.supabaseServiceRoleKey) {
       console.warn(
@@ -138,14 +143,14 @@ export class SupabaseService {
     let attempts = 0;
 
     while (attempts < 10) {
-      const pool = await getPool();
-      const result = await pool.query(
-        `SELECT id FROM ${env.supabaseProfileTable} WHERE username = $1 LIMIT 1`,
-        [candidate],
-      );
+      const existingUser = await this.dataSource
+        .getRepository(UserEntity)
+        .findOne({
+          where: { username: candidate },
+          select: ['id']
+        });
 
-      const existingId = result.rows[0]?.id as string | undefined;
-      if (!existingId || existingId === userId) {
+      if (!existingUser || existingUser.id === userId) {
         return candidate;
       }
 
@@ -194,26 +199,25 @@ export class SupabaseService {
   }
 
   async findProfileById(id: string) {
-    const pool = await getPool();
-    const result = await pool.query(
-      `SELECT id::text, email, username, name, login_type, avatar_url, role, created_at, updated_at
-       FROM ${env.supabaseProfileTable}
-       WHERE id = $1
-       LIMIT 1`,
-      [id],
-    );
-    const row = result.rows[0];
-    if (!row) return null;
+    const profile = await this.dataSource
+      .getRepository(UserEntity)
+      .findOne({
+        where: { id },
+        select: ['id', 'email', 'username', 'name', 'login_type', 'avatar_url', 'role', 'created_at', 'updated_at']
+      });
+
+    if (!profile) return null;
+
     return {
-      id: row.id as string,
-      email: row.email as string,
-      username: row.username as string,
-      name: (row.name as string | null) ?? null,
-      login_type: (row.login_type as string | null) ?? null,
-      avatar_url: (row.avatar_url as string | null) ?? null,
-      role: (row.role as string | null) ?? null,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
+      id: profile.id,
+      email: profile.email,
+      username: profile.username ?? null,
+      name: profile.name ?? null,
+      login_type: profile.login_type ?? null,
+      avatar_url: profile.avatar_url ?? null,
+      role: profile.role ?? null,
+      created_at: profile.created_at,
+      updated_at: profile.updated_at,
     };
   }
 
@@ -222,14 +226,14 @@ export class SupabaseService {
     if (ids.length === 0) return [];
 
     const uniqueIds = Array.from(new Set(ids));
-    const pool = await getPool();
-    const result = await pool.query(
-      `SELECT id::text, email, username, name, login_type, avatar_url, role, created_at, updated_at
-       FROM ${env.supabaseProfileTable}
-       WHERE id = ANY($1::uuid[])`,
-      [uniqueIds],
-    );
-    const profileMap = new Map(result.rows.map((profile) => [profile.id, profile]));
+    const profiles = await this.dataSource
+      .getRepository(UserEntity)
+      .find({
+        where: { id: In(uniqueIds) },
+        select: ['id', 'email', 'username', 'name', 'login_type', 'avatar_url', 'role', 'created_at', 'updated_at']
+      });
+
+    const profileMap = new Map(profiles.map((profile) => [profile.id, profile]));
     return ids.map((id) => profileMap.get(id)).filter(Boolean);
   }
 
@@ -283,47 +287,36 @@ export class SupabaseService {
     loginType?: LoginType;
     avatarUrl?: string | null;
   }) {
-    const pool = await getPool();
-    const now = new Date().toISOString();
-    await pool.query(
-      `INSERT INTO ${env.supabaseProfileTable}
-         (id, email, name, username, login_type, avatar_url, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
-       ON CONFLICT (id) DO UPDATE
-       SET email = EXCLUDED.email,
-           name = EXCLUDED.name,
-           username = EXCLUDED.username,
-           login_type = EXCLUDED.login_type,
-           avatar_url = EXCLUDED.avatar_url,
-           updated_at = EXCLUDED.updated_at`,
-      [
-        params.id,
-        params.email,
-        params.name ?? null,
-        params.username,
-        params.loginType ?? null,
-        params.avatarUrl ?? null,
-        now,
-      ],
-    );
+    const userRepo = this.dataSource.getRepository(UserEntity);
+    const now = new Date();
+
+    await userRepo.save({
+      id: params.id,
+      email: params.email,
+      name: params.name ?? null,
+      username: params.username,
+      login_type: params.loginType ?? null,
+      avatar_url: params.avatarUrl ?? null,
+      created_at: now,
+      updated_at: now,
+    });
   }
 
   async ensureProfileFromSupabaseUser(user: User, loginType: LoginType) {
     if (!user.email) {
       throw new Error('Supabase user does not contain an email');
     }
-    const pool = await getPool();
-    const existingProfileResult = await pool.query(
-      `SELECT username, name, avatar_url
-       FROM ${env.supabaseProfileTable}
-       WHERE id = $1
-       LIMIT 1`,
-      [user.id],
-    );
-    const existingProfile = existingProfileResult.rows[0];
-    const existingProfileUsername = (existingProfile?.username as string | undefined) ?? null;
-    const existingProfileName = (existingProfile?.name as string | undefined) ?? null;
-    const existingAvatar = (existingProfile?.avatar_url as string | undefined) ?? null;
+
+    const existingProfile = await this.dataSource
+      .getRepository(UserEntity)
+      .findOne({
+        where: { id: user.id },
+        select: ['username', 'name', 'avatar_url']
+      });
+
+    const existingProfileUsername = existingProfile?.username ?? null;
+    const existingProfileName = existingProfile?.name ?? null;
+    const existingAvatar = existingProfile?.avatar_url ?? null;
 
     const proposedUsername =
       (user.user_metadata?.username as string | undefined) ??
@@ -429,14 +422,15 @@ export class SupabaseService {
   }
 
   async clearAvatarUrl(userId: string): Promise<void> {
-    const pool = await getPool();
-    await pool.query(
-      `UPDATE ${env.supabaseProfileTable}
-         SET avatar_url = NULL,
-             updated_at = NOW()
-       WHERE id = $1`,
-      [userId],
-    );
+    await this.dataSource
+      .getRepository(UserEntity)
+      .update(
+        { id: userId },
+        {
+          avatar_url: null,
+          updated_at: new Date()
+        }
+      );
   }
 
   private detectImageKind(url: string, contentType?: string | null): 'png' | 'jpeg' | null {
@@ -528,14 +522,15 @@ export class SupabaseService {
       }
 
       // DB에 메인 아바타 URL 저장
-      const pool = await getPool();
-      await pool.query(
-        `UPDATE ${env.supabaseProfileTable}
-           SET avatar_url = $1,
-               updated_at = NOW()
-         WHERE id = $2`,
-        [originalVariant.url, userId],
-      );
+      await this.dataSource
+        .getRepository(UserEntity)
+        .update(
+          { id: userId },
+          {
+            avatar_url: originalVariant.url,
+            updated_at: new Date()
+          }
+        );
 
       const compressionRatio = Math.round((1 - originalVariant.processedSize / originalVariant.originalSize) * 100);
       this.logger.log(
@@ -549,14 +544,15 @@ export class SupabaseService {
 
       // 실패 시 원본 URL 저장 (폴백)
       try {
-        const pool = await getPool();
-        await pool.query(
-          `UPDATE ${env.supabaseProfileTable}
-             SET avatar_url = $1,
-                 updated_at = NOW()
-           WHERE id = $2`,
-          [trimmedUrl, userId],
-        );
+        await this.dataSource
+          .getRepository(UserEntity)
+          .update(
+            { id: userId },
+            {
+              avatar_url: trimmedUrl,
+              updated_at: new Date()
+            }
+          );
         return trimmedUrl;
       } catch {
         // 최종적으로 실패하면 null 반환
@@ -606,8 +602,9 @@ export class SupabaseService {
 
   async deleteUser(id: string) {
     // DB 레코드 정리
-    const pool = await getPool();
-    await pool.query(`DELETE FROM ${env.supabaseProfileTable} WHERE id = $1`, [id]);
+    await this.dataSource
+      .getRepository(UserEntity)
+      .delete({ id });
 
     // Supabase auth 사용자 삭제(스토리지/인증만 사용)
     const client = this.getClient();
@@ -634,8 +631,12 @@ export class SupabaseService {
 
   async checkProfilesHealth(): Promise<'ok' | 'unavailable' | 'not_configured'> {
     try {
-      const pool = await getPool();
-      await pool.query(`SELECT 1 FROM ${env.supabaseProfileTable} LIMIT 1`);
+      await this.dataSource
+        .createQueryBuilder()
+        .select('1')
+        .from(UserEntity, 'user')
+        .limit(1)
+        .getRawOne();
       return 'ok';
     } catch (error) {
       console.error('[health] Profile table health check failed', error);

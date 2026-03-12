@@ -88,42 +88,56 @@ export class TravelSettlementService {
   }
 
   private async ensureMember(travelId: string, userId: string): Promise<void> {
-    const rows = await this.dataSource.query(
-      `SELECT 1 FROM travel_members WHERE travel_id = $1 AND user_id = $2 LIMIT 1`,
-      [travelId, userId],
-    );
-    if (!rows[0]) {
+    const travelMemberRepository = this.dataSource.getRepository('TravelMember');
+    const count = await travelMemberRepository.count({
+      where: { travelId, userId },
+      take: 1
+    });
+    if (count === 0) {
       throw new BadRequestException('해당 여행에 대한 접근 권한이 없습니다.');
     }
   }
 
   private async fetchBalances(travelId: string, manager?: EntityManager): Promise<Balance[]> {
     const db = manager ?? this.dataSource;
-    const result = await db.query(
-      `WITH paid AS (
-         SELECT payer_id AS member_id, SUM(converted_amount) AS total_paid
-         FROM travel_expenses
-         WHERE travel_id = $1
-         GROUP BY payer_id
-       ),
-       shared AS (
-         SELECT tep.member_id, SUM(tep.split_amount) AS total_shared
-         FROM travel_expense_participants tep
-         INNER JOIN travel_expenses te ON te.id = tep.expense_id
-         WHERE te.travel_id = $1
-         GROUP BY tep.member_id
-       )
-       SELECT
-         tm.user_id::text AS member_id,
-         p.name,
-         COALESCE(paid.total_paid, 0) - COALESCE(shared.total_shared, 0) AS balance
-       FROM travel_members tm
-       LEFT JOIN profiles p ON p.id = tm.user_id
-       LEFT JOIN paid ON paid.member_id = tm.user_id
-       LEFT JOIN shared ON shared.member_id = tm.user_id
-       WHERE tm.travel_id = $1`,
-      [travelId],
-    );
+
+    // TypeORM으로 복잡한 CTE 쿼리 변환
+    const result = await db
+      .createQueryBuilder()
+      .select('tm.user_id', 'member_id')
+      .addSelect('p.name', 'name')
+      .addSelect('COALESCE(paid.total_paid, 0) - COALESCE(shared.total_shared, 0)', 'balance')
+      .from('travel_members', 'tm')
+      .leftJoin('profiles', 'p', 'p.id = tm.user_id')
+      .leftJoin(
+        (subQuery) => {
+          return subQuery
+            .select('payer_id', 'member_id')
+            .addSelect('SUM(converted_amount)', 'total_paid')
+            .from('travel_expenses', 'te_paid')
+            .where('te_paid.travel_id = :travelId')
+            .groupBy('payer_id');
+        },
+        'paid',
+        'paid.member_id = tm.user_id'
+      )
+      .leftJoin(
+        (subQuery) => {
+          return subQuery
+            .select('tep.member_id', 'member_id')
+            .addSelect('SUM(tep.split_amount)', 'total_shared')
+            .from('travel_expense_participants', 'tep')
+            .innerJoin('travel_expenses', 'te', 'te.id = tep.expense_id')
+            .where('te.travel_id = :travelId')
+            .groupBy('tep.member_id');
+        },
+        'shared',
+        'shared.member_id = tm.user_id'
+      )
+      .where('tm.travel_id = :travelId')
+      .setParameter('travelId', travelId)
+      .getRawMany();
+
     return result.map((row: any) => ({
       memberId: row.member_id,
       name: row.name,
@@ -205,23 +219,18 @@ export class TravelSettlementService {
     },
   ): Promise<void> {
     try {
-      await manager.query(
-        `INSERT INTO settlement_audit_logs
-           (travel_id, settlement_id, actor_id, action,
-            old_status, new_status, old_version, new_version, meta)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)`,
-        [
-          params.travelId,
-          params.settlementId ?? null,
-          params.actorId,
-          params.action,
-          params.oldStatus ?? null,
-          params.newStatus ?? null,
-          params.oldVersion ?? null,
-          params.newVersion ?? null,
-          params.meta ? JSON.stringify(params.meta) : null,
-        ],
-      );
+      const auditLogRepository = manager.getRepository('SettlementAuditLog');
+      await auditLogRepository.insert({
+        travelId: params.travelId,
+        settlementId: params.settlementId,
+        actorId: params.actorId,
+        action: params.action,
+        oldStatus: params.oldStatus,
+        newStatus: params.newStatus,
+        oldVersion: params.oldVersion,
+        newVersion: params.newVersion,
+        meta: params.meta ? JSON.stringify(params.meta) : null,
+      });
     } catch (err) {
       // 감사 로그 실패가 핵심 기능에 영향 주면 안 되므로 warn 처리
       this.logger.warn(
@@ -252,24 +261,24 @@ export class TravelSettlementService {
 
     const [balances, storedSettlements] = await Promise.all([
       this.fetchBalances(travelId),
-      this.dataSource.query(
-        `SELECT
-           ts.id::text,
-           ts.from_member::text,
-           ts.to_member::text,
-           ts.amount,
-           ts.status,
-           ts.updated_at::text,
-           ts.version,
-           from_profile.name AS from_name,
-           to_profile.name   AS to_name
-         FROM travel_settlements ts
-         LEFT JOIN profiles from_profile ON from_profile.id = ts.from_member
-         LEFT JOIN profiles to_profile   ON to_profile.id   = ts.to_member
-         WHERE ts.travel_id = $1
-         ORDER BY ts.created_at ASC`,
-        [travelId],
-      ),
+      this.dataSource.createQueryBuilder()
+        .select([
+          'ts.id',
+          'ts.from_member',
+          'ts.to_member',
+          'ts.amount',
+          'ts.status',
+          'ts.updated_at',
+          'ts.version',
+          'from_profile.name AS from_name',
+          'to_profile.name AS to_name'
+        ])
+        .from('travel_settlements', 'ts')
+        .leftJoin('profiles', 'from_profile', 'from_profile.id = ts.from_member')
+        .leftJoin('profiles', 'to_profile', 'to_profile.id = ts.to_member')
+        .where('ts.travel_id = :travelId', { travelId })
+        .orderBy('ts.created_at', 'ASC')
+        .getRawMany(),
     ]);
 
     const nameMap = new Map(balances.map((b) => [b.memberId, b.name ?? '알 수 없음']));
@@ -338,13 +347,12 @@ export class TravelSettlementService {
     }
 
     // 현재 최대 버전 조회 (낙관적 락 기준값)
-    const versionRows = await this.dataSource.query(
-      `SELECT COALESCE(MAX(version), 0) AS max_version
-       FROM travel_settlements
-       WHERE travel_id = $1`,
-      [travelId],
-    );
-    const currentVersion: number = Number(versionRows[0]?.max_version ?? 0);
+    const versionResult = await this.dataSource.createQueryBuilder()
+      .select('COALESCE(MAX(travel_settlements.version), 0)', 'max_version')
+      .from('travel_settlements', 'travel_settlements')
+      .where('travel_settlements.travel_id = :travelId', { travelId })
+      .getRawOne();
+    const currentVersion: number = Number(versionResult?.max_version ?? 0);
     const nextVersion = currentVersion + 1;
 
     const balances = await this.fetchBalances(travelId);
@@ -356,14 +364,14 @@ export class TravelSettlementService {
 
     await this.ensureTransaction(async (manager) => {
       // 낙관적 락: 트랜잭션 내에서 버전이 여전히 동일한지 재확인
-      const lockRows = await manager.query(
-        `SELECT COALESCE(MAX(version), 0) AS max_version
-         FROM travel_settlements
-         WHERE travel_id = $1
-         FOR UPDATE`,
-        [travelId],
-      );
-      const lockedVersion = Number(lockRows[0]?.max_version ?? 0);
+      const lockResult = await manager.createQueryBuilder()
+        .select('COALESCE(MAX(travel_settlements.version), 0)', 'max_version')
+        .from('travel_settlements', 'travel_settlements')
+        .where('travel_settlements.travel_id = :travelId', { travelId })
+        // FOR UPDATE는 select().forUpdate() 사용
+        .setLock('pessimistic_write')
+        .getRawOne();
+      const lockedVersion = Number(lockResult?.max_version ?? 0);
 
       if (lockedVersion !== currentVersion) {
         throw new ConflictException(
@@ -372,33 +380,23 @@ export class TravelSettlementService {
       }
 
       // 기존 정산 전부 삭제 후 재삽입
-      await manager.query(
-        `DELETE FROM travel_settlements WHERE travel_id = $1`,
-        [travelId],
-      );
+      const settlementRepository = manager.getRepository('TravelSettlement');
+      await settlementRepository.delete({ travelId });
 
-      // 배치 INSERT (UNNEST 방식 — N=1 쿼리)
-      const ids = computedSettlements.map((s) => s.id);
-      const travelIds = Array(computedSettlements.length).fill(travelId);
-      const fromMembers = computedSettlements.map((s) => s.fromMemberId);
-      const toMembers = computedSettlements.map((s) => s.toMemberId);
-      const amounts = computedSettlements.map((s) => s.amount);
-      const versions = Array(computedSettlements.length).fill(nextVersion);
+      // 배치 INSERT (TypeORM 방식)
+      const settlementEntities = computedSettlements.map((settlement) => ({
+        id: settlement.id,
+        travelId: travelId,
+        fromMember: settlement.fromMemberId,
+        toMember: settlement.toMemberId,
+        amount: settlement.amount,
+        version: nextVersion,
+        status: 'pending' as const,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
 
-      await manager.query(
-        `INSERT INTO travel_settlements
-           (id, travel_id, from_member, to_member, amount, version)
-         SELECT *
-         FROM UNNEST(
-           $1::uuid[],
-           $2::uuid[],
-           $3::uuid[],
-           $4::uuid[],
-           $5::numeric[],
-           $6::integer[]
-         ) AS t(id, travel_id, from_member, to_member, amount, version)`,
-        [ids, travelIds, fromMembers, toMembers, amounts, versions],
-      );
+      await settlementRepository.insert(settlementEntities);
 
       // 감사 로그 기록
       await this.writeAuditLog(manager, {
@@ -418,13 +416,13 @@ export class TravelSettlementService {
       .del(travelId, { prefix: this.SETTLEMENT_PREFIX })
       .catch(() => undefined);
 
-    const result = await this.getSettlementSummary(travelId, userId);
+    const summaryResult = await this.getSettlementSummary(travelId, userId);
 
     // 멱등성 키 캐싱 (5분 보존)
     if (options.idempotencyKey) {
       const idempotencyPrefix = 'settlement:idempotency';
       this.cacheService
-        .set(options.idempotencyKey, result, { prefix: idempotencyPrefix, ttl: 300 })
+        .set(options.idempotencyKey, summaryResult, { prefix: idempotencyPrefix, ttl: 300 })
         .catch(() => undefined);
     }
 
@@ -434,7 +432,7 @@ export class TravelSettlementService {
     );
 
     this.metricsService?.recordSettlementCalculated(travelId, 'success');
-    return result;
+    return summaryResult;
   }
 
   async markSettlementCompleted(
@@ -449,22 +447,22 @@ export class TravelSettlementService {
 
     await this.ensureTransaction(async (manager) => {
       // 현재 상태 조회 (FOR UPDATE로 동시 수정 방지)
-      const currentRows = await manager.query(
-        `SELECT status, version
-         FROM travel_settlements
-         WHERE id = $1 AND travel_id = $2
-         FOR UPDATE`,
-        [settlementId, travelId],
-      );
+      const settlementRepository = manager.getRepository('TravelSettlement');
+      const currentRecord = await settlementRepository
+        .createQueryBuilder('settlement')
+        .select(['settlement.status', 'settlement.version'])
+        .where('settlement.id = :settlementId AND settlement.travelId = :travelId', { settlementId, travelId })
+        .setLock('pessimistic_write')
+        .getOne();
 
-      if (!currentRows[0]) {
+      if (!currentRecord) {
         throw new BadRequestException(
           '정산 내역을 찾을 수 없습니다. 계산된 결과를 저장한 뒤 완료 처리하세요.',
         );
       }
 
-      oldStatus = currentRows[0].status as string;
-      const currentRowVersion = Number(currentRows[0].version ?? 1);
+      oldStatus = currentRecord.status as string;
+      const currentRowVersion = Number(currentRecord.version ?? 1);
       newVersion = currentRowVersion + 1;
 
       // 이미 완료된 경우 멱등성 보장 (재처리 무시)
@@ -475,19 +473,25 @@ export class TravelSettlementService {
         return;
       }
 
-      const rows = await manager.query(
-        `UPDATE travel_settlements
-         SET status       = 'completed',
-             completed_at = NOW(),
-             updated_at   = NOW(),
-             version      = $3
-         WHERE id = $1 AND travel_id = $2 AND version = $4
-         RETURNING id`,
-        [settlementId, travelId, newVersion, currentRowVersion],
-      );
+      // TypeORM으로 조건부 업데이트 실행
+      const updateResult = await settlementRepository
+        .createQueryBuilder()
+        .update('TravelSettlement')
+        .set({
+          status: 'completed',
+          completedAt: () => 'NOW()',
+          updatedAt: () => 'NOW()',
+          version: newVersion
+        })
+        .where('id = :settlementId AND travelId = :travelId AND version = :currentVersion', {
+          settlementId,
+          travelId,
+          currentVersion: currentRowVersion
+        })
+        .execute();
 
       // affected 0 → 다른 트랜잭션이 선점 수정
-      if (!rows[0]) {
+      if (updateResult.affected === 0) {
         throw new ConflictException(
           '다른 사용자가 동시에 동일 정산을 수정했습니다. 잠시 후 다시 시도해주세요.',
         );
@@ -515,34 +519,41 @@ export class TravelSettlementService {
   async getSettlementStatistics(travelId: string, userId: string): Promise<SettlementStatistics> {
     await this.ensureMember(travelId, userId);
 
-    const [statsRows, balancesResult] = await Promise.all([
-      this.dataSource.query(
-        `WITH travel_totals AS (
-           SELECT SUM(converted_amount) AS total_expense_amount
-           FROM travel_expenses
-           WHERE travel_id = $1
-         ),
-         my_paid AS (
-           SELECT COALESCE(SUM(converted_amount), 0) AS my_paid_amount
-           FROM travel_expenses
-           WHERE travel_id = $1 AND payer_id = $2
-         ),
-         my_shared AS (
-           SELECT COALESCE(SUM(tep.split_amount), 0) AS my_shared_amount
-           FROM travel_expense_participants tep
-           INNER JOIN travel_expenses te ON te.id = tep.expense_id
-           WHERE te.travel_id = $1 AND tep.member_id = $2
-         )
-         SELECT
-           travel_totals.total_expense_amount,
-           my_paid.my_paid_amount,
-           my_shared.my_shared_amount,
-           (my_paid.my_paid_amount - my_shared.my_shared_amount) AS my_balance
-         FROM travel_totals, my_paid, my_shared`,
-        [travelId, userId],
-      ),
+    const [statsResult, balancesResult] = await Promise.all([
+      this.dataSource.createQueryBuilder()
+        .select('SUM(te1.converted_amount)', 'total_expense_amount')
+        .addSelect('COALESCE(my_paid.my_paid_amount, 0)', 'my_paid_amount')
+        .addSelect('COALESCE(my_shared.my_shared_amount, 0)', 'my_shared_amount')
+        .addSelect('(COALESCE(my_paid.my_paid_amount, 0) - COALESCE(my_shared.my_shared_amount, 0))', 'my_balance')
+        .from('travel_expenses', 'te1')
+        .leftJoin(
+          (subQuery) => {
+            return subQuery
+              .select('SUM(converted_amount)', 'my_paid_amount')
+              .from('travel_expenses', 'te_paid')
+              .where('te_paid.travel_id = :travelId AND te_paid.payer_id = :userId');
+          },
+          'my_paid',
+          '1=1'
+        )
+        .leftJoin(
+          (subQuery) => {
+            return subQuery
+              .select('SUM(tep.split_amount)', 'my_shared_amount')
+              .from('travel_expense_participants', 'tep')
+              .innerJoin('travel_expenses', 'te', 'te.id = tep.expense_id')
+              .where('te.travel_id = :travelId AND tep.member_id = :userId');
+          },
+          'my_shared',
+          '1=1'
+        )
+        .where('te1.travel_id = :travelId')
+        .setParameters({ travelId, userId })
+        .getRawOne(),
       this.fetchBalances(travelId),
     ]);
+
+    const statsRows = [statsResult];
 
     const row = statsRows[0];
     if (!row) {
