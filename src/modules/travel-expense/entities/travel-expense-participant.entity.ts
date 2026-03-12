@@ -11,9 +11,9 @@ import { TravelExpense } from './travel-expense.entity';
 import { User } from '../../user/entities/user.entity';
 
 @Entity('travel_expense_participants')
-@Unique(['expenseId', 'memberId'])
+@Unique(['expenseId', 'memberId']) // 주의: memberId가 nullable이므로 성능 영향 있음
 @Index(['expenseId'])
-@Index(['memberId'])
+@Index(['memberId']) // nullable 컬럼 인덱스 - 필요시 partial index 고려
 export class TravelExpenseParticipant {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -38,9 +38,9 @@ export class TravelExpenseParticipant {
   @JoinColumn({ name: 'expense_id' })
   expense!: TravelExpense;
 
-  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'member_id' })
-  member!: User;
+  member!: User | null;
 
   constructor(partial: Partial<TravelExpenseParticipant> = {}) {
     Object.assign(this, partial);

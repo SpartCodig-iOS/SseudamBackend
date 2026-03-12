@@ -79,10 +79,10 @@ export class DeviceToken {
   })
   updated_at!: Date;
 
-  // 순환 참조 방지를 위해 ForwardRef 문자열 사용
+  // 순환 참조 방지를 위해 ForwardRef 사용
   @ManyToOne('User', { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'user_id' })
-  user!: any;
+  user!: import('../../user/entities/user.entity').User | null;
 
   constructor(partial: Partial<DeviceToken> = {}) {
     Object.assign(this, partial);

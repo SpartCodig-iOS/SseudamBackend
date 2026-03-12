@@ -13,7 +13,7 @@ import { Travel } from './travel.entity';
 @Index(['travelId'])
 @Index(['baseCurrency'])
 @Index(['destinationCurrency'])
-@Index(['createdAt'])
+@Index(['recordedAt'])
 // 복합 인덱스: 여행별 통화 스냅샷 조회 최적화
 @Index(['travelId', 'baseCurrency', 'destinationCurrency'])
 export class TravelCurrencySnapshot {

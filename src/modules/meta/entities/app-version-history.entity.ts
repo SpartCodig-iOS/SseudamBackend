@@ -10,7 +10,7 @@ import {
 @Index(['bundleId', 'recordedAt'])
 export class AppVersionHistory {
   @PrimaryGeneratedColumn('increment', { type: 'bigint' })
-  id!: string;
+  id!: string; // bigint는 Node.js에서 string으로 반환됨
 
   @Column({ type: 'text', name: 'bundle_id' })
   bundleId!: string;
