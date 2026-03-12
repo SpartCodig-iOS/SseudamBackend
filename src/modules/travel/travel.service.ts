@@ -22,6 +22,8 @@ import { QueueEventService } from '../queue/services/queue-event.service';
 import { AppMetricsService } from '../../common/metrics/app-metrics.service';
 import { Travel } from './entities/travel.entity';
 import { TravelMember } from './entities/travel-member.entity';
+import { TravelInvite } from './entities/travel-invite.entity';
+import { TravelCurrencySnapshot } from './entities/travel-currency-snapshot.entity';
 import { User } from '../user/entities/user.entity';
 
 export interface TravelSummary {
@@ -344,18 +346,14 @@ export class TravelService {
     const destinationCurrency = this.resolveDestinationCurrency(params.countryCode, params.baseCurrency);
     const baseAmount = params.baseAmount ?? 1000;
 
-    await manager.query(
-      `INSERT INTO travel_currency_snapshots
-         (travel_id, base_currency, destination_currency, base_amount, base_exchange_rate)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [
-        params.travelId,
-        params.baseCurrency.toUpperCase(),
-        destinationCurrency,
-        baseAmount,
-        params.baseExchangeRate,
-      ],
-    );
+    const currencySnapshotRepository = manager.getRepository(TravelCurrencySnapshot);
+    await currencySnapshotRepository.save({
+      travelId: params.travelId,
+      baseCurrency: params.baseCurrency.toUpperCase(),
+      destinationCurrency,
+      baseAmount,
+      baseExchangeRate: params.baseExchangeRate,
+    });
   }
 
   private async isMemberCached(travelId: string, userId: string): Promise<boolean | null> {
@@ -759,16 +757,18 @@ export class TravelService {
 
         // 3. 여행 초대 생성 (travel_invites 테이블이 있다면)
         try {
-          await manager.query(
-            `INSERT INTO travel_invites (travel_id, invite_code, created_by, status, expires_at, max_uses)
-             VALUES ($1, $2, $3, 'active', NULL, NULL)
-             ON CONFLICT (invite_code) DO UPDATE SET
-               invite_code = excluded.invite_code,
-               status = 'active',
-               used_count = 0,
-               expires_at = NULL,
-               max_uses = NULL`,
-            [newTravel.id, inviteCode, currentUser.id]
+          const travelInviteRepository = manager.getRepository(TravelInvite);
+          await travelInviteRepository.upsert(
+            {
+              travelId: newTravel.id,
+              inviteCode,
+              createdBy: currentUser.id,
+              status: 'active' as any,
+              expiresAt: null,
+              maxUses: null,
+              usedCount: 0,
+            },
+            ['inviteCode'] // conflict target
           );
         } catch (error) {
           this.logger.warn('Failed to create travel invite:', error);
@@ -970,24 +970,29 @@ export class TravelService {
     }
 
     // 기존 초대 코드가 있는지 확인
-    const existingInviteResult = await this.dataSource.query(
-      `SELECT invite_code FROM travel_invites WHERE travel_id = $1 AND status = 'active' ORDER BY created_at DESC LIMIT 1`,
-      [travelId]
-    );
+    const travelInviteRepository = this.dataSource.getRepository(TravelInvite);
+    const existingInvite = await travelInviteRepository.findOne({
+      where: { travelId, status: 'active' as any },
+      order: { createdAt: 'DESC' },
+      select: ['inviteCode'],
+    });
 
-    let inviteCode = existingInviteResult[0]?.invite_code;
+    let inviteCode = existingInvite?.inviteCode;
 
     // 없다면 새로 생성
     if (!inviteCode) {
       inviteCode = this.generateInviteCode();
-      await this.dataSource.query(
-        `INSERT INTO travel_invites (travel_id, invite_code, created_by, status, expires_at, max_uses)
-         VALUES ($1, $2, $3, 'active', NULL, NULL)
-         ON CONFLICT (invite_code) DO UPDATE SET status = 'active',
-                                                used_count = 0,
-                                                expires_at = NULL,
-                                                max_uses = NULL`,
-        [travelId, inviteCode, userId]
+      await travelInviteRepository.upsert(
+        {
+          travelId,
+          inviteCode,
+          createdBy: userId,
+          status: 'active' as any,
+          expiresAt: null,
+          maxUses: null,
+          usedCount: 0,
+        },
+        ['inviteCode'] // conflict target
       );
     }
 
@@ -1034,28 +1039,45 @@ export class TravelService {
       });
 
     await this.ensureTransaction(async (manager) => {
-      await manager.query(
-        `WITH expense_ids AS (
-           SELECT id FROM travel_expenses WHERE travel_id = $1
-         ),
-         deleted_participants AS (
-           DELETE FROM travel_expense_participants WHERE expense_id IN (SELECT id FROM expense_ids)
-         ),
-         deleted_expenses AS (
-           DELETE FROM travel_expenses WHERE id IN (SELECT id FROM expense_ids)
-         ),
-         deleted_settlements AS (
-           DELETE FROM travel_settlements WHERE travel_id = $1
-         ),
-         deleted_invites AS (
-           DELETE FROM travel_invites WHERE travel_id = $1
-         ),
-         deleted_members AS (
-           DELETE FROM travel_members WHERE travel_id = $1
-         )
-         DELETE FROM travels WHERE id = $1`,
-        [travelId],
-      );
+      // FK 제약 조건 순서에 맞게 단계별 삭제
+
+      // 1. 지출 참가자 삭제 (travel_expense_participants)
+      const travelExpenseRepository = manager.getRepository('TravelExpense');
+      const expenses = await travelExpenseRepository.find({
+        where: { travelId },
+        select: ['id']
+      });
+      const expenseIds = expenses.map(expense => expense.id);
+
+      if (expenseIds.length > 0) {
+        const participantRepository = manager.getRepository('TravelExpenseParticipant');
+        await participantRepository.delete({ expenseId: In(expenseIds) });
+      }
+
+      // 2. 지출 삭제 (travel_expenses)
+      if (expenseIds.length > 0) {
+        await travelExpenseRepository.delete({ travelId });
+      }
+
+      // 3. 정산 삭제 (travel_settlements)
+      try {
+        const settlementRepository = manager.getRepository('TravelSettlement');
+        await settlementRepository.delete({ travelId });
+      } catch (error) {
+        // 엔티티가 없을 수 있으므로 무시
+      }
+
+      // 4. 초대 삭제 (travel_invites)
+      const travelInviteRepository = manager.getRepository(TravelInvite);
+      await travelInviteRepository.delete({ travelId });
+
+      // 5. 멤버 삭제 (travel_members)
+      const travelMemberRepository = manager.getRepository(TravelMember);
+      await travelMemberRepository.delete({ travelId });
+
+      // 6. 여행 본체 삭제 (travels)
+      const travelRepository = manager.getRepository(Travel);
+      await travelRepository.delete({ id: travelId });
     });
 
     // 초대 코드 캐시 전부 무효화 (travelId별 키가 없으므로 패턴 삭제)
@@ -1159,21 +1181,24 @@ export class TravelService {
     let fetchedFromCache = !!inviteRow;
 
     if (!inviteRow) {
-      const inviteResult = await this.dataSource.query(
-        `SELECT ti.travel_id,
-                ti.status,
-                ti.used_count,
-                ti.max_uses,
-                ti.expires_at,
-                CASE WHEN t.end_date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS travel_status
-         FROM travel_invites ti
-         INNER JOIN travels t ON t.id = ti.travel_id
-         WHERE ti.invite_code = $1
-         ORDER BY ti.created_at DESC
-         LIMIT 1`,
-        [inviteCode],
-      );
-      inviteRow = inviteResult[0];
+      const travelInviteRepository = this.dataSource.getRepository(TravelInvite);
+      const invite = await travelInviteRepository
+        .createQueryBuilder('ti')
+        .innerJoin('travels', 't', 't.id = ti.travel_id')
+        .select([
+          'ti.travel_id AS travel_id',
+          'ti.status AS status',
+          'ti.used_count AS used_count',
+          'ti.max_uses AS max_uses',
+          'ti.expires_at AS expires_at',
+          'CASE WHEN t.end_date < CURRENT_DATE THEN \'archived\' ELSE \'active\' END AS travel_status'
+        ])
+        .where('ti.invite_code = :inviteCode', { inviteCode })
+        .orderBy('ti.created_at', 'DESC')
+        .limit(1)
+        .getRawOne();
+
+      inviteRow = invite;
       if (!inviteRow) {
         throw new NotFoundException('유효하지 않은 초대 코드입니다.');
       }
@@ -1195,19 +1220,25 @@ export class TravelService {
     }
 
     await this.ensureTransaction(async (manager) => {
-      await manager.query(
-        `INSERT INTO travel_members (travel_id, user_id, role)
-         VALUES ($1, $2, 'member')
-         ON CONFLICT (travel_id, user_id) DO NOTHING`,
-        [inviteRow.travel_id, userId],
+      // 멤버 추가
+      const travelMemberRepository = manager.getRepository(TravelMember);
+      await travelMemberRepository.upsert(
+        {
+          travelId: inviteRow.travel_id,
+          userId,
+          role: 'member' as any,
+        },
+        ['travelId', 'userId'] // conflict target
       );
 
-      await manager.query(
-        `UPDATE travel_invites
-         SET used_count = used_count + 1
-         WHERE invite_code = $1`,
-        [inviteCode],
-      );
+      // 초대 코드 사용 횟수 증가
+      const travelInviteRepository = manager.getRepository(TravelInvite);
+      await travelInviteRepository
+        .createQueryBuilder()
+        .update()
+        .set({ usedCount: () => 'used_count + 1' })
+        .where('invite_code = :inviteCode', { inviteCode })
+        .execute();
 
       // 초대 코드로 참여하면 프로필 역할을 member로 설정 (user인 경우만)
       await manager
@@ -1285,41 +1316,43 @@ export class TravelService {
     let memberIds: string[] = [];
 
     await this.dataSource.transaction(async (manager) => {
-      const membership = await manager.query(
-        `SELECT tm.role, t.owner_id, t.title,
-                (SELECT COUNT(*)::int FROM travel_members WHERE travel_id = $1) AS member_count
-         FROM travel_members tm
-         INNER JOIN travels t ON t.id = tm.travel_id
-         WHERE tm.travel_id = $1 AND tm.user_id = $2
-         LIMIT 1
-         FOR UPDATE`,
-        [travelId, userId],
-      );
+      const travelMemberRepository = manager.getRepository(TravelMember);
+      const travelRepository = manager.getRepository(Travel);
 
-      const row = membership[0];
-      if (!row) {
+      const membership = await travelMemberRepository
+        .createQueryBuilder('tm')
+        .innerJoin('travels', 't', 't.id = tm.travel_id')
+        .select([
+          'tm.role AS role',
+          't.owner_id AS owner_id',
+          't.title AS title',
+          '(SELECT COUNT(*)::int FROM travel_members WHERE travel_id = :travelId) AS member_count'
+        ])
+        .where('tm.travel_id = :travelId AND tm.user_id = :userId', { travelId, userId })
+        .setLock('pessimistic_write')
+        .limit(1)
+        .getRawOne();
+
+      if (!membership) {
         throw new NotFoundException('여행을 찾을 수 없거나 멤버가 아닙니다.');
       }
 
-      travelTitle = row.title;
+      travelTitle = membership.title;
 
       // 소유자(owner)는 여행을 나갈 수 없음
-      if (row.role === 'owner' || row.owner_id === userId) {
+      if (membership.role === 'owner' || membership.owner_id === userId) {
         throw new ForbiddenException('여행 호스트는 나갈 수 없습니다. 다른 멤버에게 호스트 권한을 위임하거나 여행을 삭제해주세요.');
       }
 
       // 알림 발송용 멤버 목록 조회 (나가기 전)
-      const membersResult = await manager.query(
-        `SELECT user_id FROM travel_members WHERE travel_id = $1`,
-        [travelId]
-      );
-      memberIds = membersResult.map((m: any) => m.user_id);
+      const members = await travelMemberRepository.find({
+        where: { travelId },
+        select: ['userId'],
+      });
+      memberIds = members.map(m => m.userId!);
 
       // 일반 멤버 탈퇴: 멤버만 제거, 데이터 유지
-      await manager.query(
-        `DELETE FROM travel_members WHERE travel_id = $1 AND user_id = $2`,
-        [travelId, userId],
-      );
+      await travelMemberRepository.delete({ travelId, userId });
     });
 
     // 멤버 탈퇴 후 관련 캐시 무효화
@@ -1334,11 +1367,12 @@ export class TravelService {
     // 멤버 나가기 알림 이벤트 발송
     const targetMemberIds = memberIds.filter(id => id !== userId);
     if (targetMemberIds.length > 0 && travelTitle) {
-      const userNameRows = await this.dataSource.query(
-        `SELECT name FROM profiles WHERE id = $1`,
-        [userId]
-      );
-      const currentUserName = userNameRows[0]?.name || '멤버';
+      const userRepository = this.dataSource.getRepository(User);
+      const user = await userRepository.findOne({
+        where: { id: userId },
+        select: ['name'],
+      });
+      const currentUserName = user?.name || '멤버';
 
       await this.pushNotificationService.sendTravelNotification(
         'travel_member_removed',
@@ -1359,74 +1393,93 @@ export class TravelService {
     payload: CreateTravelInput,
   ): Promise<TravelSummary> {
     const travelRow = await this.ensureTransaction(async (manager) => {
+      const travelRepository = manager.getRepository(Travel);
+
       // 소유자 확인 + 행 잠금
-      const ownerCheck = await manager.query(
-        `SELECT 1 FROM travels WHERE id = $1 AND owner_id = $2 LIMIT 1 FOR UPDATE`,
-        [travelId, userId],
-      );
-      if (!ownerCheck[0]) {
-        const exists = await manager.query(`SELECT 1 FROM travels WHERE id = $1 LIMIT 1`, [travelId]);
-        if (!exists[0]) {
+      const ownerCheck = await travelRepository.findOne({
+        where: { id: travelId, ownerId: userId },
+        select: ['id'],
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!ownerCheck) {
+        const exists = await travelRepository.findOne({
+          where: { id: travelId },
+          select: ['id'],
+        });
+        if (!exists) {
           throw new NotFoundException('여행을 찾을 수 없습니다.');
         }
         throw new ForbiddenException('여행 수정 권한이 없습니다.');
       }
 
-      const result = await manager.query(
-        `UPDATE travels
-         SET title = $3,
-             start_date = to_date($4, 'YYYY-MM-DD'),
-             end_date = to_date($5, 'YYYY-MM-DD'),
-             country_code = $6,
-             country_name_kr = $7,
-             base_currency = $8,
-             base_exchange_rate = $9,
-             country_currencies = $10,
-             budget = $11,
-             budget_currency = $12,
-             status = CASE WHEN to_date($5, 'YYYY-MM-DD') < CURRENT_DATE THEN 'archived' ELSE 'active' END,
-             updated_at = NOW()
-         WHERE id = $1 AND owner_id = $2
-         RETURNING
-           id::text AS id,
-           title,
-           start_date::date::text,
-           end_date::date::text,
-           country_code,
-           country_name_kr,
-           base_currency,
-           base_exchange_rate,
-           country_currencies,
-           budget,
-           budget_currency,
-           invite_code,
-           status,
-           created_at::text`,
-        [
-          travelId,
-          userId,
-          payload.title,
-          this.normalizeDate(payload.startDate, 'startDate'),
-          this.normalizeDate(payload.endDate, 'endDate'),
-          payload.countryCode,
-          payload.countryNameKr,
-          payload.baseCurrency,
-          payload.baseExchangeRate,
-          payload.countryCurrencies,
-          payload.budget ?? null,
-          payload.budgetCurrency ?? null,
+      const endDate = this.normalizeDate(payload.endDate, 'endDate');
+      const status = new Date(endDate) < new Date() ? 'archived' : 'active';
+
+      const updateData = {
+        title: payload.title,
+        startDate: this.normalizeDate(payload.startDate, 'startDate'),
+        endDate,
+        countryCode: payload.countryCode,
+        countryNameKr: payload.countryNameKr,
+        baseCurrency: payload.baseCurrency,
+        baseExchangeRate: payload.baseExchangeRate,
+        countryCurrencies: payload.countryCurrencies,
+        budget: payload.budget ?? null,
+        budgetCurrency: payload.budgetCurrency ?? null,
+        status: status as any,
+      };
+
+      await travelRepository.update({ id: travelId, ownerId: userId }, updateData);
+
+      // Updated travel 조회
+      const updatedTravel = await travelRepository.findOne({
+        where: { id: travelId },
+        select: [
+          'id',
+          'title',
+          'startDate',
+          'endDate',
+          'countryCode',
+          'countryNameKr',
+          'baseCurrency',
+          'baseExchangeRate',
+          'countryCurrencies',
+          'budget',
+          'budgetCurrency',
+          'inviteCode',
+          'status',
+          'createdAt',
         ],
-      );
-      const row = Array.isArray(result) ? result[0] : result?.rows?.[0];
-      if (row) {
+      });
+
+      if (updatedTravel) {
         await this.recordCurrencySnapshot(manager, {
           travelId,
-          countryCode: row.country_code,
-          baseCurrency: row.base_currency,
-          baseExchangeRate: Number(row.base_exchange_rate ?? payload.baseExchangeRate),
+          countryCode: updatedTravel.countryCode,
+          baseCurrency: updatedTravel.baseCurrency,
+          baseExchangeRate: Number(updatedTravel.baseExchangeRate),
         });
+
+        // 응답 형식을 기존과 맞추기 위해 변환
+        return {
+          id: updatedTravel.id,
+          title: updatedTravel.title,
+          start_date: updatedTravel.startDate,
+          end_date: updatedTravel.endDate,
+          country_code: updatedTravel.countryCode,
+          country_name_kr: updatedTravel.countryNameKr,
+          base_currency: updatedTravel.baseCurrency,
+          base_exchange_rate: updatedTravel.baseExchangeRate,
+          country_currencies: updatedTravel.countryCurrencies,
+          budget: updatedTravel.budget,
+          budget_currency: updatedTravel.budgetCurrency,
+          invite_code: updatedTravel.inviteCode,
+          status: updatedTravel.status,
+          created_at: updatedTravel.createdAt.toISOString(),
+        };
       }
-      return row;
+      return null;
     });
 
     // 수정 후 관련 캐시 무효화
@@ -1456,11 +1509,12 @@ export class TravelService {
 
     // 여행 수정 알림 이벤트 발송
     if (summary.members && summary.members.length > 0) {
-      const userNameRows = await this.dataSource.query(
-        `SELECT name FROM profiles WHERE id = $1`,
-        [userId]
-      );
-      const currentUserName = userNameRows[0]?.name || '사용자';
+      const userRepository = this.dataSource.getRepository(User);
+      const user = await userRepository.findOne({
+        where: { id: userId },
+        select: ['name'],
+      });
+      const currentUserName = user?.name || '사용자';
       const memberIds = summary.members.map(m => m.userId).filter(Boolean) as string[];
 
       await this.pushNotificationService.sendTravelNotification(
@@ -1486,31 +1540,36 @@ export class TravelService {
     let memberIds: string[] = [];
 
     await this.dataSource.transaction(async (manager) => {
-      // 여행 정보와 멤버 목록 조회 (삭제 전)
-      const travelResult = await manager.query(
-        `SELECT title FROM travels WHERE id = $1`,
-        [travelId]
-      );
-      travelTitle = travelResult[0]?.title || '';
+      const travelRepository = manager.getRepository(Travel);
+      const travelMemberRepository = manager.getRepository(TravelMember);
 
-      const membersResult = await manager.query(
-        `SELECT user_id FROM travel_members WHERE travel_id = $1`,
-        [travelId]
-      );
-      memberIds = membersResult.map((m: any) => m.user_id);
+      // 여행 정보 조회
+      const travel = await travelRepository.findOne({
+        where: { id: travelId },
+        select: ['title'],
+      });
+      travelTitle = travel?.title || '';
 
-      const target = await manager.query(
-        `SELECT 1 FROM travel_members WHERE travel_id = $1 AND user_id = $2 FOR UPDATE`,
-        [travelId, memberId],
-      );
-      if (!target[0]) {
+      // 멤버 목록 조회 (삭제 전)
+      const members = await travelMemberRepository.find({
+        where: { travelId },
+        select: ['userId'],
+      });
+      memberIds = members.map(m => m.userId!);
+
+      // 대상 멤버 확인 및 잠금
+      const target = await travelMemberRepository.findOne({
+        where: { travelId, userId: memberId },
+        select: ['id'],
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!target) {
         throw new NotFoundException('멤버를 찾을 수 없습니다.');
       }
 
-      await manager.query(
-        `DELETE FROM travel_members WHERE travel_id = $1 AND user_id = $2`,
-        [travelId, memberId],
-      );
+      // 멤버 삭제
+      await travelMemberRepository.delete({ travelId, userId: memberId });
     });
 
     // 멤버 삭제 후 캐시 무효화

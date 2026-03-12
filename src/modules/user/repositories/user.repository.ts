@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, EntityManager, In } from 'typeorm';
 import { User } from '../entities/user.entity';
@@ -7,6 +7,8 @@ import { UserRecord } from '../types/user.types';
 
 @Injectable()
 export class UserRepository extends BaseRepository<User> {
+  private readonly logger = new Logger(UserRepository.name);
+
   constructor(
     @InjectRepository(User)
     userRepository: Repository<User>
@@ -298,11 +300,8 @@ export class UserRepository extends BaseRepository<User> {
         .where('fromMember = :userId OR toMember = :userId', { userId })
         .execute();
     } catch (error) {
-      // 엔티티가 없을 수 있으므로 fallback
-      await manager.query(
-        `DELETE FROM travel_settlements WHERE from_member = $1 OR to_member = $1`,
-        [userId],
-      );
+      // 엔티티가 없을 수 있으므로 무시
+      this.logger?.warn('TravelSettlement entity not found, skipping deletion');
     }
 
     // 4. travel_invites: created_by 기준 삭제 (TypeORM 방식)
@@ -310,11 +309,8 @@ export class UserRepository extends BaseRepository<User> {
       const inviteRepository = manager.getRepository('TravelInvite');
       await inviteRepository.delete({ createdBy: userId });
     } catch (error) {
-      // 엔티티가 없을 수 있으므로 fallback
-      await manager.query(
-        `DELETE FROM travel_invites WHERE created_by = $1`,
-        [userId],
-      );
+      // 엔티티가 없을 수 있으므로 무시
+      this.logger?.warn('TravelInvite entity not found, skipping deletion');
     }
 
     // 5. travel_members: user_id 기준 삭제 (TypeORM 방식)
@@ -322,11 +318,8 @@ export class UserRepository extends BaseRepository<User> {
       const memberRepository = manager.getRepository('TravelMember');
       await memberRepository.delete({ userId });
     } catch (error) {
-      // 엔티티가 없을 수 있으므로 fallback
-      await manager.query(
-        `DELETE FROM travel_members WHERE user_id = $1`,
-        [userId],
-      );
+      // 엔티티가 없을 수 있으므로 무시
+      this.logger?.warn('TravelMember entity not found, skipping deletion');
     }
 
     // 6. user_sessions: user_id 기준 삭제 (TypeORM 방식)
@@ -334,11 +327,8 @@ export class UserRepository extends BaseRepository<User> {
       const sessionRepository = manager.getRepository('UserSession');
       await sessionRepository.delete({ userId });
     } catch (error) {
-      // 엔티티가 없을 수 있으므로 fallback
-      await manager.query(
-        `DELETE FROM user_sessions WHERE user_id = $1`,
-        [userId],
-      );
+      // 엔티티가 없을 수 있으므로 무시
+      this.logger?.warn('UserSession entity not found, skipping deletion');
     }
 
     // 7. profiles 본체 삭제

@@ -442,7 +442,8 @@ export class SocialAuthService {
 
     this.dbWarmupPromise = (async () => {
       try {
-        await this.dataSource.query('SELECT 1');
+        // TypeORM 방식으로 DB 연결 확인
+        await this.dataSource.manager.createQueryBuilder().select('1').getRawOne();
         return true;
       } catch (error) {
         this.logger.warn('DB warmup skipped due to error', error as Error);

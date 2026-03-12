@@ -40,18 +40,17 @@ export class VersionService {
 
   private async ensureAppVersionTable(): Promise<void> {
     if (this.appVersionTableReady) return;
-    await this.dataSource.query(`
-      CREATE TABLE IF NOT EXISTS app_versions (
-        bundle_id TEXT PRIMARY KEY,
-        latest_version TEXT NOT NULL,
-        min_supported_version TEXT,
-        force_update BOOLEAN DEFAULT false,
-        release_notes TEXT,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    `);
-    this.appVersionTableReady = true;
+
+    // TypeORM 방식으로 테이블 존재 여부 확인
+    const appVersionRepository = this.dataSource.getRepository('AppVersion');
+    try {
+      await appVersionRepository.findOne({ where: {} });
+      this.appVersionTableReady = true;
+    } catch (error) {
+      // 테이블이 없다면 migration을 통해 생성되어야 함
+      this.logger.warn('AppVersion entity not found. Please ensure migration is run.');
+      throw new Error('AppVersion table not initialized. Please run migrations.');
+    }
   }
 
   private async fetchDbVersion(bundleId: string) {
