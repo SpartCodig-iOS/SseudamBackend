@@ -175,6 +175,14 @@ export class TravelExpenseService {
     }
     const rawMembers: Array<{ id: string; name?: string | null; email?: string | null; avatar_url?: string | null }> = row.member_data ?? [];
     const memberIds = rawMembers.map((member) => member.id);
+
+    // 디버깅: 멤버 데이터 로딩 확인
+    console.log(`[TravelExpenseService] Travel ${travelId} members loaded:`, {
+      totalMembers: rawMembers.length,
+      memberIds: memberIds,
+      memberDetails: rawMembers.map(m => ({ id: m.id, name: m.name, hasAvatar: !!m.avatar_url }))
+    });
+
     if (!memberIds.includes(userId)) {
       throw new BadRequestException('해당 여행에 접근 권한이 없습니다.');
     }
@@ -260,15 +268,30 @@ export class TravelExpenseService {
   }
 
   private getMemberProfile(context: TravelContext, memberId: string): TravelExpenseMember | null {
+    console.log(`[getMemberProfile] Checking member ${memberId}:`, {
+      isInContext: context.memberIds.includes(memberId),
+      availableMembers: context.memberIds,
+      memberData: {
+        name: context.memberNameMap.get(memberId),
+        email: context.memberEmailMap.get(memberId),
+        avatarUrl: context.memberAvatarMap.get(memberId)
+      }
+    });
+
     if (!context.memberIds.includes(memberId)) {
+      console.log(`[getMemberProfile] Member ${memberId} not found in context.memberIds`);
       return null;
     }
-    return {
+
+    const profile = {
       userId: memberId,
       name: context.memberNameMap.get(memberId) ?? null,
       email: context.memberEmailMap.get(memberId) ?? null,
       avatarUrl: context.memberAvatarMap.get(memberId) ?? null,
     };
+
+    console.log(`[getMemberProfile] Returning profile for ${memberId}:`, profile);
+    return profile;
   }
 
   private normalizeMember(member: any): TravelExpenseMember | null {
@@ -541,20 +564,38 @@ export class TravelExpenseService {
           this.normalizeMember(rest.payer) ??
           this.getMemberProfile(context, (_legacyPayerId as string) || rest.payer?.memberId || rest.payer?.userId) ??
           null;
-        const normalizedExpenseMembers = (rest.expenseMembers ?? rest.travelMembers ?? expenseMembers).map((m: any) =>
-          this.normalizeMember(m) ??
-          this.getMemberProfile(context, m?.memberId || m?.userId) ?? {
-            userId: m?.memberId || m?.userId,
-            name: m?.name ?? null,
-            email: null,
-            avatarUrl: null,
-          }
-        );
+        // expenseMembers 배열에서 빈 객체 제거하고 유효한 멤버만 정규화
+        const rawExpenseMembers = rest.expenseMembers ?? rest.travelMembers ?? expenseMembers;
+        const normalizedExpenseMembers = rawExpenseMembers
+          .map((m: any) => {
+            // 빈 객체나 유효하지 않은 멤버 필터링
+            if (!m || (typeof m === 'object' && Object.keys(m).length === 0)) {
+              return null;
+            }
+
+            const normalized = this.normalizeMember(m);
+            if (normalized) return normalized;
+
+            const memberId = m?.memberId || m?.userId;
+            if (memberId) {
+              return this.getMemberProfile(context, memberId) ?? {
+                userId: memberId,
+                name: m?.name ?? null,
+                email: m?.email ?? null,
+                avatarUrl: m?.avatarUrl ?? null,
+              };
+            }
+            return null;
+          })
+          .filter((member: TravelExpenseMember | null): member is TravelExpenseMember => member !== null);
+
+        // 만약 정규화된 멤버가 없다면 전체 여행 멤버 사용
+        const finalExpenseMembers: TravelExpenseMember[] = normalizedExpenseMembers.length > 0 ? normalizedExpenseMembers : expenseMembers;
         return {
           ...rest,
           payer: payerProfile,
           payerName: rest.payerName ?? payerProfile?.name ?? null,
-          expenseMembers: normalizedExpenseMembers,
+          expenseMembers: finalExpenseMembers,
           participants: rest.participants?.map((p: any) => this.toParticipant(this.getMemberProfile(context, p.memberId)) ?? p) ?? [],
         };
       });
