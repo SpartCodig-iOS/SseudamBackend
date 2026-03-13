@@ -567,23 +567,18 @@ export class TravelSettlementService {
       };
     }
 
-    // 942dde8 스타일 디버깅 로그 추가
-    console.log('🔍 [SETTLEMENT DEBUG] Raw amounts from DB:');
-    console.log('total_expense_amount:', row.total_expense_amount, typeof row.total_expense_amount);
-    console.log('my_paid_amount:', row.my_paid_amount, typeof row.my_paid_amount);
-    console.log('my_shared_amount:', row.my_shared_amount, typeof row.my_shared_amount);
-    console.log('my_balance:', row.my_balance, typeof row.my_balance);
+    // 942dde8 스타일 안전한 숫자 파싱 적용
+    const safeParseAmount = (value: any, fallback: number = 0): number => {
+      if (!value || value === '') return fallback;
+      const trimmed = typeof value === 'string' ? value.trim() : String(value);
+      const parsed = Number(trimmed);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
 
-    const totalExpenseAmount = Number(row.total_expense_amount || 0);
-    const myPaidAmount = Number(row.my_paid_amount || 0);
-    const mySharedAmount = Number(row.my_shared_amount || 0);
-    const myBalance = Number(row.my_balance || 0);
-
-    console.log('🔍 [SETTLEMENT DEBUG] Processed amounts:');
-    console.log('totalExpenseAmount:', totalExpenseAmount);
-    console.log('myPaidAmount:', myPaidAmount);
-    console.log('mySharedAmount:', mySharedAmount);
-    console.log('myBalance:', myBalance);
+    const totalExpenseAmount = safeParseAmount(row.total_expense_amount);
+    const myPaidAmount = safeParseAmount(row.my_paid_amount);
+    const mySharedAmount = safeParseAmount(row.my_shared_amount);
+    const myBalance = safeParseAmount(row.my_balance);
 
     const getBalanceStatus = (balance: number): 'receive' | 'pay' | 'settled' => {
       if (Math.abs(balance) <= 1) return 'settled';
@@ -594,11 +589,12 @@ export class TravelSettlementService {
     const memberBalances = balancesResult.map((member) => ({
       memberId: member.memberId,
       memberName: member.name || '알 수 없음',
-      balance: member.balance,
-      balanceStatus: getBalanceStatus(member.balance),
+      balance: safeParseAmount(member.balance),
+      balanceStatus: getBalanceStatus(safeParseAmount(member.balance)),
     }));
 
-    const result = {
+    // 942dde8 스타일 최적화된 응답 구조 반환
+    return {
       totalExpenseAmount,
       myPaidAmount,
       mySharedAmount,
@@ -606,10 +602,5 @@ export class TravelSettlementService {
       balanceStatus: getBalanceStatus(myBalance),
       memberBalances,
     };
-
-    console.log('🔍 [SETTLEMENT DEBUG] Final result object:');
-    console.log(JSON.stringify(result, null, 2));
-
-    return result;
   }
 }

@@ -556,10 +556,15 @@ export class TravelExpenseService {
     context: TravelContext
   ): Promise<TravelExpense[]> {
     return Promise.all(expenses.map(async (expense) => {
-      // 942dde8 스타일 디버깅 로그 추가
-      console.log('🔍 [EXPENSE DEBUG] Raw expense amount:', expense.amount, typeof expense.amount);
-      const originalAmount = Number(expense.amount);
-      console.log('🔍 [EXPENSE DEBUG] Processed amount:', originalAmount);
+      // 942dde8 스타일 안전한 금액 파싱 적용
+      const safeParseAmount = (value: any): number => {
+        if (!value || value === '') return 0;
+        const trimmed = typeof value === 'string' ? value.trim() : String(value);
+        const parsed = Number(trimmed);
+        return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+      };
+
+      const originalAmount = safeParseAmount(expense.amount);
 
       // 환율 변환
       const convertedAmount = await this.convertAmount(
@@ -568,8 +573,6 @@ export class TravelExpenseService {
         context.baseCurrency,
         context.baseExchangeRate
       );
-
-      console.log('🔍 [EXPENSE DEBUG] Converted amount:', convertedAmount, 'from', expense.currency, 'to', context.baseCurrency);
 
       // Payer 정보
       const payerProfile = this.getMemberProfile(context, expense.payerId) ?? {

@@ -132,32 +132,33 @@ export class ResponseTransformInterceptor implements NestInterceptor {
 
       const compacted: any = {};
       for (const [key, value] of Object.entries(obj)) {
-        // 942dde8 스타일 디버깅 로그 추가
-        const isAmountField = key.toLowerCase().includes('amount') || key.toLowerCase().includes('balance');
+        // 942dde8 스타일 로직 최적화 적용: 엄격한 값 보존과 타입 처리
+        const normalizedKey = key.trim();
 
-        // 특정 키는 null/undefined 값도 보존
-        if (PRESERVE_NULL_KEYS.has(key)) {
-          compacted[key] = value === undefined ? null : value;
-          if (isAmountField) {
-            console.log(`🔍 [AMOUNT DEBUG] Preserved key: ${key}, value: ${value} (type: ${typeof value})`);
-          }
+        // 특정 키는 null/undefined 값도 보존 (942dde8 패턴)
+        if (PRESERVE_NULL_KEYS.has(normalizedKey)) {
+          compacted[normalizedKey] = value === undefined ? null : value;
           continue;
+        }
+
+        // 942dde8 스타일 숫자 처리: 문자열 숫자도 파싱 후 보존
+        if (typeof value === 'string' && value.trim() !== '') {
+          const parsed = Number(value.trim());
+          if (Number.isFinite(parsed)) {
+            compacted[normalizedKey] = parsed;
+            continue;
+          }
         }
 
         // 숫자 0은 유효한 값으로 보존 (금융 데이터 중요)
-        if (typeof value === 'number' && value === 0) {
-          compacted[key] = value;
-          if (isAmountField) {
-            console.log(`🔍 [AMOUNT DEBUG] Preserved zero amount: ${key} = ${value}`);
-          }
+        if (typeof value === 'number' && Number.isFinite(value)) {
+          compacted[normalizedKey] = value;
           continue;
         }
 
-        // null, undefined, 빈 문자열 제거 (단, 숫자 0은 제외)
+        // null, undefined, 빈 문자열 제거 (단, 숫자는 제외)
         if (value !== null && value !== undefined && value !== '') {
-          compacted[key] = this.compactObject(value, seen);
-        } else if (isAmountField) {
-          console.log(`🔍 [AMOUNT DEBUG] FILTERED OUT: ${key} = ${value} (type: ${typeof value})`);
+          compacted[normalizedKey] = this.compactObject(value, seen);
         }
       }
       return compacted;
