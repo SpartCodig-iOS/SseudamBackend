@@ -11,8 +11,8 @@ const exchangeRateSchema = z.preprocess((value) => {
     return Number(value);
   }
   return value;
-}, z.number().positive('baseExchangeRate 는 0보다 커야 합니다.')
-    .describe('기준 통화 1,000단위 대비 상대 통화 금액 (예: 1000 KRW → 105.6 JPY)'));
+}, z.number().nonnegative('baseExchangeRate 는 음수일 수 없습니다.')
+    .describe('기준 통화 1,000단위 대비 상대 통화 금액 (예: 1000 KRW → 105.6 JPY, 0은 환율 미설정 상태)'));
 
 export const createTravelSchema = z
   .object({
