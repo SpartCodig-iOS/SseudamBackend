@@ -17,6 +17,8 @@ import {
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { success } from '../../common/types/api.types';
 import { AuthGuard } from '../../common/guards/auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { RequestWithUser } from '../../common/types/request.types';
 import { TravelService } from './travel.service';
 import { OptimizedTravelService } from './optimized-travel.service';
@@ -385,7 +387,9 @@ export class TravelController {
 
   @Delete(':travelId')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '여행 삭제 (호스트 전용)' })
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('admin', 'super_admin')
+  @ApiOperation({ summary: '여행 삭제 (관리자 전용)' })
   async deleteTravel(
     @Param('travelId', new ParseUUIDPipe({ version: '4' })) travelId: string,
     @Req() req: RequestWithUser,

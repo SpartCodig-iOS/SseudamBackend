@@ -1083,7 +1083,15 @@ export class TravelService {
   }
 
   async deleteTravel(travelId: string, userId: string): Promise<void> {
-    await this.ensureOwner(travelId, userId);
+    // Admin 권한은 Controller의 @Roles guard에서 확인하므로 여기서는 여행 존재만 확인
+    const travel = await this.dataSource.getRepository(Travel).findOne({
+      where: { id: travelId },
+      select: ['id']
+    });
+
+    if (!travel) {
+      throw new NotFoundException('여행을 찾을 수 없습니다.');
+    }
 
     const members = await this.dataSource
       .getRepository(TravelMember)
