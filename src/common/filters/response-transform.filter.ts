@@ -12,9 +12,11 @@ const PRESERVE_NULL_KEYS = new Set([
   'avatarURL', 'avatarUrl', 'email', 'name',
   // 정산/금융 관련 필드 - 0 값도 보존해야 함
   'totalExpenseAmount', 'myPaidAmount', 'mySharedAmount', 'myBalance',
-  'balance', 'amount', 'convertedAmount', 'memberBalances',
+  'balance', 'amount', 'convertedAmount', 'memberBalances', 'balanceStatus',
+  'splitAmount', 'paidAmount', 'sharedAmount', 'totalPaid', 'totalShared',
+  'expenseAmount', 'currency', 'originalAmount', 'exchangeRate',
   // 기타 중요 필드
-  'baseCurrency', 'countryCode', 'countryNameKr', 'createdAt'
+  'baseCurrency', 'countryCode', 'countryNameKr', 'createdAt', 'inviteCode'
 ]);
 
 interface OptimizedResponse {
