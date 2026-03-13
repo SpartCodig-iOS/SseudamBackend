@@ -377,7 +377,7 @@ export class OptimizedTravelService {
         `t.base_exchange_rate AS base_exchange_rate`,
         `t.budget AS budget`,
         `t.budget_currency AS budget_currency`,
-        `t.invite_code AS invite_code`,
+        `ti.invite_code AS invite_code`,
         `t.status AS status`,
         `t.created_at AS created_at`,
         `tm.role AS role`,
@@ -387,6 +387,12 @@ export class OptimizedTravelService {
       .from(Travel, 't')
       .innerJoin(TravelMember, 'tm', 'tm.travel_id = t.id AND tm.user_id = :userId', { userId })
       .innerJoin(User, 'owner_profile', 'owner_profile.id = t.owner_id')
+      .leftJoin(
+        '(SELECT travel_id, invite_code FROM travel_invites WHERE status = :inviteStatus)',
+        'ti',
+        'ti.travel_id = t.id',
+        { inviteStatus: 'active' }
+      )
       .leftJoin(
         `(SELECT
            tm2.travel_id,
@@ -483,14 +489,21 @@ export class OptimizedTravelService {
           `t.base_exchange_rate AS base_exchange_rate`,
           `t.budget AS budget`,
           `t.budget_currency AS budget_currency`,
-          `t.invite_code AS invite_code`,
+          `ti.invite_code AS invite_code`,
           `t.status AS status`,
           `t.created_at AS created_at`,
           `owner_profile.name AS owner_name`,
         ])
         .from(Travel, 't')
         .innerJoin(User, 'owner_profile', 'owner_profile.id = t.owner_id')
+        .leftJoin(
+          '(SELECT travel_id, invite_code FROM travel_invites WHERE status = :inviteStatus)',
+          'ti',
+          'ti.travel_id = t.id',
+          { inviteStatus: 'active' }
+        )
         .where('t.id IN (:...travelIds)', { travelIds: uncachedIds })
+        .setParameter('inviteStatus', 'active')
         .getRawMany();
 
       // 조회 결과를 캐시에 저장

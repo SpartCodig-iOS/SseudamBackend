@@ -282,7 +282,16 @@
       "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d device_tokens\")",
       "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d oauth_refresh_tokens\")",
       "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d app_versions\")",
-      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d travel_currency_snapshots\")"
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\\\\d travel_currency_snapshots\")",
+      "Bash(npx tsx:*)",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"SELECT id, title, country_currencies FROM travels WHERE id = '92c2de91-383e-4e5a-9e88-93a4ea0a342b';\")",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"SELECT id, title, country_code, country_currencies FROM travels WHERE country_currencies IS NULL OR array_length\\(string_to_array\\(country_currencies::text, ','\\), 1\\) IS NULL LIMIT 5;\")",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"SELECT id, title, country_code, country_currencies FROM travels WHERE country_currencies::text = '{}' OR country_currencies IS NULL LIMIT 5;\")",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"SELECT * FROM travel_invites WHERE travel_id = '92c2de91-383e-4e5a-9e88-93a4ea0a342b';\")",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"SELECT t.id, t.title, ti.invite_code FROM travels t LEFT JOIN travel_invites ti ON ti.travel_id = t.id AND ti.status = 'active' WHERE t.id = '92c2de91-383e-4e5a-9e88-93a4ea0a342b';\")",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"SELECT id, title, invite_code FROM travels WHERE id = '92c2de91-383e-4e5a-9e88-93a4ea0a342b';\")",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"SELECT COUNT\\(*\\) as orphan_owners FROM travels t LEFT JOIN travel_members tm ON \\(tm.travel_id = t.id AND tm.user_id = t.owner_id\\) WHERE tm.user_id IS NULL;\")",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"SELECT COUNT\\(*\\) as total, COUNT\\(CASE WHEN country_name_kr IS NULL THEN 1 END\\) as null_country_name, COUNT\\(CASE WHEN created_at IS NULL THEN 1 END\\) as null_created_at FROM travels;\")"
     ],
     "deny": [],
     "ask": []

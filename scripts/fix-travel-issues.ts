@@ -14,8 +14,8 @@ async function fixTravelIssues() {
     username: env.databaseUser || undefined,
     password: env.databasePassword || undefined,
     database: env.databaseName || undefined,
-    ssl: env.databaseRequireTLS ? {
-      rejectUnauthorized: env.databaseRejectUnauthorized
+    ssl: env.databaseUrl?.includes('railway.app') || env.databaseUrl?.includes('supabase') ? {
+      rejectUnauthorized: false  // Railway/Supabase는 self-signed 인증서 허용
     } : false,
     synchronize: false,
     logging: true,
