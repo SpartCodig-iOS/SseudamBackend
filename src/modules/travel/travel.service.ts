@@ -520,7 +520,7 @@ export class TravelService {
       .createQueryBuilder('t')
       .innerJoin('t.members', 'tm', 'tm.userId = :userId', { userId })
       .leftJoin('t.owner', 'owner_profile')
-      .leftJoin('TravelInvite', 'ti', 'ti.travelId = t.id AND ti.status = :status', { status: TravelInviteStatus.ACTIVE })
+      .leftJoin('travel_invites', 'ti', 'ti.travel_id = t.id AND ti.status = :status', { status: TravelInviteStatus.ACTIVE })
       .select([
         't.id',
         't.title',
