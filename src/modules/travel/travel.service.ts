@@ -571,10 +571,10 @@ export class TravelService {
       ? (await this.loadMembersForTravels([travelId], userId)).get(travelId)
       : [];
 
-    return this.mapSummary(row, members);
+    return await this.mapSummary(row, members);
   }
 
-  private mapSummary(row: any, members?: TravelMemberInfo[]): TravelSummary {
+  private async mapSummary(row: any, members?: TravelMemberInfo[]): Promise<TravelSummary> {
     const destinationCurrency = this.resolveDestinationCurrency(row.country_code, row.base_currency);
     const inviteCode = row.invite_code ?? undefined;
     const deepLink = inviteCode ? this.generateDeepLink(inviteCode) : undefined;
@@ -585,26 +585,80 @@ export class TravelService {
         role: m.role,
       }));
     const sanitizedMembers = sanitizeMembers(members) ?? sanitizeMembers(row.members);
+
+    // 📍 iOS 클라이언트 호환성을 위한 기본값 보장 - API 사용
+    const countryCode = row.country_code || 'US';
+    const countryNameKr = row.country_name_kr || await this.getCountryNameKrFromAPI(countryCode);
+    const baseCurrency = row.base_currency || 'USD';
+    const countryCurrencies = await this.parseCountryCurrenciesFromAPI(row.country_currencies, countryCode);
+    const createdAt = row.created_at || new Date().toISOString();
+
     return {
       id: row.id,
       title: row.title,
       startDate: row.start_date,
       endDate: row.end_date,
-      countryCode: row.country_code || 'US', // iOS 클라이언트 호환성 - 기본값 제공
-      countryNameKr: row.country_name_kr ?? undefined,
-      baseCurrency: row.base_currency || 'USD', // 기본값 제공
+      countryCode,
+      countryNameKr,
+      baseCurrency,
       baseExchangeRate: row.base_exchange_rate ? Number(row.base_exchange_rate) : 0,
       destinationCurrency,
-      countryCurrencies: Array.isArray(row.country_currencies) ? row.country_currencies : [],
+      countryCurrencies,
       budget: row.budget ? Number(row.budget) : undefined,
       budgetCurrency: row.budget_currency ?? undefined,
       inviteCode,
       deepLink,
       status: row.status,
-      createdAt: row.created_at,
+      createdAt,
       ownerName: row.owner_name ?? null,
       members: sanitizedMembers ?? row.members ?? undefined,
     };
+  }
+
+  /**
+   * MetaService API를 사용하여 한국어 국가명 반환
+   */
+  private async getCountryNameKrFromAPI(countryCode: string): Promise<string> {
+    try {
+      const countries = await this.metaService.getCountries();
+      const country = countries.find(c => c.code.toUpperCase() === countryCode.toUpperCase());
+      return country?.nameKo || '기타';
+    } catch (error) {
+      this.logger.warn(`Failed to get country name for ${countryCode}:`, error);
+      return '기타';
+    }
+  }
+
+  /**
+   * MetaService API를 사용하여 country_currencies 파싱 및 기본값 제공
+   */
+  private async parseCountryCurrenciesFromAPI(countryCurrencies: any, countryCode: string): Promise<string[]> {
+    // 이미 배열인 경우
+    if (Array.isArray(countryCurrencies) && countryCurrencies.length > 0) {
+      return countryCurrencies;
+    }
+
+    // JSON 문자열인 경우 파싱 시도
+    if (typeof countryCurrencies === 'string' && countryCurrencies.trim()) {
+      try {
+        const parsed = JSON.parse(countryCurrencies);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch {
+        // JSON 파싱 실패시 API에서 가져오기
+      }
+    }
+
+    // MetaService API에서 통화 정보 가져오기
+    try {
+      const countries = await this.metaService.getCountries();
+      const country = countries.find(c => c.code.toUpperCase() === countryCode.toUpperCase());
+      return country?.currencies || ['USD'];
+    } catch (error) {
+      this.logger.warn(`Failed to get currencies for ${countryCode}:`, error);
+      return ['USD'];
+    }
   }
 
   async getTravelDetail(travelId: string, userId: string): Promise<TravelDetail> {
@@ -818,7 +872,7 @@ export class TravelService {
         this.logger.debug(`Travel created in ${duration}ms for user ${currentUser.id}`);
 
         await this.ensureCountryCurrencyMap();
-        return this.mapSummary(optimizedResult, optimizedResult.members);
+        return await this.mapSummary(optimizedResult, optimizedResult.members);
       });
 
       // 캐시 업데이트/무효화 (응답을 기다리지 않음)
@@ -924,7 +978,7 @@ export class TravelService {
     );
     const travelIds = uniqueRows.map((row: any) => row.id);
     const membersMap = await this.loadMembersForTravels(travelIds, userId);
-    const items = uniqueRows.map((row: any) => this.mapSummary(row, membersMap.get(row.id)));
+    const items = await Promise.all(uniqueRows.map((row: any) => this.mapSummary(row, membersMap.get(row.id))));
 
     // 캐시에 저장 (Redis + 메모리) - 딥링크 없이 저장
     this.setCachedTravelList(cacheKey, items);
