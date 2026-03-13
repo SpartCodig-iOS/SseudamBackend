@@ -581,8 +581,10 @@ export class TravelExpenseService {
         }
       ) ?? [];
 
-      // ExpenseMembers (전체 여행 멤버) - 빈 객체 완전 제거
-      const expenseMembers = this.getValidExpenseMembers(context);
+      // ExpenseMembers (전체 여행 멤버) - 빈 객체 완전 제거하고 유효성 보장
+      const expenseMembers = this.getValidExpenseMembers(context).filter(member =>
+        member && member.userId && typeof member.userId === 'string' && member.userId.length > 0
+      );
 
       return {
         id: expense.id,
@@ -628,7 +630,9 @@ export class TravelExpenseService {
    * 캐시된 데이터를 TravelExpense 형식으로 변환
    */
   private transformCachedExpenses(cached: any[], context: TravelContext): TravelExpense[] {
-    const expenseMembers = this.getValidExpenseMembers(context);
+    const expenseMembers = this.getValidExpenseMembers(context).filter(member =>
+      member && member.userId && typeof member.userId === 'string' && member.userId.length > 0
+    );
 
     return cached.map((item) => {
       const { payerId: _legacyPayerId, ...rest } = item as any;
@@ -637,8 +641,18 @@ export class TravelExpenseService {
         this.getMemberProfile(context, (_legacyPayerId as string) || rest.payer?.memberId || rest.payer?.userId) ??
         null;
 
-      // expenseMembers는 항상 전체 여행 멤버로 설정 (캐시 손상 방지)
-      const finalExpenseMembers: TravelExpenseMember[] = expenseMembers;
+      // expenseMembers에서 빈 객체 완전 제거
+      const rawExpenseMembers = rest.expenseMembers ?? rest.travelMembers ?? expenseMembers;
+      const filteredExpenseMembers = Array.isArray(rawExpenseMembers)
+        ? rawExpenseMembers
+            .filter((m: any) => m && typeof m === 'object' && Object.keys(m).length > 0)
+            .map((m: any) => this.normalizeMember(m))
+            .filter((member: TravelExpenseMember | null): member is TravelExpenseMember =>
+              member !== null && typeof member.userId === 'string' && member.userId.length > 0
+            )
+        : expenseMembers;
+
+      const finalExpenseMembers: TravelExpenseMember[] = filteredExpenseMembers.length > 0 ? filteredExpenseMembers : expenseMembers;
 
       return {
         ...rest,

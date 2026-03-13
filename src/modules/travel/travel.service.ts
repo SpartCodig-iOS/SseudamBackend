@@ -590,9 +590,9 @@ export class TravelService {
       title: row.title,
       startDate: row.start_date,
       endDate: row.end_date,
-      countryCode: row.country_code,
+      countryCode: row.country_code || 'US', // iOS 클라이언트 호환성 - 기본값 제공
       countryNameKr: row.country_name_kr ?? undefined,
-      baseCurrency: row.base_currency,
+      baseCurrency: row.base_currency || 'USD', // 기본값 제공
       baseExchangeRate: row.base_exchange_rate ? Number(row.base_exchange_rate) : 0,
       destinationCurrency,
       countryCurrencies: Array.isArray(row.country_currencies) ? row.country_currencies : [],
