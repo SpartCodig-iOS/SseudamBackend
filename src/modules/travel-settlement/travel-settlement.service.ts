@@ -567,10 +567,23 @@ export class TravelSettlementService {
       };
     }
 
+    // 942dde8 스타일 디버깅 로그 추가
+    console.log('🔍 [SETTLEMENT DEBUG] Raw amounts from DB:');
+    console.log('total_expense_amount:', row.total_expense_amount, typeof row.total_expense_amount);
+    console.log('my_paid_amount:', row.my_paid_amount, typeof row.my_paid_amount);
+    console.log('my_shared_amount:', row.my_shared_amount, typeof row.my_shared_amount);
+    console.log('my_balance:', row.my_balance, typeof row.my_balance);
+
     const totalExpenseAmount = Number(row.total_expense_amount || 0);
     const myPaidAmount = Number(row.my_paid_amount || 0);
     const mySharedAmount = Number(row.my_shared_amount || 0);
     const myBalance = Number(row.my_balance || 0);
+
+    console.log('🔍 [SETTLEMENT DEBUG] Processed amounts:');
+    console.log('totalExpenseAmount:', totalExpenseAmount);
+    console.log('myPaidAmount:', myPaidAmount);
+    console.log('mySharedAmount:', mySharedAmount);
+    console.log('myBalance:', myBalance);
 
     const getBalanceStatus = (balance: number): 'receive' | 'pay' | 'settled' => {
       if (Math.abs(balance) <= 1) return 'settled';
@@ -585,7 +598,7 @@ export class TravelSettlementService {
       balanceStatus: getBalanceStatus(member.balance),
     }));
 
-    return {
+    const result = {
       totalExpenseAmount,
       myPaidAmount,
       mySharedAmount,
@@ -593,5 +606,10 @@ export class TravelSettlementService {
       balanceStatus: getBalanceStatus(myBalance),
       memberBalances,
     };
+
+    console.log('🔍 [SETTLEMENT DEBUG] Final result object:');
+    console.log(JSON.stringify(result, null, 2));
+
+    return result;
   }
 }

@@ -132,21 +132,32 @@ export class ResponseTransformInterceptor implements NestInterceptor {
 
       const compacted: any = {};
       for (const [key, value] of Object.entries(obj)) {
+        // 942dde8 스타일 디버깅 로그 추가
+        const isAmountField = key.toLowerCase().includes('amount') || key.toLowerCase().includes('balance');
+
         // 특정 키는 null/undefined 값도 보존
         if (PRESERVE_NULL_KEYS.has(key)) {
           compacted[key] = value === undefined ? null : value;
+          if (isAmountField) {
+            console.log(`🔍 [AMOUNT DEBUG] Preserved key: ${key}, value: ${value} (type: ${typeof value})`);
+          }
           continue;
         }
 
         // 숫자 0은 유효한 값으로 보존 (금융 데이터 중요)
         if (typeof value === 'number' && value === 0) {
           compacted[key] = value;
+          if (isAmountField) {
+            console.log(`🔍 [AMOUNT DEBUG] Preserved zero amount: ${key} = ${value}`);
+          }
           continue;
         }
 
         // null, undefined, 빈 문자열 제거 (단, 숫자 0은 제외)
         if (value !== null && value !== undefined && value !== '') {
           compacted[key] = this.compactObject(value, seen);
+        } else if (isAmountField) {
+          console.log(`🔍 [AMOUNT DEBUG] FILTERED OUT: ${key} = ${value} (type: ${typeof value})`);
         }
       }
       return compacted;
