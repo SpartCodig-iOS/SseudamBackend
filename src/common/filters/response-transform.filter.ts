@@ -8,7 +8,14 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { Response } from 'express';
 
-const PRESERVE_NULL_KEYS = new Set(['avatarURL', 'avatarUrl', 'email', 'name']);
+const PRESERVE_NULL_KEYS = new Set([
+  'avatarURL', 'avatarUrl', 'email', 'name',
+  // 정산/금융 관련 필드 - 0 값도 보존해야 함
+  'totalExpenseAmount', 'myPaidAmount', 'mySharedAmount', 'myBalance',
+  'balance', 'amount', 'convertedAmount', 'memberBalances',
+  // 기타 중요 필드
+  'baseCurrency', 'countryCode', 'countryNameKr', 'createdAt'
+]);
 
 interface OptimizedResponse {
   code: number;
@@ -123,11 +130,19 @@ export class ResponseTransformInterceptor implements NestInterceptor {
 
       const compacted: any = {};
       for (const [key, value] of Object.entries(obj)) {
-        // null, undefined, 빈 문자열 제거
+        // 특정 키는 null/undefined 값도 보존
         if (PRESERVE_NULL_KEYS.has(key)) {
           compacted[key] = value === undefined ? null : value;
           continue;
         }
+
+        // 숫자 0은 유효한 값으로 보존 (금융 데이터 중요)
+        if (typeof value === 'number' && value === 0) {
+          compacted[key] = value;
+          continue;
+        }
+
+        // null, undefined, 빈 문자열 제거 (단, 숫자 0은 제외)
         if (value !== null && value !== undefined && value !== '') {
           compacted[key] = this.compactObject(value, seen);
         }

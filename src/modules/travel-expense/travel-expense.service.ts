@@ -590,11 +590,16 @@ export class TravelExpenseService {
         note: expense.note,
         amount: Number(expense.amount),
         currency: expense.currency,
-        convertedAmount,
+        // API 호환성을 위해 snake_case 사용
+        convertedAmount: convertedAmount,
+        converted_amount: convertedAmount, // 레거시 호환성
         expenseDate: expense.expenseDate,
+        expense_date: expense.expenseDate, // 레거시 호환성
         category: expense.category,
         authorId: expense.authorId,
+        author_id: expense.authorId, // 레거시 호환성
         payerId: expense.payerId,
+        payer_id: expense.payerId, // 레거시 호환성
         payerName: payerProfile?.name ?? null,
         payer: payerProfile,
         participants,
@@ -964,7 +969,7 @@ export class TravelExpenseService {
   }
 
   /**
-   * 개선된 expense 변환 메서드 - 날짜 처리 최적화 및 재사용 가능
+   * 개선된 expense 변환 메서드 - API 호환성을 위한 snake_case 필드명 유지
    */
   private transformExpenseToResponse(expense: any) {
     return {
@@ -973,11 +978,13 @@ export class TravelExpenseService {
       note: expense.note,
       amount: expense.amount,
       currency: expense.currency,
+      // API 호환성을 위해 snake_case 유지
       converted_amount: expense.convertedAmount,
       expense_date: expense.expenseDate instanceof Date
         ? expense.expenseDate.toISOString().split('T')[0]
         : expense.expenseDate,
       category: expense.category,
+      // API 호환성을 위해 snake_case 유지
       author_id: expense.authorId,
       payer_id: expense.payerId,
       payer_name: expense.payer?.name || null,
@@ -985,6 +992,7 @@ export class TravelExpenseService {
       payer_avatar: expense.payer?.avatarUrl || null,
       participants: expense.participants?.map((participant: any) => ({
         memberId: participant.memberId,
+        userId: participant.memberId, // iOS 클라이언트 호환성
         name: participant.member?.name || null,
         email: participant.member?.email || null,
         avatarUrl: participant.member?.avatarUrl || null
