@@ -15,6 +15,9 @@ const PRESERVE_NULL_KEYS = new Set([
   'balance', 'amount', 'convertedAmount', 'memberBalances', 'balanceStatus',
   'splitAmount', 'paidAmount', 'sharedAmount', 'totalPaid', 'totalShared',
   'expenseAmount', 'currency', 'originalAmount', 'exchangeRate',
+  // 차트 관련 필드들
+  'data', 'datasets', 'labels', 'values', 'chartData', 'series', 'categories',
+  'expenses', 'members', 'items', 'participants', 'splits',
   // 기타 중요 필드
   'baseCurrency', 'countryCode', 'countryNameKr', 'createdAt', 'inviteCode'
 ]);
@@ -116,6 +119,7 @@ export class ResponseTransformInterceptor implements NestInterceptor {
 
   private compactObject(obj: any, seen: WeakSet<object> = new WeakSet()): any {
     if (Array.isArray(obj)) {
+      // 빈 배열도 보존 (차트 데이터를 위해)
       return obj.map(item => this.compactObject(item, seen));
     }
 
@@ -153,7 +157,13 @@ export class ResponseTransformInterceptor implements NestInterceptor {
           continue;
         }
 
-        // null, undefined, 빈 문자열 제거 (단, 숫자는 제외)
+        // 배열은 빈 배열이라도 보존 (차트 데이터를 위해)
+        if (Array.isArray(value)) {
+          compacted[normalizedKey] = this.compactObject(value, seen);
+          continue;
+        }
+
+        // null, undefined, 빈 문자열 제거 (단, 숫자와 배열은 제외)
         if (value !== null && value !== undefined && value !== '') {
           compacted[normalizedKey] = this.compactObject(value, seen);
         }
