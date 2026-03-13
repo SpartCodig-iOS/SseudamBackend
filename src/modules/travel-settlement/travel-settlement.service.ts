@@ -567,7 +567,6 @@ export class TravelSettlementService {
       };
     }
 
-    // 942dde8 스타일 안전한 숫자 파싱 적용
     const safeParseAmount = (value: any, fallback: number = 0): number => {
       if (!value || value === '') return fallback;
       const trimmed = typeof value === 'string' ? value.trim() : String(value);
@@ -593,7 +592,6 @@ export class TravelSettlementService {
       balanceStatus: getBalanceStatus(safeParseAmount(member.balance)),
     }));
 
-    // 942dde8 스타일 최적화된 응답 구조 반환
     return {
       totalExpenseAmount,
       myPaidAmount,

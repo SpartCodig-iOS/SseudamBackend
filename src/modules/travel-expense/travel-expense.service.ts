@@ -556,7 +556,6 @@ export class TravelExpenseService {
     context: TravelContext
   ): Promise<TravelExpense[]> {
     return Promise.all(expenses.map(async (expense) => {
-      // 942dde8 스타일 안전한 금액 파싱 적용
       const safeParseAmount = (value: any): number => {
         if (!value || value === '') return 0;
         const trimmed = typeof value === 'string' ? value.trim() : String(value);

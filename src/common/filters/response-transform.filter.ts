@@ -132,16 +132,13 @@ export class ResponseTransformInterceptor implements NestInterceptor {
 
       const compacted: any = {};
       for (const [key, value] of Object.entries(obj)) {
-        // 942dde8 스타일 로직 최적화 적용: 엄격한 값 보존과 타입 처리
         const normalizedKey = key.trim();
 
-        // 특정 키는 null/undefined 값도 보존 (942dde8 패턴)
         if (PRESERVE_NULL_KEYS.has(normalizedKey)) {
           compacted[normalizedKey] = value === undefined ? null : value;
           continue;
         }
 
-        // 942dde8 스타일 숫자 처리: 문자열 숫자도 파싱 후 보존
         if (typeof value === 'string' && value.trim() !== '') {
           const parsed = Number(value.trim());
           if (Number.isFinite(parsed)) {
