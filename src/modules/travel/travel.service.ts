@@ -5,6 +5,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager, In } from 'typeorm';
@@ -1085,14 +1086,28 @@ export class TravelService {
   }
 
   async deleteTravel(travelId: string, userId: string): Promise<void> {
-    // Admin 권한은 Controller의 @Roles guard에서 확인하므로 여기서는 여행 존재만 확인
+    // 여행 정보와 사용자 역할 확인
     const travel = await this.dataSource.getRepository(Travel).findOne({
       where: { id: travelId },
-      select: ['id']
+      select: ['id', 'ownerId']
     });
 
     if (!travel) {
       throw new NotFoundException('여행을 찾을 수 없습니다.');
+    }
+
+    // 사용자 역할 확인
+    const user = await this.dataSource.getRepository('User').findOne({
+      where: { id: userId },
+      select: ['role']
+    });
+
+    // 소유자이거나 관리자만 삭제 가능
+    const isOwner = travel.ownerId === userId;
+    const isAdmin = user?.role === 'admin' || user?.role === 'super_admin';
+
+    if (!isOwner && !isAdmin) {
+      throw new UnauthorizedException('여행 삭제 권한이 없습니다. 소유자 또는 관리자만 삭제할 수 있습니다.');
     }
 
     const members = await this.dataSource
