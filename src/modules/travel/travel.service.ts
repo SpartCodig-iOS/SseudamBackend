@@ -534,7 +534,9 @@ export class TravelService {
         't.budget',
         't.budgetCurrency',
         't.createdAt',
-        'ti.inviteCode',
+      ])
+      .addSelect('ti.invite_code', 'ti_invite_code')
+      .addSelect([
         'tm.role',
         'owner_profile.name'
       ])
@@ -559,7 +561,7 @@ export class TravelService {
       base_exchange_rate: result.t_baseExchangeRate,
       budget: result.t_budget,
       budget_currency: result.t_budgetCurrency,
-      invite_code: result.ti_inviteCode,
+      invite_code: result.ti_invite_code,
       status: result.status,
       created_at: result.t_createdAt?.toISOString(),
       role: result.tm_role,
