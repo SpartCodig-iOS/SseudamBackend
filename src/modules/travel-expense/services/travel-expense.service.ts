@@ -164,9 +164,14 @@ export class TravelExpenseService {
       // ignore and fallback to DB
     }
 
-    // TypeORM을 사용한 여행 컨텍스트 조회 (관계 없이 단순 조회)
+    // TypeORM을 사용한 여행 컨텍스트 조회 (필요한 컬럼만 명시적으로 선택)
     const travel = await this.travelRepository
       .createQueryBuilder('travel')
+      .select([
+        'travel.id',
+        'travel.baseCurrency',
+        'travel.baseExchangeRate'
+      ])
       .where('travel.id = :travelId', { travelId })
       .getOne();
 
@@ -192,7 +197,7 @@ export class TravelExpenseService {
     const memberAvatarMap = new Map<string, string | null>();
     memberRows.forEach((member) => {
       const id = String(member.userId);
-      memberNameMap.set(id, member.nickname || member.user?.name || null);
+      memberNameMap.set(id, member.displayName || member.user?.name || null);
       memberEmailMap.set(id, member.user?.email || null);
       memberAvatarMap.set(id, member.user?.avatar_url || null);
     });

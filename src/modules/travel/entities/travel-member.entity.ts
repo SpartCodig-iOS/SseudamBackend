@@ -18,43 +18,33 @@ export enum TravelMemberRole {
 
 @Entity('travel_members')
 export class TravelMember {
-  @PrimaryGeneratedColumn()
-  id!: number;
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: 'uuid', name: 'travel_id' })
   travelId!: string;
 
-  @Column({ type: 'uuid' })
+  @Column({ type: 'uuid', name: 'user_id', nullable: true })
   userId!: string;
 
-  @Column({
-    type: 'enum',
-    enum: TravelMemberRole,
-    default: TravelMemberRole.MEMBER,
-  })
-  role!: TravelMemberRole;
+  @Column({ type: 'text' })
+  role!: string;
 
-  @Column({ length: 255, nullable: true })
-  nickname?: string;
+  @Column({ type: 'text', nullable: true, name: 'display_name' })
+  displayName?: string;
 
-  @Column({ default: true })
-  isActive!: boolean;
-
-  @CreateDateColumn()
-  createdAt!: Date;
-
-  @UpdateDateColumn()
-  updatedAt!: Date;
+  @Column({ type: 'timestamp with time zone', name: 'joined_at', default: () => 'now()' })
+  joinedAt!: Date;
 
   @ManyToOne(() => Travel, (travel) => travel.members, {
     onDelete: 'CASCADE',
   })
-  @JoinColumn({ name: 'travelId' })
+  @JoinColumn({ name: 'travel_id' })
   travel!: Travel;
 
   @ManyToOne(() => User, {
-    onDelete: 'CASCADE',
+    onDelete: 'SET NULL',
   })
-  @JoinColumn({ name: 'userId' })
+  @JoinColumn({ name: 'user_id' })
   user!: User;
 }
