@@ -3,14 +3,14 @@ import { UserRepository } from '../repositories/user.repository';
 import { User } from '../entities/user.entity';
 import { UserRoleEnum as UserRole } from '../types/user.types';
 import { UserRole as GlobalUserRole } from '../../../types/user.types';
-import * as bcrypt from 'bcryptjs';
+// OAuth 전용 - bcrypt 불필요
 
+// OAuth 전용 - 간단한 사용자 생성
 export interface CreateUserDto {
   email: string;
-  password: string;
   name?: string;
   username: string;
-  role?: UserRole;
+  login_type?: string;
 }
 
 export interface UpdateUserDto {
@@ -142,24 +142,7 @@ export class UserService {
     this.logger.log(`User deleted: ${user.email} (${id})`);
   }
 
-  /**
-   * 비밀번호 업데이트
-   */
-  async updatePassword(id: string, newPassword: string): Promise<void> {
-    // const password_hash = await bcrypt.hash(newPassword, 10);
-    // await this.userRepository.update(id, { password_hash }); // 필드 제거됨
-    throw new Error('Password update not supported - password_hash field removed');
-
-    this.logger.log(`Password updated for user: ${id}`);
-  }
-
-  /**
-   * 비밀번호 확인
-   */
-  async verifyPassword(user: User, password: string): Promise<boolean> {
-    // return bcrypt.compare(password, user.password_hash); // 필드 제거됨
-    throw new Error('Password verification not supported - password_hash field removed');
-  }
+  // OAuth 전용 - 비밀번호 관련 메서드들 제거됨
 
   /**
    * 사용자 검색
