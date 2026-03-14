@@ -20,8 +20,8 @@ export class TravelExpense {
   @Column({ type: 'uuid' })
   travelId!: string;
 
-  @Column({ type: 'uuid' })
-  payerId!: string;
+  @Column({ type: 'uuid', nullable: true })
+  payerId?: string;
 
   @Column({ length: 255 })
   title!: string;

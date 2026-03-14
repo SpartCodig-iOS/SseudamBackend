@@ -687,12 +687,14 @@ export class TravelExpenseService {
     );
 
     // 결제자 정보 구성
-    const payer = this.getMemberProfile(context, expense.payerId!) ?? {
-      userId: expense.payerId!,
-      name: expense.payer?.name ?? expense.payerName ?? null,
-      email: expense.payer?.email ?? null,
-      avatarUrl: expense.payer?.avatar_url ?? null,
-    };
+    const payer = expense.payerId
+      ? (this.getMemberProfile(context, expense.payerId) ?? {
+          userId: expense.payerId,
+          name: expense.payer?.name ?? expense.payerName ?? null,
+          email: expense.payer?.email ?? null,
+          avatarUrl: expense.payer?.avatar_url ?? null,
+        })
+      : null;
 
     // 참여자 목록 구성
     const participantList = expense.participants.map((p) => ({
@@ -712,6 +714,7 @@ export class TravelExpenseService {
       expenseDate: expense.expenseDate.toISOString().split('T')[0],
       category: expense.category ?? null,
       authorId: expense.authorId ?? '',
+      payerId: expense.payerId,
       payerName: payer?.name ?? null,
       payer: payer,
       participants: participantList,
