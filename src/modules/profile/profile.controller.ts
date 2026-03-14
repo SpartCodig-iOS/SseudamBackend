@@ -80,8 +80,8 @@ export class ProfileController {
     return success({
       id: profile.id,
       userId: profile.username || profile.email?.split('@')[0] || userRecord.username || 'user',
-      email: profile.email || '',
-      name: profile.name,
+      email: profile.email || req.currentUser?.email || '',
+      name: profile.name || req.currentUser?.name || profile.username || profile.email?.split('@')[0] || 'User', // 🎯 기본값 설정
       avatarURL: resolvedAvatar, // 🚀 빠른 아바타 (캐시 우선)
       role: profile.role || req.currentUser.role || 'user',
       createdAt: formatDate(profile.created_at),
