@@ -3,9 +3,9 @@ import { APP_INTERCEPTOR } from '@nestjs/core';
 // import { ObservabilityModule } from './modules/observability/observability.module'; // 임시 비활성화
 
 // 인프라 모듈 (전역, 순서 중요)
-// import { CoreModule } from './modules/core/core.module'; // 임시 비활성화
-// import { CacheSharedModule } from './modules/cache-shared/cache-shared.module'; // 임시 비활성화
-// import { JwtSharedModule } from './modules/jwt-shared/jwt-shared.module'; // 임시 비활성화
+import { CoreModule } from './modules/core/core.module';
+import { CacheSharedModule } from './modules/cache-shared/cache-shared.module';
+import { JwtSharedModule } from './modules/jwt-shared/jwt-shared.module';
 // import { AuthSharedModule } from './modules/shared/auth-shared.module'; // 임시 비활성화
 import { DatabaseModule } from './modules/database/database.module';
 
@@ -57,9 +57,9 @@ import { NotificationModule } from './modules/notification/notification.module';
 @Module({
   imports: [
     // ── 전역 인프라 모듈 (순서 중요: 전역으로 등록되어 이후 모든 모듈에서 사용 가능) ──
-    // CoreModule,           // EventEmitter, AnalyticsService, BackgroundJobService - 임시 비활성화
-    // CacheSharedModule,    // CacheService, SmartCacheService, RateLimitService - 임시 비활성화
-    // JwtSharedModule,      // JwtModule, JwtTokenService, EnhancedJwtService, JwtBlacklistService - 임시 비활성화
+    CoreModule,           // EventEmitter, AnalyticsService, BackgroundJobService
+    CacheSharedModule,    // CacheService, SmartCacheService, RateLimitService
+    JwtSharedModule,      // JwtModule, JwtTokenService, EnhancedJwtService, JwtBlacklistService
     DatabaseModule,       // TypeORM, Repository들
     // ObservabilityModule,  // Prometheus 메트릭, /metrics 엔드포인트 - 임시 비활성화
 

@@ -18,7 +18,7 @@ export class UserSession {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  @Column({ type: 'varchar', length: 255 })
+  @Column({ type: 'uuid' })
   user_id!: string;
 
   @Column({ type: 'text', name: 'session_id' })

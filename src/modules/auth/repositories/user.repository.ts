@@ -36,4 +36,8 @@ export class UserRepository {
   async findByUsername(username: string): Promise<User | null> {
     return this.repository.findOne({ where: { username } });
   }
+
+  getRepository(): Repository<User> {
+    return this.repository;
+  }
 }

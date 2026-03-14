@@ -4,6 +4,8 @@ import { UserController } from './user.controller';
 import { UserService } from './services/user.service';
 import { UserRepository } from './repositories/user.repository';
 import { DatabaseModule } from '../database/database.module';
+import { AuthModule } from '../auth/auth.module';
+import { OAuthModule } from '../oauth/oauth.module';
 import { User } from './entities/user.entity';
 
 // UseCases
@@ -12,6 +14,8 @@ import { GetUserProfileUseCase, UpdateUserProfileUseCase } from './use-cases';
 @Module({
   imports: [
     DatabaseModule,
+    AuthModule,
+    OAuthModule,
     TypeOrmModule.forFeature([User]),
   ],
   controllers: [UserController],

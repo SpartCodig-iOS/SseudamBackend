@@ -42,7 +42,7 @@ export const createDatabaseConfig = async (): Promise<TypeOrmModuleOptions> => {
     // Entity 및 Migration 설정
     entities: [__dirname + '/../**/*.entity{.ts,.js}'],
     migrations: [__dirname + '/../migrations/*{.ts,.js}'],
-    synchronize: env.nodeEnv === 'development',
+    synchronize: false, // 마이그레이션으로 관리
     logging: env.nodeEnv === 'development' ? ['error', 'warn'] : false,
     autoLoadEntities: true,
 

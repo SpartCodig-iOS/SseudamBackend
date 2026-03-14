@@ -9,9 +9,9 @@ import {
 export type BlacklistReason = 'logout' | 'security' | 'admin' | 'refresh';
 
 @Entity('jwt_blacklist')
-@Index(['token_id'], { unique: true })
-@Index(['user_id'])
-@Index(['expires_at'])
+@Index(['tokenId'], { unique: true })
+@Index(['userId'])
+@Index(['expiresAt'])
 export class JwtBlacklist {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

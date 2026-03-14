@@ -1,8 +1,10 @@
 import {
+  Inject,
   Injectable,
   InternalServerErrorException,
   UnauthorizedException,
   Logger,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -17,11 +19,12 @@ import { OptimizedOAuthService } from '../../oauth/services/optimized-oauth.serv
 import { CacheService } from '../../cache-shared/services/cacheService';
 import { fromSupabaseUser } from '../../../utils/mappers';
 import { SocialAuthService } from '../../oauth/services/social-auth.service';
-import { UserRepository } from '../../../repositories/user.repository';
+import { UserRepository } from '../repositories/user.repository';
 import { User } from '../../user/entities/user.entity';
 import { AuthSessionService } from '../../shared/services/auth-session.service';
-import { EnhancedJwtService } from './enhanced-jwt.service';
 import { AppMetricsService } from '../../../common/metrics/app-metrics.service';
+import { TypeOrmJwtBlacklistService } from './typeorm-jwt-blacklist.service';
+import jwt from 'jsonwebtoken';
 
 // Type definitions
 export interface AuthSessionPayload {
@@ -66,11 +69,12 @@ export class AuthService {
     private readonly dataSource: DataSource,
     // forwardRef 제거: AuthModule이 OAuthModule을 import하므로 단방향 의존 가능
     private readonly optimizedOAuthService: OptimizedOAuthService,
+    @Inject(forwardRef(() => SocialAuthService))
     private readonly socialAuthService: SocialAuthService,
     // 세션 생성 로직을 AuthSessionService로 위임 (SocialAuthService와 공유)
     private readonly authSessionService: AuthSessionService,
-    // 통합 로그아웃 플로우에서 JWT blacklist 처리에 사용
-    private readonly enhancedJwtService: EnhancedJwtService,
+    // JWT blacklist 기능은 TypeOrmJwtBlacklistService로 제공
+    private readonly jwtBlacklistService: TypeOrmJwtBlacklistService,
     // 메트릭 계측 (Optional: 모듈에 등록되지 않은 환경에서도 동작)
     private readonly metricsService: AppMetricsService,
   ) {}
@@ -708,9 +712,18 @@ export class AuthService {
     let tokenInvalidated = false;
     if (params.accessToken) {
       try {
-        await this.enhancedJwtService.invalidateToken(
-          params.accessToken,
-          new Date(),
+        // JWT 토큰에서 정보 추출
+        const decodedToken = jwt.decode(params.accessToken) as any;
+        const payload = this.jwtTokenService.verifyAccessToken(params.accessToken);
+        const tokenId = payload.jti || decodedToken.jti || 'unknown';
+        const userId = payload.sub;
+        const expiresAt = new Date(decodedToken.exp * 1000);
+
+        await this.jwtBlacklistService.addToBlacklist(
+          tokenId,
+          userId,
+          expiresAt,
+          'logout'
         );
         tokenInvalidated = true;
       } catch (error) {

@@ -4,6 +4,8 @@ import { NotificationService } from './services';
 import { NotificationController } from './notification.controller';
 import { DeviceTokenEntity } from './entities/device-token.entity';
 import { User } from '../user/entities/user.entity';
+import { AuthModule } from '../auth/auth.module';
+import { OAuthModule } from '../oauth/oauth.module';
 
 /**
  * NotificationModule
@@ -18,6 +20,8 @@ import { User } from '../user/entities/user.entity';
       DeviceTokenEntity,
       User,
     ]),
+    AuthModule,
+    OAuthModule,
   ],
   controllers: [NotificationController],
   providers: [NotificationService],

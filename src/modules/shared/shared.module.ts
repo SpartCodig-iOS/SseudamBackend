@@ -8,8 +8,6 @@ import { JwtTokenService } from '../jwt-shared/services/jwtService';
 import { OptimizedJwtTokenService } from '../jwt-shared/services/optimized-jwt.service';
 import { EnhancedJwtService } from '../jwt-shared/services/enhanced-jwt.service';
 import { TypeOrmJwtBlacklistService } from '../auth/services/typeorm-jwt-blacklist.service';
-import { SupabaseService } from '../core/services/supabaseService';
-import { OAuthTokenService } from '../oauth/services/oauth-token.service';
 // import { SessionService } from '../auth/services/sessionService'; // 삭제됨
 import { RateLimitService } from '../cache-shared/services/rateLimitService';
 import { SmartCacheService } from '../cache-shared/services/smart-cache.service';
@@ -42,8 +40,6 @@ import { DatabaseModule } from '../database/database.module';
   ],
   providers: [
     CacheService,
-    SupabaseService,
-    OAuthTokenService,
     JwtTokenService,
     OptimizedJwtTokenService,
     EnhancedJwtService,
@@ -67,8 +63,6 @@ import { DatabaseModule } from '../database/database.module';
   exports: [
     EventEmitterModule,
     CacheService,
-    SupabaseService,
-    OAuthTokenService,
     JwtTokenService,
     OptimizedJwtTokenService,
     EnhancedJwtService,

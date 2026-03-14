@@ -27,8 +27,8 @@ import { LoginType } from './types/auth.types';
 import { AnalyticsService } from '../core/services/analytics.service';
 import { JwtTokenService } from '../jwt-shared/services/jwtService';
 // import { SessionService } from './services/sessionService'; // 삭제됨
-import { EnhancedJwtService } from '../jwt-shared/services/enhanced-jwt.service';
 import { TypeOrmJwtBlacklistService } from './services/typeorm-jwt-blacklist.service';
+import jwt from 'jsonwebtoken';
 
 @ApiTags('Auth')
 @Controller('api/v1/auth')
@@ -42,7 +42,6 @@ export class AuthController {
     private readonly analyticsService: AnalyticsService,
     private readonly jwtTokenService: JwtTokenService,
     // private readonly sessionService: SessionService, // 삭제됨
-    private readonly enhancedJwtService: EnhancedJwtService,
     private readonly jwtBlacklistService: TypeOrmJwtBlacklistService,
   ) {}
 
@@ -411,16 +410,24 @@ export class AuthController {
 
       const token = authHeader.substring(7); // Remove 'Bearer '
 
+      // JWT 토큰 검증하여 정보 추출
+      const payload = this.jwtTokenService.verifyAccessToken(token);
+      const userId = payload.sub;
+      const tokenId = payload.jti || 'unknown';
+
+      // 토큰의 만료 시간 추출
+      const decodedToken = jwt.decode(token) as any;
+      const expiresAt = new Date(decodedToken.exp * 1000);
+
       // JWT 토큰을 blacklist에 추가
-      const invalidated = await this.enhancedJwtService.invalidateToken(token, 'logout');
-
-      if (!invalidated) {
-        throw new BadRequestException('Failed to invalidate token');
-      }
-
-      // 토큰에서 정보 추출 (디코딩만, 검증 X)
-      const decodedToken = this.enhancedJwtService.decodeToken(token);
-      const tokenId = decodedToken?.tokenId || 'unknown';
+      await this.jwtBlacklistService.addToBlacklist(
+        tokenId,
+        userId,
+        expiresAt,
+        'logout',
+        req.headers['user-agent'],
+        req.ip
+      );
 
       this.logger.log(`JWT token invalidated via logout: ${tokenId} - User: ${req.currentUser?.id}`);
 
@@ -472,25 +479,8 @@ export class AuthController {
         throw new BadRequestException('Refresh token is required');
       }
 
-      // Enhanced JWT 서비스로 토큰 새로고침
-      const newTokenPair = await this.enhancedJwtService.refreshTokens(refreshToken);
-
-      if (!newTokenPair) {
-        throw new UnauthorizedException('Invalid or expired refresh token');
-      }
-
-      this.logger.log(`JWT tokens refreshed: ${newTokenPair.tokenId}`);
-
-      return success(
-        {
-          accessToken: newTokenPair.accessToken,
-          refreshToken: newTokenPair.refreshToken,
-          accessTokenTTL: newTokenPair.accessTokenTTL,
-          refreshTokenTTL: newTokenPair.refreshTokenTTL,
-          tokenId: newTokenPair.tokenId,
-        },
-        'Tokens refreshed successfully'
-      );
+      // 임시로 기능 비활성화 - EnhancedJwtService 삭제로 인해
+      throw new BadRequestException('JWT refresh feature temporarily disabled. Use /refresh endpoint instead.');
     } catch (error) {
       this.logger.error(`JWT refresh error: ${error instanceof Error ? error.message : String(error)}`, error instanceof Error ? error.stack : undefined);
       if (error instanceof UnauthorizedException || error instanceof BadRequestException) {
@@ -548,7 +538,12 @@ export class AuthController {
       const userId = req.currentUser!.id;
 
       // 사용자의 모든 토큰 무효화
-      const invalidatedCount = await this.enhancedJwtService.invalidateAllUserTokens(userId, reason);
+      const invalidatedCount = await this.jwtBlacklistService.blacklistAllUserTokens(
+        userId,
+        reason,
+        req.headers['user-agent'],
+        req.ip
+      );
 
       this.logger.warn(`All tokens invalidated for user ${userId} - Count: ${invalidatedCount} - Reason: ${reason}`);
 

@@ -6,9 +6,9 @@ import { OAuthModule } from '../oauth/oauth.module';
 import { DatabaseModule } from '../database/database.module';
 import { CoreModule } from '../core/core.module';
 import { CacheService } from '../cache-shared/services/cacheService';
-import { EnhancedJwtService } from '../jwt-shared/services/enhanced-jwt.service';
+import { OptimizedJwtTokenService } from '../jwt-shared/services/optimized-jwt-token.service';
 import { AuthService } from './services';
-// import { OptimizedDeleteService } from './services'; // 임시 비활성화
+import { OptimizedDeleteService } from './services';
 
 // 단순한 구조의 Services
 import { SessionService, JwtService } from './services';
@@ -25,7 +25,6 @@ import { TypeOrmJwtBlacklistService } from './services/typeorm-jwt-blacklist.ser
 
 // 새로운 Entities
 import { User as Profile } from '../user/entities/user.entity';
-import { SupabaseService } from '../core/services/supabaseService';
 import { AppMetricsService } from '../../common/metrics/app-metrics.service';
 import { AuthSessionService } from '../shared/services/auth-session.service';
 
@@ -58,10 +57,10 @@ import { env } from '../../config/env';
   providers: [
     AuthService,
     CacheService,
-    SupabaseService,
+    OptimizedJwtTokenService,
     AuthSessionService,
     AppMetricsService,
-    // OptimizedDeleteService, // 임시 비활성화
+    OptimizedDeleteService,
 
     // 단순한 구조의 Services
     SessionService,
@@ -77,8 +76,7 @@ import { env } from '../../config/env';
     JwtBlacklistRepository,
     UserRepository,
 
-    // 기존 JWT Blacklist System (캐시 기반)
-    EnhancedJwtService,
+    // JWT Blacklist 기능은 TypeOrmJwtBlacklistService에서 제공
 
     // 새로운 TypeORM 기반 JWT Blacklist System
     TypeOrmJwtBlacklistService,
@@ -86,7 +84,8 @@ import { env } from '../../config/env';
   exports: [
     AuthService,
     CacheService,
-    // OptimizedDeleteService, // 임시 비활성화
+    OptimizedJwtTokenService,
+    OptimizedDeleteService,
 
     // 단순한 구조의 Services
     SessionService,
@@ -102,8 +101,7 @@ import { env } from '../../config/env';
     JwtBlacklistRepository,
     UserRepository,
 
-    // Enhanced JWT 서비스들도 export하여 다른 모듈에서 사용 가능
-    EnhancedJwtService,
+    // JWT Blacklist 기능은 TypeOrmJwtBlacklistService로 제공
 
     // TypeORM 기반 새로운 서비스들 export
     TypeOrmJwtBlacklistService,

@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from
 import { RequestWithUser } from '../../types/request.types';
 import { LoginType } from '../../modules/auth/types/auth.types';
 import { JwtTokenService } from '../../modules/jwt-shared/services/jwtService';
-import { EnhancedJwtService } from '../../modules/jwt-shared/services/enhanced-jwt.service';
+import { TypeOrmJwtBlacklistService } from '../../modules/auth/services/typeorm-jwt-blacklist.service';
 import { SupabaseService } from '../../modules/core/services/supabaseService';
 import { fromSupabaseUser } from '../../utils/mappers';
 import { UserRecord } from '../../types/user.types';
@@ -10,6 +10,7 @@ import { UserRecord } from '../../types/user.types';
 import { CacheService } from '../../modules/cache-shared/services/cacheService';
 import { createHash } from 'crypto';
 import { getPool } from '../../db/pool';
+import jwt from 'jsonwebtoken';
 
 interface LocalAuthResult {
   user: UserRecord;
@@ -31,7 +32,7 @@ export class AuthGuard implements CanActivate {
 
   constructor(
     private readonly jwtTokenService: JwtTokenService,
-    private readonly enhancedJwtService: EnhancedJwtService,
+    private readonly jwtBlacklistService: TypeOrmJwtBlacklistService,
     private readonly supabaseService: SupabaseService,
     // private readonly sessionService: SessionService, // 삭제됨
     private readonly cacheService: CacheService,
@@ -171,8 +172,18 @@ export class AuthGuard implements CanActivate {
    */
   private async tryEnhancedJwt(token: string): Promise<LocalAuthResult | null> {
     try {
-      // Enhanced JWT 서비스로 검증 (blacklist 체크 포함)
-      const payload = await this.enhancedJwtService.verifyAccessToken(token);
+      // 1. JWT 토큰 검증
+      const payload = this.jwtTokenService.verifyAccessToken(token);
+
+      // 2. JWT 토큰에서 tokenId 추출 (blacklist 체크용)
+      const decodedToken = payload as any;
+      const tokenId = decodedToken.jti || payload.jti || 'unknown';
+
+      // 3. Blacklist 체크
+      const isBlacklisted = await this.jwtBlacklistService.isBlacklisted(tokenId);
+      if (isBlacklisted) {
+        throw new UnauthorizedException('Token is blacklisted');
+      }
       if (payload?.sub && payload?.email && payload.sessionId) {
         const issuedAt = payload.iat ? new Date(payload.iat * 1000) : new Date();
         const user: UserRecord = {
