@@ -660,79 +660,79 @@ export class TravelExpenseService {
       return cached;
     }
 
-    // DB에서 지출 정보 조회
-    const expenseRows = await this.dataSource.query(
-      `SELECT
-         e.id::text,
-         e.travel_id::text,
-         e.title,
-         e.note,
-         e.amount,
-         e.currency,
-         e.converted_amount,
-         to_char(e.expense_date::date, 'YYYY-MM-DD') as expense_date,
-         e.category,
-         e.author_id::text,
-         e.payer_id::text,
-         COALESCE(e.display_name, payer.name) AS payer_name,
-         payer.email AS payer_email,
-         payer.avatar_url AS payer_avatar
-       FROM travel_expenses e
-       LEFT JOIN profiles payer ON payer.id = e.payer_id
-       WHERE e.id = $1`,
-      [expenseId],
-    );
+    // TypeORM으로 지출 정보 조회
+    const expense = await this.expenseRepository
+      .createQueryBuilder('expense')
+      .leftJoinAndSelect('expense.travel', 'travel')
+      .where('expense.id = :expenseId', { expenseId })
+      .getOne();
 
-    const expense = expenseRows[0];
     if (!expense) {
       throw new NotFoundException('지출을 찾을 수 없습니다.');
     }
 
     // 사용자가 여행 멤버인지 확인
-    const context = await this.getTravelContext(expense.travel_id, userId);
+    const context = await this.getTravelContext(expense.travelId, userId);
 
-    // 참여자 정보 조회
-    const participantsRows = await this.dataSource.query(
-      `SELECT
-         tep.member_id::text,
-         COALESCE(tep.display_name, p.name) as name,
-         p.email,
-         p.avatar_url
-       FROM travel_expense_participants tep
-       LEFT JOIN profiles p ON p.id = tep.member_id
-       WHERE tep.expense_id = $1
-       ORDER BY p.name`,
-      [expenseId],
+    // TypeORM으로 참여자 정보 조회
+    const participants = await this.participantRepository
+      .createQueryBuilder('participant')
+      .where('participant.expenseId = :expenseId', { expenseId })
+      .getMany();
+
+    // 참여자 프로필 정보 조회
+    const participantUserIds = participants.map(p => String(p.userId));
+    const participantProfiles = await this.profileRepository
+      .createQueryBuilder('profile')
+      .where('profile.id IN (:...userIds)', { userIds: participantUserIds })
+      .getMany();
+
+    // 결제자 프로필 조회
+    const payerProfile = await this.profileRepository
+      .createQueryBuilder('profile')
+      .where('profile.id = :payerId', { payerId: expense.payerId })
+      .getOne();
+
+    // 환율 변환
+    const convertedAmount = await this.convertAmount(
+      expense.amount,
+      expense.currency,
+      'KRW',
+      context.baseExchangeRate,
     );
 
-    // 결과 구성
-    const payerProfile = this.getMemberProfile(context, expense.payer_id) ?? {
-      userId: expense.payer_id,
-      name: expense.payer_name ?? null,
-      email: expense.payer_email ?? null,
-      avatarUrl: expense.payer_avatar ?? null,
+    // 결제자 정보 구성
+    const payer = this.getMemberProfile(context, expense.payerId) ?? {
+      userId: expense.payerId,
+      name: payerProfile?.name ?? expense.payerName ?? null,
+      email: payerProfile?.email ?? null,
+      avatarUrl: payerProfile?.avatar_url ?? null,
     };
 
-    const participants = participantsRows.map((p: any) => ({
-      memberId: p.member_id,
-      name: p.name ?? null,
-    }));
+    // 참여자 목록 구성
+    const participantList = participants.map((p) => {
+      const profile = participantProfiles.find(prof => prof.id === String(p.userId));
+      return {
+        memberId: String(p.userId),
+        name: profile?.name ?? null,
+      };
+    });
 
     const expenseMembers = context.memberIds.map((memberId) => this.getMemberProfile(context, memberId)!);
 
     const result: TravelExpenseDto = {
       id: expense.id,
       title: expense.title,
-      note: expense.note,
-      amount: Number(expense.amount),
+      note: expense.note ?? null,
+      amount: expense.amount,
       currency: expense.currency,
-      convertedAmount: Number(expense.converted_amount),
-      expenseDate: expense.expense_date,
-      category: expense.category,
-      authorId: expense.author_id,
-      payerName: payerProfile?.name ?? null,
-      payer: payerProfile,
-      participants,
+      convertedAmount,
+      expenseDate: expense.expenseDate.toISOString().split('T')[0],
+      category: expense.category ?? null,
+      authorId: expense.authorId ?? '',
+      payerName: payer?.name ?? null,
+      payer: payer,
+      participants: participantList,
       expenseMembers,
     };
 
