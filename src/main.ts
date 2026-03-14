@@ -190,15 +190,16 @@ async function bootstrap() {
   await app.listen(env.port);
   logger.log('Server listening');
 
-  setTimeout(async () => {
-    try {
-      const { MetaService } = await import('./modules/meta/services');
-      const metaService = app.get(MetaService);
-      await metaService.warmupCache();
-    } catch (error) {
-      logger.error('Cache warmup failed', error instanceof Error ? error.stack : 'Unknown error');
-    }
-  }, 1000);
+  // MetaModule이 비활성화된 상태에서는 캐시 워밍업 생략
+  // setTimeout(async () => {
+  //   try {
+  //     const { MetaService } = await import('./modules/meta/services');
+  //     const metaService = app.get(MetaService);
+  //     await metaService.warmupCache();
+  //   } catch (error) {
+  //     logger.error('Cache warmup failed', error instanceof Error ? error.stack : 'Unknown error');
+  //   }
+  // }, 1000);
 }
 
 bootstrap();

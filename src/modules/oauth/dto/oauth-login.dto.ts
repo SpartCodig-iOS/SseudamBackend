@@ -2,28 +2,29 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsOptional, IsEnum } from 'class-validator';
 
 export class OAuthLoginDto {
-  @ApiProperty({ example: 'google-access-token' })
-  @IsString()
-  token!: string;
-
-  @ApiProperty({ enum: ['google', 'apple', 'kakao'] })
-  @IsEnum(['google', 'apple', 'kakao'])
-  provider!: 'google' | 'apple' | 'kakao';
-
-  @ApiProperty({ required: false, description: 'Login type for backward compatibility' })
+  @ApiProperty({ example: 'google-access-token', description: 'Access token (legacy field)' })
   @IsOptional()
   @IsString()
-  loginType?: string;
+  token?: string;
+
+  @ApiProperty({ enum: ['google', 'apple', 'kakao'], description: 'Provider (legacy field)' })
+  @IsOptional()
+  @IsEnum(['google', 'apple', 'kakao'])
+  provider?: 'google' | 'apple' | 'kakao';
+
+  @ApiProperty({ required: false, description: 'Login type (primary field)' })
+  @IsOptional()
+  @IsEnum(['google', 'apple', 'kakao'])
+  loginType?: 'google' | 'apple' | 'kakao';
 
   @ApiProperty({ required: false, description: 'Authorization code for Apple/Kakao' })
   @IsOptional()
   @IsString()
   authorizationCode?: string;
 
-  @ApiProperty({ required: false, description: 'Access token for Google/legacy' })
-  @IsOptional()
+  @ApiProperty({ required: true, description: 'Access token (primary field)' })
   @IsString()
-  accessToken?: string;
+  accessToken!: string;
 
   @ApiProperty({ required: false, description: 'Apple refresh token' })
   @IsOptional()

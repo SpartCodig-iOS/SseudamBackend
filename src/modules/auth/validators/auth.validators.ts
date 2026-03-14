@@ -36,8 +36,17 @@ export const appleRevokeSchema = z.object({
 });
 
 export const oauthTokenSchema = z.object({
-  token: z.string(),
-  provider: z.enum(['google', 'apple', 'kakao']),
+  // 클라이언트 요청 형식 지원
+  accessToken: z.string(),
+  loginType: z.enum(['google', 'apple', 'kakao']).optional(),
+  // 레거시 지원
+  token: z.string().optional(),
+  provider: z.enum(['google', 'apple', 'kakao']).optional(),
+  // 추가 필드들
+  authorizationCode: z.string().optional(),
+  codeVerifier: z.string().optional(),
+  redirectUri: z.string().optional(),
+  deviceToken: z.string().optional(),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

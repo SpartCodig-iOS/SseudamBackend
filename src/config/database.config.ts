@@ -39,8 +39,15 @@ export const createDatabaseConfig = async (): Promise<TypeOrmModuleOptions> => {
     password: base.password,
     database: base.database,
 
-    // Entity 및 Migration 설정
-    entities: [__dirname + '/../**/*.entity{.ts,.js}'],
+    // Entity 및 Migration 설정 (활성화된 모듈만)
+    entities: [
+      __dirname + '/../modules/auth/entities/*.entity{.ts,.js}',
+      __dirname + '/../modules/user/entities/*.entity{.ts,.js}',
+      __dirname + '/../modules/oauth/entities/*.entity{.ts,.js}',
+      __dirname + '/../modules/profile/entities/*.entity{.ts,.js}',
+      __dirname + '/../modules/notification/entities/*.entity{.ts,.js}',
+      __dirname + '/../modules/meta/entities/*.entity{.ts,.js}',
+    ],
     migrations: [__dirname + '/../migrations/*{.ts,.js}'],
     synchronize: false, // 마이그레이션으로 관리
     logging: env.nodeEnv === 'development' ? ['error', 'warn'] : false,
@@ -81,7 +88,14 @@ export const createDataSourceConfig = async (): Promise<DataSourceOptions> => {
     username: base.username,
     password: base.password,
     database: base.database,
-    entities: [__dirname + '/../**/*.entity{.ts,.js}'],
+    entities: [
+      __dirname + '/../modules/auth/entities/*.entity{.ts,.js}',
+      __dirname + '/../modules/user/entities/*.entity{.ts,.js}',
+      __dirname + '/../modules/oauth/entities/*.entity{.ts,.js}',
+      __dirname + '/../modules/profile/entities/*.entity{.ts,.js}',
+      __dirname + '/../modules/notification/entities/*.entity{.ts,.js}',
+      __dirname + '/../modules/meta/entities/*.entity{.ts,.js}',
+    ],
     migrations: [__dirname + '/../migrations/*{.ts,.js}'],
     synchronize: false,
     logging: true,
@@ -105,7 +119,14 @@ export const AppDataSource = new DataSource({
   username: process.env.DATABASE_USER || 'postgres',
   password: process.env.DATABASE_PASSWORD || '',
   database: process.env.DATABASE_NAME || 'sseduam',
-  entities: [__dirname + '/../**/*.entity{.ts,.js}'],
+  entities: [
+    __dirname + '/../modules/auth/entities/*.entity{.ts,.js}',
+    __dirname + '/../modules/user/entities/*.entity{.ts,.js}',
+    __dirname + '/../modules/oauth/entities/*.entity{.ts,.js}',
+    __dirname + '/../modules/profile/entities/*.entity{.ts,.js}',
+    __dirname + '/../modules/notification/entities/*.entity{.ts,.js}',
+    __dirname + '/../modules/meta/entities/*.entity{.ts,.js}',
+  ],
   migrations: [__dirname + '/../migrations/*{.ts,.js}'],
   synchronize: false,
 });
