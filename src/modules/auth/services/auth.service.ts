@@ -191,7 +191,7 @@ export class AuthService {
       avatar_url: user.avatar_url,
       created_at: user.created_at,
       updated_at: user.updated_at,
-      password_hash: includePasswordHash ? (user.password_hash ?? '') : '',
+      password_hash: '', // 필드 제거됨
       role: user.role ?? 'user',
     };
   }
@@ -238,9 +238,10 @@ export class AuthService {
     // 3단계: 비밀번호 검증 (매 요청마다 bcrypt.compare 수행 — 캐시 없음)
     let isValidPassword = false;
 
-    if (user.password_hash) {
-      isValidPassword = await bcrypt.compare(password, user.password_hash);
-    } else {
+    // password_hash 필드 제거됨 - Supabase 인증으로 처리
+    // if (user.password_hash) {
+    //   isValidPassword = await bcrypt.compare(password, user.password_hash);
+    // } else {
       // password_hash 없는 경우 Supabase 인증으로 폴백 (소셜 전용 계정)
       try {
         await this.supabaseService.signIn(resolvedEmail, password);
@@ -358,7 +359,7 @@ export class AuthService {
       created_at: new Date(),
       updated_at: new Date(),
       username,
-      password_hash: passwordHash,
+      // password_hash: passwordHash, // 필드 제거됨
       role: 'user',
     };
 
