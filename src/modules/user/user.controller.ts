@@ -121,17 +121,7 @@ export class UserController {
     return this.userService.updateUserRole(id, roleDto.role);
   }
 
-  @Put(':id/password')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Update user password' })
-  @ApiResponse({ status: 204, description: 'Password updated successfully' })
-  @ApiResponse({ status: 404, description: 'User not found' })
-  async updatePassword(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() passwordDto: { password: string },
-  ): Promise<void> {
-    return this.userService.updatePassword(id, passwordDto.password);
-  }
+  // OAuth 전용 - 비밀번호 업데이트 기능 제거됨
 
   @Delete(':id')
   @UseGuards(RolesGuard)

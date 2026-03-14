@@ -4,13 +4,14 @@ import { User } from '../entities/user.entity';
 import { UserRoleEnum as UserRole } from '../types/user.types';
 import { UserRole as GlobalUserRole } from '../../../types/user.types';
 // OAuth 전용 - bcrypt 불필요
+import { LoginType } from '../../auth/types/auth.types';
 
 // OAuth 전용 - 간단한 사용자 생성
 export interface CreateUserDto {
   email: string;
   name?: string;
-  username: string;
-  login_type?: string;
+  username?: string;
+  login_type?: LoginType;
 }
 
 export interface UpdateUserDto {
@@ -32,7 +33,7 @@ export class UserService {
    * 새로운 사용자 생성
    */
   async createUser(dto: CreateUserDto): Promise<User> {
-    const { email, password, name, username, role = 'user' } = dto;
+    const { email, name, username, login_type = LoginType.APPLE } = dto;
 
     // 이메일과 유저네임 중복 체크
     const emailExists = await this.userRepository.isEmailTaken(email);
@@ -40,7 +41,10 @@ export class UserService {
       throw new ConflictException('Email already exists');
     }
 
-    const usernameExists = await this.userRepository.isUsernameTaken(username);
+    // username이 없으면 email에서 생성
+    const finalUsername = username || email.split('@')[0];
+
+    const usernameExists = await this.userRepository.isUsernameTaken(finalUsername);
     if (usernameExists) {
       throw new ConflictException('Username already exists');
     }
@@ -52,8 +56,9 @@ export class UserService {
       email: email.toLowerCase(),
       // password_hash, // 필드 제거됨
       name: name || null,
-      username: username.toLowerCase(),
-      role,
+      username: finalUsername,
+      login_type,
+      role: 'user', // 기본 역할
       avatar_url: null,
     });
 

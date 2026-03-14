@@ -303,7 +303,9 @@
       "Bash(cd:*)",
       "Bash(for module:*)",
       "Bash(npx typeorm:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"DROP TABLE IF EXISTS users CASCADE;\")",
+      "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"SELECT id, email, name, username, login_type FROM profiles WHERE id = '188aabd9-b8af-423e-9743-5a8783383084';\")"
     ],
     "deny": [],
     "ask": []
