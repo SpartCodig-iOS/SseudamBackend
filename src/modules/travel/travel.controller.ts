@@ -67,7 +67,7 @@ export class TravelController {
 
       // GetTravelListUseCase를 사용해서 실제 여행 목록 조회
       const result = await this.getTravelListUseCase.execute({
-        userId: (req.user as any).id,
+        userId: req.currentUser!.id,
         page: pageNum,
         limit: limitNum,
         status: statusFilter,
@@ -147,7 +147,19 @@ export class TravelController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      const result = await this.createTravelUseCase.execute(req.user as any, {
+      // 최소한의 UserRecord 생성
+      const userRecord = {
+        ...req.currentUser!,
+        name: req.currentUser!.name || null,
+        role: req.currentUser!.role || 'user',
+        avatar_url: null,
+        username: req.currentUser!.email,
+        password_hash: '',
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+
+      const result = await this.createTravelUseCase.execute(userRecord, {
         title: body.title,
         description: body.description,
         startDate: new Date(body.startDate),
@@ -179,7 +191,7 @@ export class TravelController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      const result = await this.inviteMemberUseCase.execute((req.user as any).id.toString(), {
+      const result = await this.inviteMemberUseCase.execute((req.currentUser!).id.toString(), {
         travelId,
       });
 
@@ -200,7 +212,7 @@ export class TravelController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      const result = await this.updateTravelUseCase.execute(travelId, (req.user as any).id.toString(), {
+      const result = await this.updateTravelUseCase.execute(travelId, (req.currentUser!).id.toString(), {
         title: body.title,
         description: body.description,
         startDate: body.startDate ? new Date(body.startDate) : undefined,
@@ -231,7 +243,7 @@ export class TravelController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      const result = await this.deleteTravelUseCase.execute(travelId, (req.user as any).id.toString());
+      const result = await this.deleteTravelUseCase.execute(travelId, (req.currentUser!).id.toString());
 
       return success(result, 'Travel deleted successfully');
     } catch (error) {

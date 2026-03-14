@@ -172,16 +172,25 @@ export class AuthGuard implements CanActivate {
    */
   private async tryEnhancedJwt(token: string): Promise<LocalAuthResult | null> {
     try {
+      console.log('🔐 [AuthGuard] Trying enhanced JWT verification...');
+
       // 1. JWT 토큰 검증
+      console.log('🔐 [AuthGuard] Verifying JWT token...');
       const payload = this.jwtTokenService.verifyAccessToken(token);
+      console.log('🔐 [AuthGuard] JWT payload:', { sub: payload.sub, email: payload.email, sessionId: payload.sessionId });
 
       // 2. JWT 토큰에서 tokenId 추출 (blacklist 체크용)
       const decodedToken = payload as any;
       const tokenId = decodedToken.jti || payload.jti || 'unknown';
+      console.log('🔐 [AuthGuard] Token ID for blacklist check:', tokenId);
 
       // 3. Blacklist 체크
+      console.log('🔐 [AuthGuard] Checking blacklist...');
       const isBlacklisted = await this.jwtBlacklistService.isBlacklisted(tokenId);
+      console.log('🔐 [AuthGuard] Is blacklisted:', isBlacklisted);
+
       if (isBlacklisted) {
+        console.log('🔐 [AuthGuard] Token is blacklisted, rejecting');
         throw new UnauthorizedException('Token is blacklisted');
       }
       if (payload?.sub && payload?.email && payload.sessionId) {
@@ -202,6 +211,8 @@ export class AuthGuard implements CanActivate {
       return null;
     } catch (error) {
       // Enhanced JWT 검증 실패 (blacklist에 있거나 유효하지 않은 토큰)
+      console.log('🔐 [AuthGuard] Enhanced JWT verification FAILED:', (error as Error).message);
+      console.log('🔐 [AuthGuard] Error details:', error);
       return null;
     }
   }
@@ -229,6 +240,7 @@ export class AuthGuard implements CanActivate {
       }
       return null;
     } catch (error) {
+      console.log('🔐 [AuthGuard] Local JWT verification FAILED:', (error as Error).message);
       return null;
     }
   }
