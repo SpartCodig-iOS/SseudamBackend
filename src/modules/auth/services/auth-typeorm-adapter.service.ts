@@ -150,7 +150,7 @@ export class AuthTypeOrmAdapter {
       const user = await this.userRepository.create({
         id: userData.id,
         email: userData.email,
-        password_hash: '', // 필드 제거됨
+        // password_hash: '', // 필드 제거됨
         name: userData.name || null,
         username: userData.username,
         role: (userData.role as any) || 'user',

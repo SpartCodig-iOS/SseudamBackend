@@ -239,16 +239,11 @@ export class AuthService {
     let isValidPassword = false;
 
     // password_hash 필드 제거됨 - Supabase 인증으로 처리
-    // if (user.password_hash) {
-    //   isValidPassword = await bcrypt.compare(password, user.password_hash);
-    // } else {
-      // password_hash 없는 경우 Supabase 인증으로 폴백 (소셜 전용 계정)
-      try {
-        await this.supabaseService.signIn(resolvedEmail, password);
-        isValidPassword = true;
-      } catch {
-        isValidPassword = false;
-      }
+    try {
+      await this.supabaseService.signIn(resolvedEmail, password);
+      isValidPassword = true;
+    } catch {
+      isValidPassword = false;
     }
 
     if (!isValidPassword) return null;

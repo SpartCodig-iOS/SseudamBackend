@@ -40,7 +40,7 @@ export interface UserRecord {
   name: string | null;
   avatar_url: string | null;
   username: string;
-  password_hash: string;
+  password_hash?: string; // OAuth 전용이므로 optional
   role: string;
   created_at: Date;
   updated_at: Date;
