@@ -287,7 +287,12 @@ export class AuthService {
 
     return {
       user,
-      session: { id: sessionId },
+      session: {
+        sessionId: sessionId,
+        id: sessionId,  // 호환성을 위해 둘 다 제공
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30일 후
+        lastSeenAt: new Date().toISOString(),
+      },
       loginType,
       tokenPair: {
         accessToken: tokenPair.accessToken,
