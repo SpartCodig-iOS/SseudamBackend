@@ -184,7 +184,6 @@ export class TravelExpenseService {
       .createQueryBuilder('member')
       .leftJoinAndSelect('member.user', 'user')
       .where('member.travelId = :travelId', { travelId })
-      .andWhere('member.isActive = :isActive', { isActive: true })
       .getMany();
 
     const memberIds = memberRows.map((member) => String(member.userId));
