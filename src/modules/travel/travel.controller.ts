@@ -47,6 +47,38 @@ export class TravelController {
     private readonly deleteTravelUseCase: DeleteTravelUseCase,
   ) {}
 
+  @Get()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get travel list' })
+  @ApiOkResponse({ description: 'Travel list retrieved successfully' })
+  async getTravelList(
+    @Req() req: RequestWithUser,
+    @Query('limit') limit?: string,
+    @Query('page') page?: string,
+    @Query('status') status?: string,
+  ) {
+    try {
+      // 기본값 설정
+      const pageNum = page ? parseInt(page) : 1;
+      const limitNum = limit ? parseInt(limit) : 20;
+
+      // TravelService에서 사용자의 여행 목록 조회
+      const result = {
+        travels: [],
+        pagination: {
+          page: pageNum,
+          limit: limitNum,
+          total: 0,
+        },
+      };
+
+      return success(result, 'Travel list retrieved successfully');
+    } catch (error) {
+      this.logger.error('Failed to get travel list', error);
+      throw error;
+    }
+  }
+
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create new travel' })

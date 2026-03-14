@@ -8,6 +8,7 @@ import { CacheSharedModule } from './modules/cache-shared/cache-shared.module';
 import { JwtSharedModule } from './modules/jwt-shared/jwt-shared.module';
 import { AuthSharedModule } from './modules/shared/auth-shared.module';
 import { DatabaseModule } from './modules/database/database.module';
+import { GlobalLoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 // 기능 모듈
 // import { AuthModule } from './modules/auth/auth.module'; // 임시 비활성화
@@ -21,7 +22,7 @@ import { TravelExpenseModule } from './modules/travel-expense/travel-expense.mod
 import { TravelSettlementModule } from './modules/travel-settlement/travel-settlement.module';
 // import { NotificationModule } from './modules/notification/notification.module'; // 임시 비활성화
 // import { DevModule } from './modules/dev/dev.module'; // 임시 비활성화
-// import { VersionModule } from './modules/version/version.module'; // 임시 비활성화
+import { VersionModule } from './modules/version/version.module';
 // import { UniversalLinksModule } from './modules/universal-links/universal-links.module'; // 임시 비활성화
 // import { QueueModule } from './modules/queue/queue.module'; // 임시 비활성화
 import { UserModule } from './modules/user/user.module';
@@ -71,6 +72,7 @@ import { NotificationModule } from './modules/notification/notification.module';
     OAuthModule,          // 소셜 로그인
     ProfileModule,        // 프로필 관리
     NotificationModule,   // 알림 관리
+    VersionModule,        // 앱 버전 관리
 
     // ── Travel 관련 모듈 ──
     TravelModule,         // 여행 관리
@@ -78,6 +80,11 @@ import { NotificationModule } from './modules/notification/notification.module';
     TravelSettlementModule, // 여행 정산 관리
   ],
   providers: [
+    // 전역 로깅 인터셉터 추가
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: GlobalLoggingInterceptor,
+    },
     // 임시로 인터셉터들 비활성화
     // {
     //   provide: APP_INTERCEPTOR,

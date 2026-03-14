@@ -12,6 +12,7 @@ import { logger } from '../../utils/logger';
 import { env } from '../../config/env';
 import { DatabaseError } from 'pg';
 import { RequestContext } from '../context/request-context';
+import { iOSBaseResponse, MetaDTO } from '../../types/api.types';
 
 const formatZodIssue = (issue: ZodIssue) => ({
   path: issue.path,
@@ -44,12 +45,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (exception instanceof ZodError) {
       const issues = exception.issues.map(formatZodIssue);
       logger.log('Validation failed');
-      return response.status(HttpStatus.BAD_REQUEST).json({
+
+      const errorResponse: iOSBaseResponse = {
         code: HttpStatus.BAD_REQUEST,
+        data: [],
         message: '요청 데이터 형식이 올바르지 않습니다.',
-        requestId,
-        data: { errors: issues },
-      });
+        meta: {
+          responseTime: '0ms',
+          cached: false,
+        },
+      };
+
+      return response.status(HttpStatus.BAD_REQUEST).json(errorResponse);
     }
 
     if (exception instanceof HttpException) {
@@ -71,12 +78,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
         logger.log('Handled error response');
       }
 
-      return response.status(status).json({
+      const httpErrorResponse: iOSBaseResponse = {
         code: status,
-        data,
-        message,
-        requestId,
-      });
+        data: data || [],
+        message: Array.isArray(message) ? message.join(', ') : message,
+        meta: {
+          responseTime: '0ms',
+          cached: false,
+        },
+      };
+
+      return response.status(status).json(httpErrorResponse);
     }
 
     const status = HttpStatus.INTERNAL_SERVER_ERROR;
@@ -85,22 +97,32 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if ((exception as any)?.code && (exception as any)?.severity) {
       const mapped = normalizeDbError(exception as DatabaseError);
       if (mapped) {
-        return response.status(mapped.status).json({
+        const dbErrorResponse: iOSBaseResponse = {
           code: mapped.status,
           data: [],
           message: mapped.message,
-          requestId,
-        });
+          meta: {
+            responseTime: '0ms',
+            cached: false,
+          },
+        };
+
+        return response.status(mapped.status).json(dbErrorResponse);
       }
     }
     logger.error('Unhandled exception', (exception as Error)?.stack);
     this.capture(exception);
 
-    return response.status(status).json({
+    const internalErrorResponse: iOSBaseResponse = {
       code: status,
       data: [],
       message,
-      requestId,
-    });
+      meta: {
+        responseTime: '0ms',
+        cached: false,
+      },
+    };
+
+    return response.status(status).json(internalErrorResponse);
   }
 }
