@@ -9,12 +9,10 @@ export interface GetTravelListInput {
 }
 
 export interface GetTravelListOutput {
-  travels: any[];
-  pagination: {
-    total: number;
-    page: number;
-    limit: number;
-  };
+  total: number;
+  page: number;
+  limit: number;
+  items: any[];
 }
 
 @Injectable()
@@ -31,12 +29,10 @@ export class GetTravelListUseCase {
     });
 
     return {
-      travels: result.items,
-      pagination: {
-        total: result.total,
-        page: result.page,
-        limit: result.limit,
-      },
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+      items: result.items,
     };
   }
 }
