@@ -6,7 +6,7 @@ import { success } from '../../types/api.types';
 import { CacheService } from '../cache-shared/services/cacheService';
 import { getPoolStats } from '../../db/pool';
 import { HealthResponseDto } from './dto/health-response.dto';
-import { SmartCacheService } from '../cache-shared/services/smart-cache.service';
+// import { SmartCacheService } from '../cache-shared/services/smart-cache.service';
 
 @ApiTags('Health')
 @Controller()
@@ -18,7 +18,7 @@ export class HealthController {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly cacheService: CacheService,
-    private readonly smartCacheService: SmartCacheService,
+    // private readonly smartCacheService: SmartCacheService,
   ) {}
 
   private async checkDatabaseHealth(): Promise<'ok' | 'unavailable'> {
@@ -210,7 +210,7 @@ export class HealthController {
         keepAliveEnabled: true,
         memoryCacheEnabled: true,
         performanceMonitoringEnabled: true,
-        smartCache: this.smartCacheService.getStats(),
+        // smartCache: this.smartCacheService.getStats(),
         apiOptimization: {
           total: 0,
           averageResponseTime: 0,
