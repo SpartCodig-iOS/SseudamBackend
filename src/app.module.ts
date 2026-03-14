@@ -36,7 +36,7 @@ import { ApiOptimizationInterceptor } from './common/interceptors/api-optimizati
 import { ResponseOptimizerInterceptor } from './common/interceptors/response-optimizer.interceptor';
 
 // 미들웨어
-import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
+import { RequestLoggerMiddleware } from './middleware/requestLogger';
 import { GatewayMiddleware } from './modules/gateway/gateway.middleware';
 
 /**

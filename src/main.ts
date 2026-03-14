@@ -13,10 +13,10 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import * as Sentry from '@sentry/node';
 import { AppModule } from './app.module';
 import { env } from './config/env';
-import { logger } from './common/utils/logger';
+import { logger } from './utils/logger';
 import { PinoNestLogger } from './common/logger/pino-logger';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
-import { MemoryOptimizer } from './common/utils/memory-optimizer';
+import { MemoryOptimizer } from './utils/memory-optimizer';
 
 async function bootstrap() {
   // 메모리 최적화 초기화
@@ -188,7 +188,7 @@ async function bootstrap() {
   });
 
   await app.listen(env.port);
-  logger.info('Server listening', { port: env.port, env: env.nodeEnv });
+  logger.info({ port: env.port, env: env.nodeEnv }, 'Server listening');
 
   setTimeout(async () => {
     try {
@@ -196,7 +196,7 @@ async function bootstrap() {
       const metaService = app.get(MetaService);
       await metaService.warmupCache();
     } catch (error) {
-      logger.error('Cache warmup failed', { error: error instanceof Error ? error.message : 'Unknown error' });
+      logger.error({ error: error instanceof Error ? error.message : 'Unknown error' }, 'Cache warmup failed');
     }
   }, 1000);
 }
