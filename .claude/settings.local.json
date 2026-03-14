@@ -301,7 +301,9 @@
       "Bash(wc:*)",
       "Skill(developer-kit-typescript:clean-architecture)",
       "Bash(cd:*)",
-      "Bash(for module:*)"
+      "Bash(for module:*)",
+      "Bash(npx typeorm:*)",
+      "Bash(mkdir:*)"
     ],
     "deny": [],
     "ask": []
