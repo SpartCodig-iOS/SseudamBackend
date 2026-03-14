@@ -68,7 +68,7 @@ export class UserRepository {
   }): Promise<UserRecord> {
     const newUser = this.userRepository.create({
       email: params.email,
-      password_hash: params.passwordHash,
+      // password_hash: params.passwordHash, // 필드 제거됨
       name: params.name,
       avatar_url: params.avatarURL,
       username: params.username,
@@ -204,8 +204,8 @@ export class UserRepository {
     // Implementation for social profile info lookup
     const user = await this.findById(userId);
     return user ? {
-      apple_refresh_token: user.apple_refresh_token,
-      google_refresh_token: user.google_refresh_token
+      // apple_refresh_token: user.apple_refresh_token, // 필드 제거됨
+      // google_refresh_token: user.google_refresh_token // 필드 제거됨
     } : null;
   }
 
@@ -259,7 +259,7 @@ export class UserRepository {
     return {
       id: user.id,
       email: user.email,
-      password_hash: user.password_hash,
+      // password_hash: user.password_hash, // 필드 제거됨
       name: user.name || undefined,
       avatar_url: user.avatar_url || undefined,
       username: user.username,

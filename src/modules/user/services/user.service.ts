@@ -45,12 +45,12 @@ export class UserService {
       throw new ConflictException('Username already exists');
     }
 
-    // 비밀번호 해싱
-    const password_hash = await bcrypt.hash(password, 10);
+    // 비밀번호 해싱 - 필드 제거됨
+    // const password_hash = await bcrypt.hash(password, 10);
 
     const newUser = await this.userRepository.create({
       email: email.toLowerCase(),
-      password_hash,
+      // password_hash, // 필드 제거됨
       name: name || null,
       username: username.toLowerCase(),
       role,
@@ -146,9 +146,9 @@ export class UserService {
    * 비밀번호 업데이트
    */
   async updatePassword(id: string, newPassword: string): Promise<void> {
-    const password_hash = await bcrypt.hash(newPassword, 10);
-
-    await this.userRepository.update(id, { password_hash });
+    // const password_hash = await bcrypt.hash(newPassword, 10);
+    // await this.userRepository.update(id, { password_hash }); // 필드 제거됨
+    throw new Error('Password update not supported - password_hash field removed');
 
     this.logger.log(`Password updated for user: ${id}`);
   }
@@ -157,7 +157,8 @@ export class UserService {
    * 비밀번호 확인
    */
   async verifyPassword(user: User, password: string): Promise<boolean> {
-    return bcrypt.compare(password, user.password_hash);
+    // return bcrypt.compare(password, user.password_hash); // 필드 제거됨
+    throw new Error('Password verification not supported - password_hash field removed');
   }
 
   /**
