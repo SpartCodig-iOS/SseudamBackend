@@ -7,7 +7,6 @@ import {
   Index,
   OneToMany,
 } from 'typeorm';
-import { UserRole, USER_ROLE_VALUES } from '../types/user.types';
 import { LoginType } from '../../auth/types/auth.types';
 // Forward references to avoid circular dependencies
 
@@ -28,11 +27,6 @@ export class User {
   @Column({ type: 'varchar', length: 255, unique: true })
   email!: string;
 
-  /**
-   * 이메일/비밀번호 로그인 시 bcrypt 해시값. 소셜 로그인 전용 계정은 null 가능.
-   */
-  @Column({ type: 'varchar', length: 255, nullable: true })
-  password_hash!: string;
 
   @Column({ type: 'varchar', length: 100, nullable: true })
   name!: string | null;
@@ -52,23 +46,11 @@ export class User {
   login_type!: LoginType | null;
 
   @Column({
-    type: 'enum',
-    enum: USER_ROLE_VALUES,
+    type: 'text',
     default: 'user',
   })
-  role!: UserRole;
+  role!: string;
 
-  /**
-   * Apple 소셜 로그인 refresh token (계정 탈퇴 시 연결 해제에 사용)
-   */
-  @Column({ type: 'text', nullable: true, name: 'apple_refresh_token' })
-  apple_refresh_token!: string | null;
-
-  /**
-   * Google 소셜 로그인 refresh token (계정 탈퇴 시 연결 해제에 사용)
-   */
-  @Column({ type: 'text', nullable: true, name: 'google_refresh_token' })
-  google_refresh_token!: string | null;
 
   @CreateDateColumn({ type: 'timestamp with time zone', name: 'created_at' })
   created_at!: Date;
