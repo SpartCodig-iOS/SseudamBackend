@@ -79,6 +79,64 @@ export class TravelController {
     }
   }
 
+  @Get(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get travel detail' })
+  @ApiOkResponse({ description: 'Travel detail retrieved successfully' })
+  async getTravelDetail(
+    @Param('id') travelId: string,
+    @Req() req: RequestWithUser,
+  ) {
+    try {
+      // TODO: TravelService에서 여행 상세 조회 구현
+      const result = {
+        id: travelId,
+        title: 'Sample Travel',
+        description: 'Sample description',
+        startDate: new Date().toISOString(),
+        endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        countryCode: 'KR',
+        countryNameKr: '대한민국',
+        baseCurrency: 'KRW',
+        baseExchangeRate: 1,
+        destinationCurrency: 'KRW',
+        countryCurrencies: ['KRW'],
+        budget: 1000000,
+        budgetCurrency: 'KRW',
+        members: [],
+        inviteCode: 'sample123',
+      };
+
+      return success(result, 'Travel detail retrieved successfully');
+    } catch (error) {
+      this.logger.error('Failed to get travel detail', error);
+      throw error;
+    }
+  }
+
+  @Get(':id/expenses')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get travel expenses' })
+  @ApiOkResponse({ description: 'Travel expenses retrieved successfully' })
+  async getTravelExpenses(
+    @Param('id') travelId: string,
+    @Req() req: RequestWithUser,
+  ) {
+    try {
+      // TODO: TravelExpenseService에서 경비 목록 조회 구현
+      const result = {
+        expenses: [],
+        totalAmount: 0,
+        currency: 'KRW',
+      };
+
+      return success(result, 'Travel expenses retrieved successfully');
+    } catch (error) {
+      this.logger.error('Failed to get travel expenses', error);
+      throw error;
+    }
+  }
+
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create new travel' })
