@@ -106,6 +106,9 @@ export class TravelController {
         budgetCurrency: 'KRW',
         members: [],
         inviteCode: 'sample123',
+        status: 'active',
+        createdAt: new Date().toISOString(),
+        ownerName: '사용자',
       };
 
       return success(result, 'Travel detail retrieved successfully');
@@ -125,11 +128,7 @@ export class TravelController {
   ) {
     try {
       // TODO: TravelExpenseService에서 경비 목록 조회 구현
-      const result = {
-        expenses: [],
-        totalAmount: 0,
-        currency: 'KRW',
-      };
+      const result: any[] = [];
 
       return success(result, 'Travel expenses retrieved successfully');
     } catch (error) {
