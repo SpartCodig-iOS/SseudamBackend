@@ -164,11 +164,9 @@ export class TravelExpenseService {
       // ignore and fallback to DB
     }
 
-    // TypeORM을 사용한 여행 컨텍스트 조회
+    // TypeORM을 사용한 여행 컨텍스트 조회 (관계 없이 단순 조회)
     const travel = await this.travelRepository
       .createQueryBuilder('travel')
-      .leftJoinAndSelect('travel.members', 'member')
-      .leftJoinAndSelect('member.user', 'profile')
       .where('travel.id = :travelId', { travelId })
       .getOne();
 
@@ -176,14 +174,15 @@ export class TravelExpenseService {
       throw new NotFoundException('여행을 찾을 수 없습니다.');
     }
 
-    const rawMembers = travel.members?.map(member => ({
-      id: member.userId,
-      name: member.nickname || null,
-      email: null, // User 관계가 없으므로 일시적으로 null
-      avatar_url: null // User 관계가 없으므로 일시적으로 null
-    })) || [];
+    // 여행 멤버를 별도로 조회
+    const memberRows = await this.travelMemberRepository
+      .createQueryBuilder('member')
+      .leftJoinAndSelect('member.user', 'user')
+      .where('member.travelId = :travelId', { travelId })
+      .andWhere('member.isActive = :isActive', { isActive: true })
+      .getMany();
 
-    const memberIds = rawMembers.map((member) => String(member.id));
+    const memberIds = memberRows.map((member) => String(member.userId));
     if (!memberIds.includes(userId)) {
       throw new BadRequestException('해당 여행에 접근 권한이 없습니다.');
     }
@@ -191,14 +190,19 @@ export class TravelExpenseService {
     const memberNameMap = new Map<string, string | null>();
     const memberEmailMap = new Map<string, string | null>();
     const memberAvatarMap = new Map<string, string | null>();
-    rawMembers.forEach((member) => {
-      memberNameMap.set(String(member.id), member.name ?? null);
-      memberEmailMap.set(String(member.id), member.email ?? null);
-      memberAvatarMap.set(String(member.id), member.avatar_url ?? null);
+    memberRows.forEach((member) => {
+      const id = String(member.userId);
+      memberNameMap.set(id, member.nickname || member.user?.name || null);
+      memberEmailMap.set(id, member.user?.email || null);
+      memberAvatarMap.set(id, member.user?.avatar_url || null);
     });
 
     // 🚀 아바타 빠른 로딩 최적화
-    await this.optimizeExpenseMemberAvatars(rawMembers, memberAvatarMap);
+    const memberData = memberRows.map(member => ({
+      id: String(member.userId),
+      avatar_url: member.user?.avatar_url || null
+    }));
+    await this.optimizeExpenseMemberAvatars(memberData, memberAvatarMap);
     const context: TravelContext = {
       id: travel.id,
       baseCurrency: travel.baseCurrency || 'KRW',
