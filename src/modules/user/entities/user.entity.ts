@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   Index,
+  OneToMany,
 } from 'typeorm';
 import { UserRole, USER_ROLE_VALUES } from '../types/user.types';
 import { LoginType } from '../../auth/types/auth.types';
@@ -77,6 +78,13 @@ export class User {
 
   @Column({ type: 'timestamp with time zone', name: 'last_login_at', nullable: true })
   lastLoginAt?: Date;
+
+  // Relations - Using forward references to avoid circular dependencies
+  @OneToMany('Travel', 'user')
+  travels!: any[];
+
+  @OneToMany('TravelExpense', 'author')
+  expenses!: any[];
 
   constructor(partial: Partial<User> = {}) {
     Object.assign(this, partial);

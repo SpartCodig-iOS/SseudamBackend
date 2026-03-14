@@ -660,10 +660,14 @@ export class TravelExpenseService {
       return cached;
     }
 
-    // TypeORM으로 지출 정보 조회
+    // TypeORM으로 지출 정보 조회 (관계 포함)
     const expense = await this.expenseRepository
       .createQueryBuilder('expense')
       .leftJoinAndSelect('expense.travel', 'travel')
+      .leftJoinAndSelect('expense.payer', 'payer')
+      .leftJoinAndSelect('expense.author', 'author')
+      .leftJoinAndSelect('expense.participants', 'participants')
+      .leftJoinAndSelect('participants.user', 'participantUser')
       .where('expense.id = :expenseId', { expenseId })
       .getOne();
 
@@ -674,25 +678,6 @@ export class TravelExpenseService {
     // 사용자가 여행 멤버인지 확인
     const context = await this.getTravelContext(expense.travelId, userId);
 
-    // TypeORM으로 참여자 정보 조회
-    const participants = await this.participantRepository
-      .createQueryBuilder('participant')
-      .where('participant.expenseId = :expenseId', { expenseId })
-      .getMany();
-
-    // 참여자 프로필 정보 조회
-    const participantUserIds = participants.map(p => String(p.userId));
-    const participantProfiles = await this.profileRepository
-      .createQueryBuilder('profile')
-      .where('profile.id IN (:...userIds)', { userIds: participantUserIds })
-      .getMany();
-
-    // 결제자 프로필 조회
-    const payerProfile = await this.profileRepository
-      .createQueryBuilder('profile')
-      .where('profile.id = :payerId', { payerId: expense.payerId })
-      .getOne();
-
     // 환율 변환
     const convertedAmount = await this.convertAmount(
       expense.amount,
@@ -702,21 +687,18 @@ export class TravelExpenseService {
     );
 
     // 결제자 정보 구성
-    const payer = this.getMemberProfile(context, expense.payerId) ?? {
-      userId: expense.payerId,
-      name: payerProfile?.name ?? expense.payerName ?? null,
-      email: payerProfile?.email ?? null,
-      avatarUrl: payerProfile?.avatar_url ?? null,
+    const payer = this.getMemberProfile(context, expense.payerId!) ?? {
+      userId: expense.payerId!,
+      name: expense.payer?.name ?? expense.payerName ?? null,
+      email: expense.payer?.email ?? null,
+      avatarUrl: expense.payer?.avatar_url ?? null,
     };
 
     // 참여자 목록 구성
-    const participantList = participants.map((p) => {
-      const profile = participantProfiles.find(prof => prof.id === String(p.userId));
-      return {
-        memberId: String(p.userId),
-        name: profile?.name ?? null,
-      };
-    });
+    const participantList = expense.participants.map((p) => ({
+      memberId: p.userId,
+      name: p.user?.name ?? null,
+    }));
 
     const expenseMembers = context.memberIds.map((memberId) => this.getMemberProfile(context, memberId)!);
 

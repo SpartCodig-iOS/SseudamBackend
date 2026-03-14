@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { Travel } from '../../travel/entities/travel.entity';
 import { TravelExpenseParticipant } from './travel-expense-participant.entity';
+import { User } from '../../user/entities/user.entity';
 
 @Entity('travel_expenses')
 export class TravelExpense {
@@ -67,6 +68,14 @@ export class TravelExpense {
   @ManyToOne(() => Travel, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'travelId' })
   travel!: Travel;
+
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'authorId' })
+  author!: User;
+
+  @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'payerId' })
+  payer!: User | null;
 
   @OneToMany(
     () => TravelExpenseParticipant,

@@ -8,6 +8,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { TravelExpense } from './travel-expense.entity';
+import { User } from '../../user/entities/user.entity';
 
 @Entity('travel_expense_participants')
 export class TravelExpenseParticipant {
@@ -17,8 +18,8 @@ export class TravelExpenseParticipant {
   @Column({ type: 'uuid' })
   expenseId!: string;
 
-  @Column({ type: 'int' })
-  userId!: number;
+  @Column({ type: 'uuid' })
+  userId!: string;
 
   @Column({ type: 'bigint' })
   shareAmount!: number;
@@ -40,4 +41,8 @@ export class TravelExpenseParticipant {
   })
   @JoinColumn({ name: 'expenseId' })
   expense!: TravelExpense;
+
+  @ManyToOne(() => User, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'userId' })
+  user!: User;
 }
