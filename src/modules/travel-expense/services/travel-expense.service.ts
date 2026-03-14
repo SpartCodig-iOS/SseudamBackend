@@ -650,6 +650,99 @@ export class TravelExpenseService {
   }
 
   /**
+   * 특정 지출을 조회합니다.
+   * 권한: 해당 여행의 멤버라면 모두 조회 가능
+   */
+  async getExpense(expenseId: string, userId: string): Promise<TravelExpenseDto> {
+    // 캐시에서 먼저 확인
+    const cached = await this.getCachedExpenseDetail(expenseId);
+    if (cached) {
+      return cached;
+    }
+
+    // DB에서 지출 정보 조회
+    const expenseRows = await this.dataSource.query(
+      `SELECT
+         e.id::text,
+         e.travel_id::text,
+         e.title,
+         e.note,
+         e.amount,
+         e.currency,
+         e.converted_amount,
+         to_char(e.expense_date::date, 'YYYY-MM-DD') as expense_date,
+         e.category,
+         e.author_id::text,
+         e.payer_id::text,
+         COALESCE(e.display_name, payer.name) AS payer_name,
+         payer.email AS payer_email,
+         payer.avatar_url AS payer_avatar
+       FROM travel_expenses e
+       LEFT JOIN profiles payer ON payer.id = e.payer_id
+       WHERE e.id = $1`,
+      [expenseId],
+    );
+
+    const expense = expenseRows[0];
+    if (!expense) {
+      throw new NotFoundException('지출을 찾을 수 없습니다.');
+    }
+
+    // 사용자가 여행 멤버인지 확인
+    const context = await this.getTravelContext(expense.travel_id, userId);
+
+    // 참여자 정보 조회
+    const participantsRows = await this.dataSource.query(
+      `SELECT
+         tep.member_id::text,
+         COALESCE(tep.display_name, p.name) as name,
+         p.email,
+         p.avatar_url
+       FROM travel_expense_participants tep
+       LEFT JOIN profiles p ON p.id = tep.member_id
+       WHERE tep.expense_id = $1
+       ORDER BY p.name`,
+      [expenseId],
+    );
+
+    // 결과 구성
+    const payerProfile = this.getMemberProfile(context, expense.payer_id) ?? {
+      userId: expense.payer_id,
+      name: expense.payer_name ?? null,
+      email: expense.payer_email ?? null,
+      avatarUrl: expense.payer_avatar ?? null,
+    };
+
+    const participants = participantsRows.map((p: any) => ({
+      memberId: p.member_id,
+      name: p.name ?? null,
+    }));
+
+    const expenseMembers = context.memberIds.map((memberId) => this.getMemberProfile(context, memberId)!);
+
+    const result: TravelExpenseDto = {
+      id: expense.id,
+      title: expense.title,
+      note: expense.note,
+      amount: Number(expense.amount),
+      currency: expense.currency,
+      convertedAmount: Number(expense.converted_amount),
+      expenseDate: expense.expense_date,
+      category: expense.category,
+      authorId: expense.author_id,
+      payerName: payerProfile?.name ?? null,
+      payer: payerProfile,
+      participants,
+      expenseMembers,
+    };
+
+    // 캐시에 저장
+    await this.setCachedExpenseDetail(expenseId, result);
+
+    return result;
+  }
+
+  /**
    * 지출을 수정합니다.
    * 권한: 해당 여행의 멤버라면 모두 수정 가능
    */

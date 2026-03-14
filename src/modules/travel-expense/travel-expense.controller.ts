@@ -55,22 +55,22 @@ export class TravelExpenseController {
     }
   }
 
-  // @Get(':id')
-  // @HttpCode(HttpStatus.OK)
-  // @ApiOperation({ summary: 'Get travel expense by ID' })
-  // @ApiOkResponse({ description: 'Travel expense retrieved successfully' })
-  // async getExpense(
-  //   @Param('id') id: string,
-  //   @Req() req: RequestWithUser,
-  // ) {
-  //   try {
-  //     const result = await this.travelExpenseService.getExpense(id, req.currentUser!.id);
-  //     return success(result, 'Travel expense retrieved successfully');
-  //   } catch (error) {
-  //     this.logger.error('Failed to get travel expense', error);
-  //     throw error;
-  //   }
-  // }
+  @Get(':id')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get travel expense by ID' })
+  @ApiOkResponse({ description: 'Travel expense retrieved successfully' })
+  async getExpense(
+    @Param('id') id: string,
+    @Req() req: RequestWithUser,
+  ) {
+    try {
+      const result = await this.travelExpenseService.getExpense(id, req.currentUser!.id);
+      return success(result, 'Travel expense retrieved successfully');
+    } catch (error) {
+      this.logger.error('Failed to get travel expense', error);
+      throw error;
+    }
+  }
 
   @Put(':id')
   @HttpCode(HttpStatus.OK)
