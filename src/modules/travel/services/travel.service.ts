@@ -9,6 +9,7 @@ import {
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { Travel } from '../entities/travel.entity';
 import { randomBytes } from 'crypto';
 // import { CreateTravelInput } from './application/validators/travel.validators'; // 임시 주석
 
@@ -89,7 +90,7 @@ export class TravelService {
 
   // 여행 상세 캐시 TTL (하위 호환)
   private readonly TRAVEL_DETAIL_CACHE_TTL = 30 * 1000;
-  private readonly TRAVEL_LIST_REDIS_PREFIX = 'travel:list';
+  private readonly TRAVEL_LIST_REDIS_PREFIX = 'travel_list';
   private readonly TRAVEL_DETAIL_REDIS_PREFIX = 'travel:detail';
   private readonly INVITE_REDIS_PREFIX = 'invite:code';
   private readonly INVITE_TTL_SECONDS = 5 * 60;
@@ -802,6 +803,10 @@ export class TravelService {
       this.setCachedTravelDetail(travel.id, travel);
       this.setMemberListCache(travel.id, travel.members ?? []);
 
+      // 🚀 즉시 여행 리스트 캐시 무효화 (생성 후 바로 보이도록)
+      await this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:${currentUser.id}:*`).catch(() => undefined);
+      await this.adaptiveCacheService.invalidateByTag('travel_list').catch(() => undefined);
+
       // 🎯 백그라운드 이벤트 발송 (기존 동작에 영향 없음)
       this.queueEventService.emitTravelCreated({
         travelId: travel.id,
@@ -842,40 +847,43 @@ export class TravelService {
       return { total: cachedList.length, page, limit, items: itemsWithLinks };
     }
 
-    const listRows = await this.dataSource.query(
-        `SELECT
-          ut.id::text AS id,
-          ut.title,
-          to_char(ut.start_date::date, 'YYYY-MM-DD') AS start_date,
-          to_char(ut.end_date::date, 'YYYY-MM-DD') AS end_date,
-          ut.country_code,
-          ut.country_name_kr,
-          ut.country_currencies,
-          ut.base_currency,
-          ut.base_exchange_rate,
-         ti.invite_code,
-         ut.computed_status AS status,
-         ut.role,
-         ut.created_at::text,
-         owner_profile.name AS owner_name,
-         ut.total_count
-       FROM (
-         SELECT t.*,
-                COALESCE(tm.role, mp.role, 'member') AS role,
-                CASE WHEN t.end_date::date < CURRENT_DATE THEN 'archived' ELSE 'active' END AS computed_status,
-                COUNT(*) OVER() AS total_count
-         FROM travels t
-         INNER JOIN travel_members tm ON tm.travel_id = t.id AND tm.user_id = $1
-         LEFT JOIN profiles mp ON mp.id = tm.user_id
-          WHERE 1 = 1
-          ${statusCondition}
-          ORDER BY t.created_at DESC
-          LIMIT $2 OFFSET $3
-        ) AS ut
-        INNER JOIN profiles owner_profile ON owner_profile.id = ut.owner_id
-        LEFT JOIN travel_invites ti ON ti.travel_id = ut.id AND ti.status = 'active'`,
-      [userId, limit, offset],
-    );
+    // TypeORM QueryBuilder 방식으로 변환
+    const queryBuilder = this.dataSource
+      .getRepository(Travel)
+      .createQueryBuilder('t')
+      .innerJoin('travel_members', 'tm', 't.id = tm.travel_id AND tm.user_id = :userId', { userId })
+      .leftJoin('profiles', 'mp', 'mp.id = tm.user_id')
+      .innerJoin('profiles', 'owner_profile', 'owner_profile.id = t.owner_id')
+      .select([
+        't.id::text AS id',
+        't.title AS title',
+        'TO_CHAR(t.start_date::date, \'YYYY-MM-DD\') AS start_date',
+        'TO_CHAR(t.end_date::date, \'YYYY-MM-DD\') AS end_date',
+        't.country_code AS country_code',
+        't.country_name_kr AS country_name_kr',
+        't.country_currencies AS country_currencies',
+        't.base_currency AS base_currency',
+        't.base_exchange_rate AS base_exchange_rate',
+        't.invite_code AS invite_code',
+        'CASE WHEN t.end_date::date < CURRENT_DATE THEN \'archived\' ELSE \'active\' END AS status',
+        'COALESCE(tm.role, mp.role, \'member\') AS role',
+        't.created_at::text AS created_at',
+        'owner_profile.name AS owner_name',
+        'COUNT(*) OVER() AS total_count'
+      ])
+      .orderBy('t.start_date', 'DESC')
+      .addOrderBy('t.created_at', 'DESC')
+      .offset(offset)
+      .limit(limit);
+
+    // status 필터 적용 (TypeORM 방식)
+    if (pagination.status === 'active') {
+      queryBuilder.andWhere('t.end_date >= CURRENT_DATE');
+    } else if (pagination.status === 'archived') {
+      queryBuilder.andWhere('t.end_date < CURRENT_DATE');
+    }
+
+    const listRows = await queryBuilder.getRawMany();
 
     const total = Number(listRows[0]?.total_count ?? 0);
     // 동일 travel_id가 중복으로 내려오지 않도록 dedupe 후 멤버 로드
@@ -1024,6 +1032,25 @@ export class TravelService {
     this.invalidateTravelDetailCache(travelId);
     members.forEach((member: any) => this.invalidateUserTravelCache(member.user_id));
     await this.invalidateMembersCacheForTravel(travelId);
+
+    // 🚀 즉시 모든 멤버의 여행 리스트 캐시 무효화 (삭제 후 바로 안보이도록)
+    const memberCachePromises = members.map((member: any) =>
+      this.cacheService.delPattern(`${this.TRAVEL_LIST_REDIS_PREFIX}:${member.user_id}:*`)
+    );
+    await Promise.allSettled(memberCachePromises).catch(() => undefined);
+    await this.adaptiveCacheService.invalidateByTag('travel_list').catch(() => undefined);
+  }
+
+  async getUserData(userId: string): Promise<{ name?: string; avatar_url?: string; username?: string } | null> {
+    try {
+      const result = await this.dataSource.query(
+        'SELECT name, avatar_url, username FROM profiles WHERE id = $1',
+        [userId]
+      );
+      return result[0] || null;
+    } catch (error) {
+      return null;
+    }
   }
 
   async transferOwnership(travelId: string, currentOwnerId: string, newOwnerId: string): Promise<TravelSummary> {

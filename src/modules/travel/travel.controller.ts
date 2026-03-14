@@ -132,13 +132,15 @@ export class TravelController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      // 최소한의 UserRecord 생성
+      // DB에서 실제 사용자 정보 조회 (이름 포함)
+      const userData = await this.travelService.getUserData(req.currentUser!.id);
+
       const userRecord = {
         ...req.currentUser!,
-        name: req.currentUser!.name || null,
+        name: userData?.name || req.currentUser!.name || null,
         role: req.currentUser!.role || 'user',
-        avatar_url: null,
-        username: req.currentUser!.email,
+        avatar_url: userData?.avatar_url || null,
+        username: userData?.username || req.currentUser!.email,
         password_hash: '',
         created_at: new Date(),
         updated_at: new Date(),

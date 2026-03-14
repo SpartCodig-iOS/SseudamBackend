@@ -315,15 +315,36 @@ export class ProfileService {
   private async getProfileFromDB(userId: string): Promise<UserRecord | null> {
     const profile = await this.profileRepository.findOne({
       where: { id: userId },
-      select: ['id', 'email', 'name', 'avatar_url', 'username', 'role', 'created_at', 'updated_at']
+      select: ['id', 'email', 'name', 'avatar_url', 'username', 'role', 'created_at', 'updated_at', 'login_type']
     });
 
     if (!profile) return null;
 
+    // name이 null인 경우 소셜 로그인에서 이름 가져오기 시도
+    let displayName = profile.name;
+    if (!displayName && profile.login_type) {
+      try {
+        const supabaseUser = await this.supabaseService.getUserById(userId);
+        if (supabaseUser?.user_metadata?.full_name) {
+          displayName = supabaseUser.user_metadata.full_name;
+        } else if (supabaseUser?.user_metadata?.name) {
+          displayName = supabaseUser.user_metadata.name;
+        } else if (profile.username) {
+          displayName = profile.username;
+        } else if (profile.email) {
+          displayName = profile.email.split('@')[0];
+        }
+      } catch (error) {
+        this.logger.warn(`Failed to fetch social profile name for ${userId}:`, error);
+        // 소셜 로그인 실패시 기본값 사용
+        displayName = profile.username || profile.email?.split('@')[0] || 'User';
+      }
+    }
+
     return {
       id: profile.id,
       email: profile.email,
-      name: profile.name ?? undefined,
+      name: displayName ?? undefined,
       avatar_url: profile.avatar_url ?? undefined,
       username: profile.username ?? undefined,
       role: profile.role ?? 'user',
