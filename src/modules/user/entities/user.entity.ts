@@ -11,10 +11,10 @@ import { LoginType } from '../../auth/types/auth.types';
 // Forward references to avoid circular dependencies
 
 /**
- * profiles 테이블에 매핑되는 User 엔티티
+ * users 테이블에 매핑되는 User 엔티티
  * Supabase auth.users 와 1:1 연결되며, 애플리케이션 프로필 정보를 관리합니다.
  */
-@Entity('profiles')
+@Entity('users')
 @Index(['email'], { unique: true })
 @Index(['username'], { unique: true })
 export class User {
