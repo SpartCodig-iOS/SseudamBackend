@@ -35,18 +35,19 @@ export class UpdateTravelUseCase {
       this.logger.log('Executing update travel use case');
 
       // 비즈니스 로직: 여행 수정
-      const result = await this.travelService.updateTravel(input.travelId, input.memberId, {
-        title: input.title,
-        description: input.description,
-        startDate: input.startDate,
-        endDate: input.endDate,
-        baseCurrency: input.baseCurrency,
-        baseExchangeRate: input.baseExchangeRate,
-        countryCode: input.countryCode,
-        destinationCurrency: input.destinationCurrency,
-        budget: input.budget,
-        budgetCurrency: input.budgetCurrency,
-      });
+      const updateData: any = {};
+      if (input.title !== undefined) updateData.title = input.title;
+      if (input.description !== undefined) updateData.description = input.description;
+      if (input.startDate !== undefined) updateData.startDate = input.startDate;
+      if (input.endDate !== undefined) updateData.endDate = input.endDate;
+      if (input.baseCurrency !== undefined) updateData.baseCurrency = input.baseCurrency;
+      if (input.baseExchangeRate !== undefined) updateData.baseExchangeRate = input.baseExchangeRate;
+      if (input.countryCode !== undefined) updateData.countryCode = input.countryCode;
+      if (input.destinationCurrency !== undefined) updateData.destinationCurrency = input.destinationCurrency;
+      if (input.budget !== undefined) updateData.budget = input.budget;
+      if (input.budgetCurrency !== undefined) updateData.budgetCurrency = input.budgetCurrency;
+
+      const result = await this.travelService.updateTravel(input.travelId, input.memberId.toString(), updateData);
 
       return {
         success: true,

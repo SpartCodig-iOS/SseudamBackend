@@ -26,6 +26,13 @@ export class TravelSettlementRepository {
       .getMany();
   }
 
+  async findById(id: string): Promise<TravelSettlement | null> {
+    return this.repository.findOne({
+      where: { id },
+      relations: ['fromUser', 'toUser'],
+    });
+  }
+
   async deleteByTravel(travelId: string, manager?: EntityManager): Promise<void> {
     const repo = manager ? manager.getRepository(TravelSettlement) : this.repository;
     await repo.delete({ travelId });

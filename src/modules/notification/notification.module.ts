@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { NotificationService } from './services';
+import { NotificationService, PushNotificationService, APNSService } from './services';
 import { NotificationController } from './notification.controller';
 import { DeviceTokenEntity } from './entities/device-token.entity';
 import { User } from '../user/entities/user.entity';
@@ -24,7 +24,7 @@ import { OAuthModule } from '../oauth/oauth.module';
     OAuthModule,
   ],
   controllers: [NotificationController],
-  providers: [NotificationService],
-  exports: [NotificationService],
+  providers: [NotificationService, PushNotificationService, APNSService],
+  exports: [NotificationService, PushNotificationService],
 })
 export class NotificationModule {}

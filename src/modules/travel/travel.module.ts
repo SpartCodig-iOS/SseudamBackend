@@ -2,9 +2,9 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { TravelController } from './travel.controller';
 import { TravelService, OptimizedTravelService } from './services';
-import { MetaModule } from '../meta/meta.module';
+// import { MetaModule } from '../meta/meta.module'; // MetaModule disabled
 import { ProfileModule } from '../profile/profile.module';
-import { CacheService } from '../cache-shared/services/cacheService';
+import { NotificationModule } from '../notification/notification.module';
 import { QueueModule } from '../queue/queue.module';
 import { DatabaseModule } from '../database/database.module';
 import { OptimizedTravelRepository } from './repositories/optimized-travel.repository';
@@ -22,8 +22,9 @@ import {
 @Module({
   imports: [
     DatabaseModule,
-    MetaModule,
+    // MetaModule, // disabled
     ProfileModule,
+    NotificationModule,
     QueueModule,
     TypeOrmModule.forFeature([Travel, TravelMember]),
   ],
@@ -32,7 +33,6 @@ import {
     TravelService,
     OptimizedTravelService,
     OptimizedTravelRepository,
-    CacheService,
     // UseCases
     CreateTravelUseCase,
     InviteMemberUseCase,

@@ -26,11 +26,10 @@ export class InviteMemberUseCase {
     try {
       this.logger.log('Executing invite member use case');
 
-      // 비즈니스 로직: 멤버 초대
-      const result = await this.travelService.inviteMember(
+      // 비즈니스 로직: 멤버 초대 (초대 코드 생성)
+      const result = await this.travelService.createInvite(
         input.travelId,
-        input.inviterMemberId,
-        input.inviteeEmail
+        input.inviterMemberId.toString()
       );
 
       return {

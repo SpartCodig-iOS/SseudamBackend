@@ -18,6 +18,8 @@ interface CreateTravelInput {
   description?: string;
   startDate: Date;
   endDate: Date;
+  countryNameKr?: string;
+  countryCurrencies?: string[];
   baseCurrency: string;
   baseExchangeRate: number;
   countryCode?: string;
@@ -28,12 +30,12 @@ interface CreateTravelInput {
 import { UserRecord } from '../../../types/user.types';
 // import { MetaService } from '../../meta/meta.service'; // 임시 주석
 import { CacheService } from '../../cache-shared/services/cacheService';
-// import { AdaptiveCacheService } from '../cache-shared/services/adaptive-cache.service'; // 임시 주석
+import { AdaptiveCacheService } from '../../cache-shared/services/adaptive-cache.service';
 import { PushNotificationService } from '../../notification/services/push-notification.service';
 import { ProfileService } from '../../profile/services/profile.service';
 import { env } from '../../../config/env';
 import { QueueEventService } from '../../queue/services/queue-event.service';
-import { AppMetricsService } from '../../../common/metrics/app-metrics.service';
+// import { AppMetricsService } from '../../../common/metrics/app-metrics.service'; // ObservabilityModule disabled
 
 export interface TravelSummary {
   id: string;
@@ -103,12 +105,12 @@ export class TravelService {
     private readonly dataSource: DataSource,
     // private readonly metaService: MetaService, // 임시 주석
     private readonly cacheService: CacheService,
-    // private readonly adaptiveCacheService: AdaptiveCacheService, // 임시 주석
+    private readonly adaptiveCacheService: AdaptiveCacheService,
     private readonly eventEmitter: EventEmitter2,
     private readonly pushNotificationService: PushNotificationService,
     private readonly profileService: ProfileService,
     private readonly queueEventService: QueueEventService,
-    private readonly metricsService: AppMetricsService,
+    // private readonly metricsService: AppMetricsService, // ObservabilityModule disabled
   ) {}
 
   private emitTravelMembershipChanged(travelId: string): void {
@@ -168,14 +170,10 @@ export class TravelService {
   private async getCachedTravelList(key: string, rawKey = false): Promise<TravelSummary[] | null> {
     const cacheKey = rawKey ? key : key;
 
-    // AdaptiveCacheService L1(LRU) → L2(Redis) 순으로 조회
+    // CacheService를 사용하여 캐시 조회
     try {
-      const entry = await this.adaptiveCacheService.get<TravelSummary[] | null>(
+      const entry = await this.cacheService.get<TravelSummary[] | null>(
         `travel_list:${cacheKey}`,
-        {
-          baseTtl: Math.floor(this.TRAVEL_LIST_CACHE_TTL / 1000),
-          autoAdjust: true,
-        },
       );
 
       if (entry) {
@@ -220,12 +218,8 @@ export class TravelService {
    */
   private async getCachedTravelDetail(travelId: string): Promise<TravelDetail | null> {
     try {
-      const entry = await this.adaptiveCacheService.get<TravelDetail | null>(
+      const entry = await this.cacheService.get<TravelDetail | null>(
         `travel_detail:${travelId}`,
-        {
-          baseTtl: Math.floor(this.TRAVEL_DETAIL_CACHE_TTL / 1000),
-          autoAdjust: true,
-        },
       );
 
       if (entry) {
@@ -641,14 +635,8 @@ export class TravelService {
 
     this.countryCurrencyLoadPromise = (async () => {
       try {
-        const countries = await this.metaService.getCountries();
-        for (const country of countries) {
-          const code = (country.code ?? '').toUpperCase();
-          const currency = country.currencies?.[0];
-          if (code && currency) {
-            this.countryCurrencyCache.set(code, currency.toUpperCase());
-          }
-        }
+        // MetaService disabled - using fallback static mapping
+        this.logger.warn('[travel] MetaService disabled, country currency mapping unavailable');
         this.countryCurrencyLoaded = true;
       } catch (error) {
         this.logger.warn(
@@ -826,10 +814,10 @@ export class TravelService {
         this.logger.warn(`Failed to emit travel created event: ${error.message}`);
       });
 
-      this.metricsService?.recordTravelCreated('success');
+      // this.metricsService?.recordTravelCreated('success'); // ObservabilityModule disabled
       return travel;
     } catch (error) {
-      this.metricsService?.recordTravelCreated('error');
+      // this.metricsService?.recordTravelCreated('error'); // ObservabilityModule disabled
       this.logger.error('Failed to create travel', error as Error);
       throw new InternalServerErrorException('여행 생성에 실패했습니다.');
     }

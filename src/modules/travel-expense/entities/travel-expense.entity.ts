@@ -19,8 +19,8 @@ export class TravelExpense {
   @Column({ type: 'uuid' })
   travelId!: string;
 
-  @Column({ type: 'int' })
-  payerId!: number;
+  @Column({ type: 'uuid' })
+  payerId!: string;
 
   @Column({ length: 255 })
   title!: string;
@@ -28,8 +28,14 @@ export class TravelExpense {
   @Column({ type: 'text', nullable: true })
   description?: string;
 
-  @Column({ type: 'bigint' })
+  @Column({ type: 'text', nullable: true })
+  note?: string;
+
+  @Column({ type: 'decimal', precision: 15, scale: 2 })
   amount!: number;
+
+  @Column({ type: 'decimal', precision: 15, scale: 2, nullable: true })
+  convertedAmount?: number;
 
   @Column({ length: 3 })
   currency!: string;
@@ -45,6 +51,12 @@ export class TravelExpense {
 
   @Column({ default: false })
   isSettled!: boolean;
+
+  @Column({ type: 'uuid', nullable: true })
+  authorId?: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  payerName?: string;
 
   @CreateDateColumn()
   createdAt!: Date;

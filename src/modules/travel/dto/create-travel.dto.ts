@@ -47,6 +47,15 @@ export class CreateTravelDto {
   @IsOptional()
   @IsString()
   budgetCurrency?: string;
+
+  @ApiProperty({ required: false, example: '대한민국' })
+  @IsOptional()
+  @IsString()
+  countryNameKr?: string;
+
+  @ApiProperty({ required: false, example: ['KRW', 'USD'] })
+  @IsOptional()
+  countryCurrencies?: string[];
 }
 
 export class UpdateTravelDto {
@@ -99,6 +108,15 @@ export class UpdateTravelDto {
   @IsOptional()
   @IsString()
   budgetCurrency?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  countryNameKr?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  countryCurrencies?: string[];
 }
 
 export class InviteMemberDto {

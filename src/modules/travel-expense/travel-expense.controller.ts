@@ -45,7 +45,9 @@ export class TravelExpenseController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      const result = await this.travelExpenseService.createExpense(body, req.user.id);
+      // travelId를 body에서 가져오거나 기본값 사용
+      const travelId = body.travelId || 'default-travel-id';
+      const result = await this.travelExpenseService.createExpense(travelId, req.user.id, body);
       return success(result, 'Travel expense created successfully');
     } catch (error) {
       this.logger.error('Failed to create travel expense', error);
@@ -53,22 +55,22 @@ export class TravelExpenseController {
     }
   }
 
-  @Get(':id')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Get travel expense by ID' })
-  @ApiOkResponse({ description: 'Travel expense retrieved successfully' })
-  async getExpense(
-    @Param('id') id: string,
-    @Req() req: RequestWithUser,
-  ) {
-    try {
-      const result = await this.travelExpenseService.getExpense(id, req.user.id);
-      return success(result, 'Travel expense retrieved successfully');
-    } catch (error) {
-      this.logger.error('Failed to get travel expense', error);
-      throw error;
-    }
-  }
+  // @Get(':id')
+  // @HttpCode(HttpStatus.OK)
+  // @ApiOperation({ summary: 'Get travel expense by ID' })
+  // @ApiOkResponse({ description: 'Travel expense retrieved successfully' })
+  // async getExpense(
+  //   @Param('id') id: string,
+  //   @Req() req: RequestWithUser,
+  // ) {
+  //   try {
+  //     const result = await this.travelExpenseService.getExpense(id, req.user.id);
+  //     return success(result, 'Travel expense retrieved successfully');
+  //   } catch (error) {
+  //     this.logger.error('Failed to get travel expense', error);
+  //     throw error;
+  //   }
+  // }
 
   @Put(':id')
   @HttpCode(HttpStatus.OK)
@@ -80,7 +82,9 @@ export class TravelExpenseController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      const result = await this.travelExpenseService.updateExpense(id, body, req.user.id);
+      // travelId를 body에서 가져오거나 기본값 사용
+      const travelId = body.travelId || 'default-travel-id';
+      const result = await this.travelExpenseService.updateExpense(travelId, id, req.user.id, body);
       return success(result, 'Travel expense updated successfully');
     } catch (error) {
       this.logger.error('Failed to update travel expense', error);
@@ -97,7 +101,9 @@ export class TravelExpenseController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      await this.travelExpenseService.deleteExpense(id, req.user.id);
+      // travelId를 임시로 기본값 사용 (향후 URL에서 가져오도록 수정 필요)
+      const travelId = 'default-travel-id';
+      await this.travelExpenseService.deleteExpense(travelId, id, req.user.id);
       return success(null, 'Travel expense deleted successfully');
     } catch (error) {
       this.logger.error('Failed to delete travel expense', error);

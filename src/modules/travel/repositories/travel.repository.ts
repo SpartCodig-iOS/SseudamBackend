@@ -17,7 +17,7 @@ export class TravelRepository {
     });
   }
 
-  async findByMemberId(memberId: number): Promise<Travel[]> {
+  async findByMemberId(memberId: string): Promise<Travel[]> {
     return this.repository.find({
       where: { members: { userId: memberId } },
       relations: ['members', 'members.member'],

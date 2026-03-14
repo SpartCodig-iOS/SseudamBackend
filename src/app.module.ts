@@ -1,12 +1,12 @@
 import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
-// import { ObservabilityModule } from './modules/observability/observability.module'; // 임시 비활성화
+import { ObservabilityModule } from './modules/observability/observability.module';
 
 // 인프라 모듈 (전역, 순서 중요)
 import { CoreModule } from './modules/core/core.module';
 import { CacheSharedModule } from './modules/cache-shared/cache-shared.module';
 import { JwtSharedModule } from './modules/jwt-shared/jwt-shared.module';
-// import { AuthSharedModule } from './modules/shared/auth-shared.module'; // 임시 비활성화
+import { AuthSharedModule } from './modules/shared/auth-shared.module';
 import { DatabaseModule } from './modules/database/database.module';
 
 // 기능 모듈
@@ -60,8 +60,9 @@ import { NotificationModule } from './modules/notification/notification.module';
     CoreModule,           // EventEmitter, AnalyticsService, BackgroundJobService
     CacheSharedModule,    // CacheService, SmartCacheService, RateLimitService
     JwtSharedModule,      // JwtModule, JwtTokenService, EnhancedJwtService, JwtBlacklistService
+    AuthSharedModule,     // AuthSessionService, TypeOrmJwtBlacklistService, SupabaseService, OAuthTokenService
     DatabaseModule,       // TypeORM, Repository들
-    // ObservabilityModule,  // Prometheus 메트릭, /metrics 엔드포인트 - 임시 비활성화
+    ObservabilityModule,  // Prometheus 메트릭, /metrics 엔드포인트
 
     // ── 기능 모듈 (핵심만) ──
     HealthModule,         // 헬스체크

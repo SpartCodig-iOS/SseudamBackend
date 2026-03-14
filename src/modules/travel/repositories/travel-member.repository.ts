@@ -10,7 +10,7 @@ export class TravelMemberRepository {
     private readonly repository: Repository<TravelMember>,
   ) {}
 
-  async findByTravelAndMember(travelId: string, userId: number): Promise<TravelMember | null> {
+  async findByTravelAndMember(travelId: string, userId: string): Promise<TravelMember | null> {
     return this.repository.findOne({
       where: { travelId, userId },
       relations: ['member'],
@@ -29,7 +29,7 @@ export class TravelMemberRepository {
     return this.repository.save(member);
   }
 
-  async updateRole(travelId: string, userId: number, role: string): Promise<TravelMember | null> {
+  async updateRole(travelId: string, userId: string, role: string): Promise<TravelMember | null> {
     await this.repository.update(
       { travelId, userId },
       { role: role as any }
@@ -37,7 +37,7 @@ export class TravelMemberRepository {
     return this.findByTravelAndMember(travelId, userId);
   }
 
-  async remove(travelId: string, userId: number): Promise<boolean> {
+  async remove(travelId: string, userId: string): Promise<boolean> {
     const result = await this.repository.delete({ travelId, userId });
     return (result.affected || 0) > 0;
   }

@@ -8,6 +8,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Travel } from './travel.entity';
+import { User } from '../../user/entities/user.entity';
 
 export enum TravelMemberRole {
   OWNER = 'owner',
@@ -23,8 +24,8 @@ export class TravelMember {
   @Column({ type: 'uuid' })
   travelId!: string;
 
-  @Column({ type: 'int' })
-  userId!: number;
+  @Column({ type: 'uuid' })
+  userId!: string;
 
   @Column({
     type: 'enum',
@@ -50,4 +51,10 @@ export class TravelMember {
   })
   @JoinColumn({ name: 'travelId' })
   travel!: Travel;
+
+  @ManyToOne(() => User, {
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'userId' })
+  user!: User;
 }

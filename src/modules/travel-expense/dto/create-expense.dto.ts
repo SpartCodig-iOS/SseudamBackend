@@ -19,6 +19,10 @@ export class CreateExpenseInput {
   @IsDateString()
   expenseDate!: string;
 
+  @ApiProperty({ description: '결제자 ID' })
+  @IsString()
+  payerId!: string;
+
   @ApiProperty({ description: '카테고리', required: false })
   @IsOptional()
   @IsString()

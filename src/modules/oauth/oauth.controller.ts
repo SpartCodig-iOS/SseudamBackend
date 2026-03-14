@@ -200,7 +200,7 @@ export class OAuthController {
       return success(result, 'Lookup successful');
     }
 
-    const result = await this.socialAuthService.checkOAuthAccount(body.accessToken || body.token, (body.loginType || body.provider) as LoginType);
+    const result = await this.socialAuthService.checkOAuthAccount(body.accessToken || body.token || '', (body.loginType || body.provider) as LoginType);
     return success(result, 'Lookup successful');
   }
 

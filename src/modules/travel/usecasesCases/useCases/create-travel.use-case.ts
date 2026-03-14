@@ -36,7 +36,8 @@ export class CreateTravelUseCase {
       this.logger.log('Executing create travel use case');
 
       // 비즈니스 로직: 여행 생성
-      const result = await this.travelService.createTravel(input.memberId, {
+      const currentUser = { id: input.memberId } as any;
+      const result = await this.travelService.createTravel(currentUser, {
         title: input.title,
         description: input.description,
         startDate: input.startDate,

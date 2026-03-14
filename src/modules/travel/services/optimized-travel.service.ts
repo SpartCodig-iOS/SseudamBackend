@@ -52,7 +52,7 @@ export class OptimizedTravelService {
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly cacheService: CacheService,
-    private readonly metaService: MetaService,
+    // private readonly metaService: MetaService, // MetaModule disabled
     private readonly optimizedTravelRepository: OptimizedTravelRepository,
   ) {}
 
@@ -299,15 +299,8 @@ export class OptimizedTravelService {
 
   private async loadCountryCurrencyMapping(): Promise<void> {
     try {
-      const countries = await this.metaService.getCountries();
-      for (const country of countries) {
-        const code = (country.code ?? '').toUpperCase();
-        const currency = country.currencies?.[0];
-        if (code && currency) {
-          this.countryCurrencyCache.set(code, currency.toUpperCase());
-        }
-      }
-      this.logger.debug(`Loaded ${this.countryCurrencyCache.size} country-currency mappings`);
+      // MetaService disabled - using fallback static mapping
+      this.logger.warn('MetaService disabled, country currency mapping unavailable');
     } catch (error) {
       this.logger.error('Failed to load country-currency mapping:', error);
     }

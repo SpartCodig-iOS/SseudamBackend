@@ -1,16 +1,16 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, EntityManager } from 'typeorm';
+import { Repository, EntityManager, DataSource } from 'typeorm';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { CreateExpenseInput } from '../dto/create-expense.dto';
-import { MetaService } from '../../meta/meta.service';
+// import { MetaService } from '../../meta/meta.service'; // MetaModule disabled
 import { CacheService } from '../../cache-shared/services/cacheService';
 import { PushNotificationService } from '../../notification/services/push-notification.service';
 import { AnalyticsService } from '../../core/services/analytics.service';
 // import { ProfileService } from '../profile/profile.service'; // 경로 오류
 import { ProfileService } from '../../profile/services/profile.service';
 import { QueueEventService } from '../../queue/services/queue-event.service';
-import { AppMetricsService } from '../../../common/metrics/app-metrics.service';
+// import { AppMetricsService } from '../../../common/metrics/app-metrics.service'; // ObservabilityModule disabled
 import { TravelExpense } from '../../travel-expense/entities/travel-expense.entity';
 import { TravelExpenseParticipant } from '../../travel-expense/entities/travel-expense-participant.entity';
 import { Travel } from '../../travel/entities/travel.entity';
@@ -69,14 +69,15 @@ export class TravelExpenseService {
     private readonly travelMemberRepository: Repository<TravelMember>,
     @InjectRepository(Profile)
     private readonly profileRepository: Repository<Profile>,
-    private readonly metaService: MetaService,
+    // private readonly metaService: MetaService, // MetaModule disabled
+    private readonly dataSource: DataSource,
     private readonly cacheService: CacheService,
     private readonly eventEmitter: EventEmitter2,
     private readonly pushNotificationService: PushNotificationService,
     private readonly analyticsService: AnalyticsService,
     private readonly profileService: ProfileService,
     private readonly queueEventService: QueueEventService,
-    private readonly metricsService: AppMetricsService,
+    // private readonly metricsService: AppMetricsService, // ObservabilityModule disabled
   ) {}
 
   /**
@@ -176,13 +177,13 @@ export class TravelExpenseService {
     }
 
     const rawMembers = travel.members?.map(member => ({
-      id: member.user_id,
-      name: member.user?.name || null,
-      email: member.user?.email || null,
-      avatar_url: member.user?.avatar_url || null
+      id: member.userId,
+      name: member.nickname || null,
+      email: null, // User 관계가 없으므로 일시적으로 null
+      avatar_url: null // User 관계가 없으므로 일시적으로 null
     })) || [];
 
-    const memberIds = rawMembers.map((member) => member.id);
+    const memberIds = rawMembers.map((member) => String(member.id));
     if (!memberIds.includes(userId)) {
       throw new BadRequestException('해당 여행에 접근 권한이 없습니다.');
     }
@@ -191,17 +192,17 @@ export class TravelExpenseService {
     const memberEmailMap = new Map<string, string | null>();
     const memberAvatarMap = new Map<string, string | null>();
     rawMembers.forEach((member) => {
-      memberNameMap.set(member.id, member.name ?? null);
-      memberEmailMap.set(member.id, member.email ?? null);
-      memberAvatarMap.set(member.id, member.avatar_url ?? null);
+      memberNameMap.set(String(member.id), member.name ?? null);
+      memberEmailMap.set(String(member.id), member.email ?? null);
+      memberAvatarMap.set(String(member.id), member.avatar_url ?? null);
     });
 
     // 🚀 아바타 빠른 로딩 최적화
     await this.optimizeExpenseMemberAvatars(rawMembers, memberAvatarMap);
     const context: TravelContext = {
       id: travel.id,
-      baseCurrency: travel.base_currency || 'KRW',
-      baseExchangeRate: Number(travel.base_exchange_rate ?? 0),
+      baseCurrency: travel.baseCurrency || 'KRW',
+      baseExchangeRate: Number(travel.baseExchangeRate ?? 0),
       memberIds,
       memberNameMap,
       memberEmailMap,
@@ -232,23 +233,13 @@ export class TravelExpenseService {
     if (targetCurrency === 'KRW' && fallbackRate && currency !== targetCurrency) {
       return Number((amount * fallbackRate).toFixed(2));
     }
-    try {
-      const conversion = await this.metaService.getExchangeRate(currency, targetCurrency, amount);
-      // KRW 대상이면 rate 캐시 저장 (amount에 따라 선형이라 단일 rate로 충분)
-      if (targetCurrency === 'KRW' && amount !== 0) {
-        const rate = Number(conversion.quoteAmount) / amount;
-        if (Number.isFinite(rate)) {
-          this.conversionCache.set(currency, rate);
-        }
-      }
-      return Number(conversion.quoteAmount);
-    } catch (error) {
-      if (fallbackRate && targetCurrency === 'KRW' && currency !== targetCurrency) {
-        return Number((amount * fallbackRate).toFixed(2));
-      }
-      // 환율 API 실패 시 fallback: 동일 금액 반환 (추가 오류 방지)
-      return amount;
+    // MetaService disabled - use fallback logic only
+    if (fallbackRate && targetCurrency === 'KRW' && currency !== targetCurrency) {
+      return Number((amount * fallbackRate).toFixed(2));
     }
+    // 환율 API 비활성화 시 fallback: 동일 금액 반환
+    console.warn(`Currency conversion unavailable: ${currency} -> ${targetCurrency}, using 1:1 rate`);
+    return amount;
   }
 
   private normalizeParticipants(memberIds: string[], provided?: string[]): string[] {
@@ -359,13 +350,13 @@ export class TravelExpenseService {
     travelId: string,
     userId: string,
     payload: CreateExpenseInput,
-  ): Promise<TravelExpense> {
+  ): Promise<TravelExpenseDto> {
     // 요청 단위 환율 캐시 초기화
     this.conversionCache.clear();
 
     // 컨텍스트 조회와 환율 변환을 병렬로 처리하기 위해 먼저 컨텍스트만 조회
     const context = await this.getTravelContext(travelId, userId);
-    const payerId = payload.payerId ?? userId;
+    const payerId = userId;
     this.ensurePayer(context.memberIds, payerId);
     const expenseDate = this.normalizeExpenseDate(payload.expenseDate);
 
@@ -408,11 +399,11 @@ export class TravelExpenseService {
         [
           travelId,
           payload.title,
-          payload.note ?? null,
+          payload.description ?? null,
           payload.amount,
           payload.currency.toUpperCase(),
           convertedAmount,
-          expenseDate,
+          new Date(expenseDate),
           payload.category ?? null,
           payerId,
           userId,
@@ -433,23 +424,23 @@ export class TravelExpenseService {
       expenseMembers = context.memberIds.map((memberId) => this.getMemberProfile(context, memberId)!);
       participants = participantIds
         .map((memberId) => this.toParticipant(this.getMemberProfile(context, memberId)))
-        .filter(Boolean) as TravelExpenseParticipant[];
+        .filter(Boolean) as unknown as TravelExpenseParticipant[];
     });
 
     {
-      const result: TravelExpense = {
+      const result: TravelExpenseDto = {
         id: expense.id,
         title: expense.title,
         note: expense.note,
         amount: Number(expense.amount),
         currency: expense.currency,
         convertedAmount: Number(expense.converted_amount),
-        expenseDate,
+        expenseDate: expenseDate,
         category: expense.category,
         authorId: expense.author_id,
         payerName: (payerProfile as TravelExpenseMember | null)?.name ?? null,
         payer: payerProfile as TravelExpenseMember | null,
-        participants,
+        participants: participants as unknown as TravelExpenseParticipantDto[],
         expenseMembers,
       };
 
@@ -499,7 +490,7 @@ export class TravelExpenseService {
         console.warn(`Failed to emit expense added event: ${error.message}`);
       });
 
-      this.metricsService?.recordExpenseAdded(payload.currency, payload.category ?? null);
+      // this.metricsService?.recordExpenseAdded(payload.currency, payload.category ?? null); // ObservabilityModule disabled
       return result;
     }
   }
@@ -667,7 +658,7 @@ export class TravelExpenseService {
     expenseId: string,
     userId: string,
     payload: CreateExpenseInput,
-  ): Promise<TravelExpense> {
+  ): Promise<TravelExpenseDto> {
     // 1. 사용자가 여행 멤버인지 확인
     const context = await this.getTravelContext(travelId, userId);
 
@@ -687,7 +678,7 @@ export class TravelExpenseService {
       throw new NotFoundException('지출을 찾을 수 없습니다.');
     }
 
-    const payerId = payload.payerId ?? userId;
+    const payerId = userId;
     this.ensurePayer(context.memberIds, payerId);
     const expenseDate = this.normalizeExpenseDate(payload.expenseDate);
 
@@ -740,11 +731,11 @@ export class TravelExpenseService {
           expenseId,
           travelId,
           payload.title,
-          payload.note ?? null,
+          payload.description ?? null,
           payload.amount,
           payload.currency.toUpperCase(),
           convertedAmount,
-          expenseDate,
+          new Date(expenseDate),
           payload.category ?? null,
           payerId,
         ],
@@ -770,23 +761,23 @@ export class TravelExpenseService {
       updateExpenseMembers = context.memberIds.map((memberId) => this.getMemberProfile(context, memberId)!);
       updateParticipants = participantIds
         .map((memberId) => this.toParticipant(this.getMemberProfile(context, memberId)))
-        .filter(Boolean) as TravelExpenseParticipant[];
+        .filter(Boolean) as unknown as TravelExpenseParticipant[];
     });
 
     {
-      const result: TravelExpense = {
+      const result: TravelExpenseDto = {
         id: updatedExpense.id,
         title: updatedExpense.title,
         note: updatedExpense.note,
         amount: Number(updatedExpense.amount),
         currency: updatedExpense.currency,
         convertedAmount: Number(updatedExpense.converted_amount),
-        expenseDate,
+        expenseDate: expenseDate,
         category: updatedExpense.category,
         authorId: updatedExpense.author_id,
         payerName: (updatePayerProfile as TravelExpenseMember | null)?.name ?? null,
         payer: updatePayerProfile as TravelExpenseMember | null,
-        participants: updateParticipants,
+        participants: updateParticipants as unknown as TravelExpenseParticipantDto[],
         expenseMembers: updateExpenseMembers,
       };
 

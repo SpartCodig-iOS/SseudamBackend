@@ -24,7 +24,7 @@ export class DeleteTravelUseCase {
       this.logger.log('Executing delete travel use case');
 
       // 비즈니스 로직: 여행 삭제
-      await this.travelService.deleteTravel(input.travelId, input.memberId);
+      await this.travelService.deleteTravel(input.travelId, input.memberId.toString());
 
       return {
         success: true,

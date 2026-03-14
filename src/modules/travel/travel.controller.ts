@@ -56,8 +56,7 @@ export class TravelController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      const result = await this.createTravelUseCase.execute({
-        memberId: req.user.id,
+      const result = await this.createTravelUseCase.execute(req.user as any, {
         title: body.title,
         description: body.description,
         startDate: new Date(body.startDate),
@@ -68,6 +67,8 @@ export class TravelController {
         destinationCurrency: body.destinationCurrency,
         budget: body.budget,
         budgetCurrency: body.budgetCurrency,
+        countryNameKr: body.countryNameKr,
+        countryCurrencies: body.countryCurrencies,
       });
 
       return success(result, 'Travel created successfully');
@@ -87,10 +88,8 @@ export class TravelController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      const result = await this.inviteMemberUseCase.execute({
+      const result = await this.inviteMemberUseCase.execute((req.user as any).id.toString(), {
         travelId,
-        inviterMemberId: req.user.id,
-        inviteeEmail: body.email,
       });
 
       return success(result, 'Member invited successfully');
@@ -110,9 +109,7 @@ export class TravelController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      const result = await this.updateTravelUseCase.execute({
-        travelId,
-        memberId: req.user.id,
+      const result = await this.updateTravelUseCase.execute(travelId, (req.user as any).id.toString(), {
         title: body.title,
         description: body.description,
         startDate: body.startDate ? new Date(body.startDate) : undefined,
@@ -123,6 +120,8 @@ export class TravelController {
         destinationCurrency: body.destinationCurrency,
         budget: body.budget,
         budgetCurrency: body.budgetCurrency,
+        countryNameKr: body.countryNameKr,
+        countryCurrencies: body.countryCurrencies,
       });
 
       return success(result, 'Travel updated successfully');
@@ -141,10 +140,7 @@ export class TravelController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      const result = await this.deleteTravelUseCase.execute({
-        travelId,
-        memberId: req.user.id,
-      });
+      const result = await this.deleteTravelUseCase.execute(travelId, (req.user as any).id.toString());
 
       return success(result, 'Travel deleted successfully');
     } catch (error) {

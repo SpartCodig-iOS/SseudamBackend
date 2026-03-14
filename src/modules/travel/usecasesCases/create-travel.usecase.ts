@@ -16,8 +16,11 @@ export class CreateTravelUseCase {
   constructor(private readonly travelService: TravelService) {}
 
   async execute(data: CreateTravelData) {
+    // UserRecord 객체 생성 (임시)
+    const currentUser = { id: data.memberId } as any;
+
     return this.travelService.createTravel(
-      data.memberId,
+      currentUser,
       {
         title: data.title,
         description: data.description,

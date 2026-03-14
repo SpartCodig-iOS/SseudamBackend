@@ -5,7 +5,7 @@ import { TravelService } from '../services/travel.service';
 export class InviteMemberUseCase {
   constructor(private readonly travelService: TravelService) {}
 
-  async execute(userId: string, inviteCode: string): Promise<any> {
-    return this.travelService.joinByInviteCode(userId, inviteCode);
+  async execute(userId: string, data: { travelId: string }): Promise<any> {
+    return this.travelService.createInvite(data.travelId, userId);
   }
 }
