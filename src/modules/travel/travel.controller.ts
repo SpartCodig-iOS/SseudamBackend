@@ -25,6 +25,7 @@ import { RequestWithUser } from '../../types/request.types';
 import { success } from '../../types/api.types';
 import { CreateTravelDto, UpdateTravelDto, InviteMemberDto } from './dto/create-travel.dto';
 import { TravelExpenseService } from '../travel-expense/services/travel-expense.service';
+import { TravelService } from './services/travel.service';
 
 // Use Cases
 import {
@@ -49,6 +50,7 @@ export class TravelController {
     private readonly deleteTravelUseCase: DeleteTravelUseCase,
     private readonly getTravelListUseCase: GetTravelListUseCase,
     private readonly travelExpenseService: TravelExpenseService,
+    private readonly travelService: TravelService,
   ) {}
 
   @Get()
@@ -91,27 +93,7 @@ export class TravelController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      // TODO: TravelService에서 여행 상세 조회 구현
-      const result = {
-        id: travelId,
-        title: 'Sample Travel',
-        description: 'Sample description',
-        startDate: new Date().toISOString(),
-        endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        countryCode: 'KR',
-        countryNameKr: '대한민국',
-        baseCurrency: 'KRW',
-        baseExchangeRate: 1,
-        destinationCurrency: 'KRW',
-        countryCurrencies: ['KRW'],
-        budget: 1000000,
-        budgetCurrency: 'KRW',
-        members: [],
-        inviteCode: 'sample123',
-        status: 'active',
-        createdAt: new Date().toISOString(),
-        ownerName: '사용자',
-      };
+      const result = await this.travelService.getTravelDetail(travelId, req.currentUser!.id);
 
       return success(result, 'Travel detail retrieved successfully');
     } catch (error) {
