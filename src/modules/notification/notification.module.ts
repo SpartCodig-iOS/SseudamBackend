@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { NotificationService } from './notification.service';
+import { NotificationService } from './services';
 import { NotificationController } from './notification.controller';
 import { DeviceTokenEntity } from './entities/device-token.entity';
 import { User } from '../user/entities/user.entity';

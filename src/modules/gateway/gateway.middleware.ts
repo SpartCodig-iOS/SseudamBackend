@@ -1,6 +1,6 @@
 import { Injectable, NestMiddleware, Logger, UnauthorizedException, ForbiddenException, HttpException, HttpStatus } from '@nestjs/common';
 import { Request, Response, NextFunction } from 'express';
-import { GatewayService, GatewayRequest, AuthenticatedRequest } from './gateway.service';
+import { GatewayService, GatewayRequest, AuthenticatedRequest } from './services/gateway.service';
 
 // Express Request 타입 확장
 declare global {

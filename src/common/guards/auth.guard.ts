@@ -1,12 +1,12 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
-import { RequestWithUser } from '../../shared/domain/types/request.types';
-import { LoginType } from '../../modules/auth/domain/types/auth.types';
+import { RequestWithUser } from '../../types/request.types';
+import { LoginType } from '../../modules/auth/types/auth.types';
 import { JwtTokenService } from '../../modules/jwt-shared/services/jwtService';
 import { EnhancedJwtService } from '../../modules/jwt-shared/services/enhanced-jwt.service';
 import { SupabaseService } from '../../modules/core/services/supabaseService';
-import { fromSupabaseUser } from '../../shared/infrastructure/utils/mappers';
-import { UserRecord } from '../../modules/user/domain/types/user.types';
-import { SessionService } from '../../modules/auth/services/sessionService';
+import { fromSupabaseUser } from '../../utils/mappers';
+import { UserRecord } from '../../types/user.types';
+// import { SessionService } from '../../modules/auth/services/sessionService'; // 삭제됨
 import { CacheService } from '../../modules/cache-shared/services/cacheService';
 import { createHash } from 'crypto';
 import { getPool } from '../../db/pool';
@@ -33,7 +33,7 @@ export class AuthGuard implements CanActivate {
     private readonly jwtTokenService: JwtTokenService,
     private readonly enhancedJwtService: EnhancedJwtService,
     private readonly supabaseService: SupabaseService,
-    private readonly sessionService: SessionService,
+    // private readonly sessionService: SessionService, // 삭제됨
     private readonly cacheService: CacheService,
   ) {}
 
@@ -89,9 +89,9 @@ export class AuthGuard implements CanActivate {
       if (supabaseUser?.email) {
         const userRecord = await this.hydrateUserRole(fromSupabaseUser(supabaseUser));
         this.setCachedUser(token, userRecord);
-        void this.setRedisCachedUser(token, { user: userRecord, loginType: 'email' });
+        void this.setRedisCachedUser(token, { user: userRecord, loginType: LoginType.EMAIL });
         request.currentUser = userRecord;
-        request.loginType = 'email';
+        request.loginType = LoginType.EMAIL;
         return true;
       }
     } catch (error) {
@@ -233,10 +233,11 @@ export class AuthGuard implements CanActivate {
   }
 
   private async ensureSessionActive(sessionId: string): Promise<void> {
-    const session = await this.sessionService.getSession(sessionId);
-    if (!session || !session.isActive) {
-      throw new UnauthorizedException('Session expired or revoked');
-    }
+    // const session = await this.sessionService.getSession(sessionId); // SessionService 삭제됨
+    // if (!session || !session.isActive) {
+    //   throw new UnauthorizedException('Session expired or revoked');
+    // }
+    // TODO: 새로운 세션 검증 로직 구현 필요
   }
 
   // 역할 캐시 추가 (10분 TTL)

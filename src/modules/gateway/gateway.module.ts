@@ -2,9 +2,8 @@ import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { GatewayController } from './gateway.controller';
-import { GatewayService } from './gateway.service';
 import { GatewayMiddleware } from './gateway.middleware';
-import { TypeOrmGatewayService } from './services/typeorm-gateway.service';
+import { GatewayService, TypeOrmGatewayService } from './services';
 import { GatewayAuthGuard } from './guards/gateway-auth.guard';
 
 // Auth 관련

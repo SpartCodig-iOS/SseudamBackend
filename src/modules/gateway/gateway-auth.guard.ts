@@ -2,7 +2,7 @@ import { Injectable, CanActivate, ExecutionContext, UnauthorizedException, Forbi
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 import { getGatewayUser } from './gateway.middleware';
-import { UserRole } from '../../types/user';
+import { UserRole } from '../../types/user.types';
 
 /**
  * Gateway 미들웨어에서 이미 검증된 사용자 정보를 기반으로 하는 인증 가드

@@ -274,3 +274,6 @@ export class TypeOrmJwtBlacklistService {
     }
   }
 }
+
+// 호환성을 위한 별칭 export
+export { TypeOrmJwtBlacklistService as JwtBlacklistService };

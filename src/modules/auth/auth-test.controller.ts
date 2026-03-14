@@ -1,7 +1,7 @@
 import { Controller, Post, Body, Get, Query, ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiExcludeController } from '@nestjs/swagger';
-import { AuthService } from './auth.service';
-import { LoginInput } from './application/validators/auth.validators';
+import { AuthService } from './services';
+import { LoginInput } from './validators/auth.validators';
 
 /**
  * 개발/스테이징 환경 전용 인증 테스트 컨트롤러.

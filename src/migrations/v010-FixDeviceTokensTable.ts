@@ -1,4 +1,4 @@
-import { MigrationInterface, QueryRunner, Table, Index } from 'typeorm';
+import { MigrationInterface, QueryRunner, Table, TableIndex } from 'typeorm';
 
 export class FixDeviceTokensTable1741580000000 implements MigrationInterface {
   name = 'FixDeviceTokensTable1741580000000';
@@ -104,11 +104,27 @@ export class FixDeviceTokensTable1741580000000 implements MigrationInterface {
 
     // Create indexes
     const indexes = [
-      new Index('IDX_device_tokens_user_id', ['user_id']),
-      new Index('IDX_device_tokens_device_token', ['device_token'], { isUnique: true }),
-      new Index('IDX_device_tokens_platform', ['platform']),
-      new Index('IDX_device_tokens_active', ['is_active']),
-      new Index('IDX_device_tokens_pending_key', ['pending_key']),
+      new TableIndex({
+        name: 'IDX_device_tokens_user_id',
+        columnNames: ['user_id']
+      }),
+      new TableIndex({
+        name: 'IDX_device_tokens_device_token',
+        columnNames: ['device_token'],
+        isUnique: true
+      }),
+      new TableIndex({
+        name: 'IDX_device_tokens_platform',
+        columnNames: ['platform']
+      }),
+      new TableIndex({
+        name: 'IDX_device_tokens_active',
+        columnNames: ['is_active']
+      }),
+      new TableIndex({
+        name: 'IDX_device_tokens_pending_key',
+        columnNames: ['pending_key']
+      }),
     ];
 
     for (const index of indexes) {

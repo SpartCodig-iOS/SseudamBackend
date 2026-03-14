@@ -1,0 +1,238 @@
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
+// import { env } from '../../config/env';
+// import { AppVersionRepository } from '../meta/repositories/app-version.repository';
+
+export interface AppVersionMeta {
+  bundleId: string;
+  latestVersion: string;
+  releaseNotes: string | null;
+  trackName: string | null;
+  minimumOsVersion: string | null;
+  lastUpdated: string | null;
+  minSupportedVersion: string | null;
+  forceUpdate: boolean;
+  currentVersion: string | null;
+  shouldUpdate: boolean;
+  message: string | null;
+  appStoreUrl: string | null;
+}
+
+@Injectable()
+export class VersionService {
+  private readonly logger = new Logger(VersionService.name);
+  private readonly networkTimeout = 5000;
+  private readonly appVersionCache = new Map<string, { data: AppVersionMeta; expiresAt: number }>();
+  private readonly appVersionCacheTTL = 1000 * 60 * 5; // 5분
+
+  constructor(
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
+    // private readonly appVersionRepository: AppVersionRepository,
+  ) {}
+
+  private toIsoString(input: any): string | null {
+    if (!input) return null;
+    const d = input instanceof Date ? input : new Date(input);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString();
+  }
+
+  private async ensureAppVersionTable(): Promise<void> {
+    // This method can be empty as the table is managed by migrations
+    // It's kept for backward compatibility
+  }
+
+  private async fetchDbVersion(bundleId: string) {
+    try {
+      // const appVersion = await this.appVersionRepository.findByBundleId(bundleId);
+      // if (!appVersion) return null;
+
+      // return {
+      //   bundle_id: appVersion.bundleId,
+      //   latest_version: appVersion.latestVersion,
+      //   min_supported_version: appVersion.minSupportedVersion,
+      //   force_update: appVersion.forceUpdate,
+      //   release_notes: appVersion.releaseNotes,
+      //   updated_at: appVersion.updatedAt,
+      // };
+      return null; // 임시로 null 반환
+    } catch (error) {
+      // DB 문제 시 App Store 결과만으로 동작 (로그는 최소화)
+      return null;
+    }
+  }
+
+  private async fetchWithTimeout(url: string, retries = 2): Promise<Response> {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), this.networkTimeout);
+
+        const response = await fetch(url, {
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'SseudamBackend/1.0.0',
+            'Accept': 'application/json',
+          },
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        return response;
+      } catch (error) {
+        if (attempt === retries) {
+          throw new ServiceUnavailableException('App Store lookup failed');
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+    throw new ServiceUnavailableException('App Store lookup failed');
+  }
+
+  private compareVersions(a: string, b: string): number {
+    const parse = (v: string) => v.split('.').map((part) => Number(part) || 0);
+    const aParts = parse(a);
+    const bParts = parse(b);
+    const len = Math.max(aParts.length, bParts.length);
+    for (let i = 0; i < len; i++) {
+      const aVal = aParts[i] ?? 0;
+      const bVal = bParts[i] ?? 0;
+      if (aVal > bVal) return 1;
+      if (aVal < bVal) return -1;
+    }
+    return 0;
+  }
+
+  async getAppVersion(
+    bundleId?: string,
+    currentVersion?: string,
+    forceUpdateOverride?: boolean,
+  ): Promise<AppVersionMeta> {
+    await this.ensureAppVersionTable();
+    // bundleId 고정값으로 설정
+    const resolvedBundleId = 'io.sseudam.co';
+
+    const cacheKey = `${resolvedBundleId}|${currentVersion ?? ''}|${forceUpdateOverride ?? 'auto'}`;
+    const cached = this.appVersionCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
+
+    const dbVersion = await this.fetchDbVersion(resolvedBundleId);
+
+    let app: any = null;
+    try {
+      // KR 스토어 기준으로 조회 (릴리즈 타이밍/노트 차이 방지)
+      const url = `https://itunes.apple.com/lookup?bundleId=${encodeURIComponent(resolvedBundleId)}&country=kr`;
+      const response = await this.fetchWithTimeout(url, 2);
+      const payload = (await response.json()) as any;
+      app = payload?.results?.[0] ?? null;
+    } catch (error) {
+      // App Store 조회 실패 시 DB 값이 없으면 오류
+      if (!dbVersion) {
+        throw new ServiceUnavailableException('App version not found from App Store');
+      }
+    }
+
+    if (!app && !dbVersion) {
+      throw new ServiceUnavailableException('App version not found from App Store');
+    }
+
+    const appStoreVersion = app?.version ?? null;
+    // 최우선 순위: DB가 있으면 DB 값을 사용, 없으면 App Store 값 사용
+    const latestVersion = (dbVersion as any)?.latest_version ?? appStoreVersion ?? '0.0.0';
+    const minSupported = (dbVersion as any)?.min_supported_version ?? '1.0.0';
+    const forceUpdate = forceUpdateOverride ?? (dbVersion as any)?.force_update ?? true;
+
+    // releaseNotes/lastUpdated: DB가 더 최신 버전이면 DB 값을 우선 사용
+    const dbIsNewerOrEqual =
+      (dbVersion as any)?.latest_version && appStoreVersion
+        ? this.compareVersions((dbVersion as any).latest_version, appStoreVersion) >= 0
+        : !!(dbVersion as any)?.latest_version;
+
+    const releaseNotes = dbIsNewerOrEqual
+      ? (dbVersion as any)?.release_notes ?? app?.releaseNotes ?? null
+      : app?.releaseNotes ?? (dbVersion as any)?.release_notes ?? null;
+
+    const lastUpdated = dbIsNewerOrEqual
+      ? this.toIsoString((dbVersion as any)?.updated_at ?? app?.currentVersionReleaseDate ?? null)
+      : this.toIsoString(app?.currentVersionReleaseDate ?? (dbVersion as any)?.updated_at ?? null);
+
+    const data: AppVersionMeta = {
+      bundleId: resolvedBundleId,
+      latestVersion,
+      releaseNotes,
+      trackName: app?.trackName ?? null,
+      minimumOsVersion: app?.minimumOsVersion ?? null,
+      lastUpdated,
+      minSupportedVersion: minSupported,
+      forceUpdate,
+      currentVersion: currentVersion ?? null,
+      shouldUpdate: false,
+      message: null,
+      appStoreUrl: app?.trackViewUrl ?? null,
+    };
+
+    if (currentVersion) {
+      data.shouldUpdate = this.compareVersions(currentVersion, data.latestVersion) < 0;
+    }
+
+    if (data.shouldUpdate || data.forceUpdate) {
+      data.message = '최신 버전이 나왔습니다. 앱스토어에서 업데이트 해주세요!';
+    }
+
+    // DB에 버전 정보를 캐싱 (성공해도 실패해도 본 응답에는 영향 없음)
+    this.upsertDbVersion(data).catch((err) =>
+      this.logger.warn(`[version] Failed to upsert app_versions: ${err instanceof Error ? err.message : String(err)}`),
+    );
+
+    this.appVersionCache.set(cacheKey, {
+      data,
+      expiresAt: Date.now() + this.appVersionCacheTTL,
+    });
+
+    return data;
+  }
+
+  private async upsertDbVersion(data: AppVersionMeta): Promise<void> {
+    // await this.appVersionRepository.upsertVersion({
+    //   bundleId: data.bundleId,
+    //   latestVersion: data.latestVersion,
+    //   minSupportedVersion: data.minSupportedVersion,
+    //   forceUpdate: data.forceUpdate,
+    //   releaseNotes: data.releaseNotes,
+    // });
+    // 임시로 비활성화
+  }
+
+  async setAppVersionManual(payload: {
+    latestVersion: string;
+    releaseNotes?: string | null;
+  }): Promise<void> {
+    const bundleId = 'io.sseudam.co';
+    const minSupported = '17.0';
+    const forceUpdate = true;
+
+    // await this.appVersionRepository.upsertVersion({
+    //   bundleId,
+    //   latestVersion: payload.latestVersion,
+    //   minSupportedVersion: minSupported,
+    //   forceUpdate,
+    //   releaseNotes: payload.releaseNotes ?? null,
+    // });
+    // 임시로 비활성화
+
+    // Clear cache for this bundle
+    for (const key of Array.from(this.appVersionCache.keys())) {
+      if (key.startsWith(`${bundleId}|`)) {
+        this.appVersionCache.delete(key);
+      }
+    }
+  }
+}

@@ -7,17 +7,18 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
-import { SocialAuthService } from './social-auth.service';
-import { OptimizedOAuthService } from './optimized-oauth.service';
-import { appleRevokeSchema, oauthTokenSchema } from '../../validators/authSchemas';
-import { success } from '../../types/api';
+import { SocialAuthService, OptimizedOAuthService } from './services';
+import { LoginType } from '../auth/types/auth.types';
+import { appleRevokeSchema, oauthTokenSchema } from '../auth/validators/auth.validators';
+import { success } from '../../types/api.types';
+import { OAuthLoginDto } from './dto/oauth-login.dto';
 import { LoginResponseDto } from '../auth/dto/auth-response.dto';
 import { SocialLookupResponseDto } from './dto/oauth-response.dto';
 import { buildAuthSessionResponse, buildLightweightAuthResponse } from '../auth/auth-response.util';
 import { AuthGuard } from '../../common/guards/auth.guard';
-import { RequestWithUser } from '../../types/request';
+import { RequestWithUser } from '../../types/request.types';
 import { CacheService } from '../cache-shared/services/cacheService';
-import { DeviceTokenService } from '../notification/services/device-token.service';
+// import { DeviceTokenService } from '../notification/services/device-token.service'; // 삭제됨
 import { randomBytes } from 'crypto';
 
 @ApiTags('OAuth')
@@ -27,16 +28,16 @@ export class OAuthController {
     private readonly socialAuthService: SocialAuthService,
     private readonly optimizedOAuthService: OptimizedOAuthService,
     private readonly cacheService: CacheService,
-    private readonly deviceTokenService: DeviceTokenService,
+    // private readonly deviceTokenService: DeviceTokenService, // 삭제됨
   ) {}
 
-  private async handleOAuthLogin(body: unknown, message: string) {
-    const payload = oauthTokenSchema.parse(body);
+  private async handleOAuthLogin(body: OAuthLoginDto, message: string) {
+    const payload = body;
 
     // Kakao는 authorizationCode + codeVerifier 필수, accessToken 경로는 사용하지 않음
-    const tokenToUse = payload.loginType === 'kakao'
+    const tokenToUse = (payload.loginType || payload.provider) === 'kakao'
       ? payload.authorizationCode
-      : payload.accessToken;
+      : (payload.accessToken || payload.token);
     if (!tokenToUse) {
       throw new BadRequestException('Missing token or authorizationCode');
     }
@@ -44,10 +45,11 @@ export class OAuthController {
     // 최적화된 OAuth 서비스 사용
     const result = await this.optimizedOAuthService.fastOAuthLogin(
       tokenToUse,
-      payload.loginType,
+      (payload.loginType || payload.provider) as any,
       {
         appleRefreshToken: payload.appleRefreshToken,
         googleRefreshToken: payload.googleRefreshToken,
+        kakaoRefreshToken: payload.kakaoRefreshToken,
         authorizationCode: payload.authorizationCode,
         codeVerifier: payload.codeVerifier,
         redirectUri: payload.redirectUri,
@@ -56,9 +58,10 @@ export class OAuthController {
 
     // deviceToken이 제공되면 디바이스 토큰 저장
     if (payload.deviceToken && result.user?.id) {
-      await this.deviceTokenService.upsertDeviceToken(result.user.id, payload.deviceToken).catch(err => {
-        console.warn('Failed to save device token:', err.message);
-      });
+      // TODO: Implement device token service
+      // await this.deviceTokenService.upsertDeviceToken(result.user.id, payload.deviceToken).catch(err => {
+      //   console.warn('Failed to save device token:', err.message);
+      // });
     }
 
     return success(buildLightweightAuthResponse(result), message);
@@ -113,7 +116,7 @@ export class OAuthController {
       },
     },
   })
-  async issueToken(@Body() body: unknown) {
+  async issueToken(@Body() body: OAuthLoginDto) {
     return this.handleOAuthLogin(body, 'Signup successful');
   }
 
@@ -151,7 +154,7 @@ export class OAuthController {
       },
     },
   })
-  async login(@Body() body: unknown) {
+  async login(@Body() body: OAuthLoginDto) {
     return this.handleOAuthLogin(body, 'Login successful');
   }
 
@@ -184,20 +187,20 @@ export class OAuthController {
       },
     },
   })
-  async lookupOAuthAccount(@Body() body: unknown) {
+  async lookupOAuthAccount(@Body() body: OAuthLoginDto) {
     const payload = oauthTokenSchema.parse(body);
-    if (payload.loginType === 'kakao' && payload.authorizationCode) {
-      if (!payload.codeVerifier) {
+    if (body.loginType === 'kakao' && body.authorizationCode) {
+      if (!body.codeVerifier) {
         throw new BadRequestException('codeVerifier is required for Kakao PKCE lookup');
       }
-      const result = await this.socialAuthService.checkKakaoAccountWithCode(payload.authorizationCode, {
-        codeVerifier: payload.codeVerifier,
-        redirectUri: payload.redirectUri,
+      const result = await this.socialAuthService.checkKakaoAccountWithCode(body.authorizationCode, {
+        codeVerifier: body.codeVerifier,
+        redirectUri: body.redirectUri,
       });
       return success(result, 'Lookup successful');
     }
 
-    const result = await this.socialAuthService.checkOAuthAccount(payload.accessToken, payload.loginType);
+    const result = await this.socialAuthService.checkOAuthAccount(body.accessToken || body.token, (body.loginType || body.provider) as LoginType);
     return success(result, 'Lookup successful');
   }
 
@@ -230,7 +233,7 @@ export class OAuthController {
       throw new UnauthorizedException('Unauthorized');
     }
     const payload = appleRevokeSchema.parse(body);
-    await this.socialAuthService.revokeAppleConnection(req.currentUser.id, payload.refreshToken);
+    await this.socialAuthService.revokeAppleConnection(req.currentUser.id, payload.refreshToken || payload.authorizationCode);
     return success({}, 'Apple connection revoked');
   }
 
@@ -277,7 +280,7 @@ export class OAuthController {
     }
 
     try {
-      const result = await this.optimizedOAuthService.fastOAuthLogin(code, 'kakao', {
+      const result = await this.optimizedOAuthService.fastOAuthLogin(code, LoginType.KAKAO, {
         authorizationCode: code,
         codeVerifier,
         redirectUri,

@@ -1,16 +1,18 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ProfileController } from './profile.controller';
-import { ProfileService } from './profile.service';
+import { ProfileService } from './services';
 import { CacheService } from '../cache-shared/services/cacheService';
 import { SupabaseService } from '../core/services/supabaseService';
 import { DatabaseModule } from '../database/database.module';
-import { Profile } from '../../entities/profile.entity';
+import { OAuthModule } from '../oauth/oauth.module';
+import { User } from '../user/entities/user.entity';
 
 @Module({
   imports: [
     DatabaseModule,
-    TypeOrmModule.forFeature([Profile])
+    OAuthModule,
+    TypeOrmModule.forFeature([User])
   ],
   controllers: [ProfileController],
   providers: [ProfileService, CacheService, SupabaseService],

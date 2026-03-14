@@ -1,79 +1,81 @@
-import { User } from '@supabase/supabase-js';
-import { UserRecord, UserResponseDto, UserProfileDto } from '../../../modules/user/domain/types/user.types';
-
-const formatDate = (value: Date | string | null | undefined): string | null => {
-  if (!value) return null;
-  const date = typeof value === 'string' ? new Date(value) : value;
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
-};
-
-export const toUserResponse = (user: UserRecord): UserResponseDto => ({
-  id: user.id,
-  email: user.email,
-  name: user.name ?? null,
-  avatarURL: null,
-  role: user.role,
-  createdAt: formatDate(user.created_at) ?? null,
-  userId: user.username,
-});
-
-export const toProfileResponse = (user: UserRecord): UserProfileDto => ({
-  id: user.id,
-  userId: user.username,
-  email: user.email,
-  name: user.name,
-  avatarURL: user.avatar_url,
-  role: user.role,
-  createdAt: formatDate(user.created_at),
-  updatedAt: formatDate(user.updated_at),
-});
-
-interface SupabaseNameOptions {
-  preferDisplayName?: boolean;
+export interface MapperOptions {
+  excludeFields?: string[];
+  includeFields?: string[];
 }
 
-const getIdentityData = (user: User): Record<string, any>[] =>
-  (user.identities ?? [])
-    .map((identity) => identity.identity_data as Record<string, any> | undefined)
-    .filter((data): data is Record<string, any> => Boolean(data));
+export class BaseMapper {
+  static mapToDto<T, U>(
+    entity: T,
+    dtoClass: new () => U,
+    options?: MapperOptions
+  ): U {
+    const dto = new dtoClass();
 
-const resolveUserName = (user: User, options?: SupabaseNameOptions): string | null => {
-  const metadata = user.user_metadata ?? {};
-  const identityData = getIdentityData(user);
+    if (!entity) {
+      return dto;
+    }
 
-  const displayName =
-    (metadata.display_name as string | undefined) ??
-    (metadata.full_name as string | undefined) ??
-    identityData.map((data) => (data.full_name as string | undefined) ?? (data.name as string | undefined) ?? (data.given_name as string | undefined) ?? null)
-      .find((value) => Boolean(value)) ??
-    null;
+    const entityKeys = Object.keys(entity as object);
+    const includeFields = options?.includeFields;
+    const excludeFields = options?.excludeFields || [];
 
-  const regularName =
-    (metadata.name as string | undefined) ??
-    (metadata.full_name as string | undefined) ??
-    identityData.map((data) => (data.name as string | undefined) ?? (data.full_name as string | undefined) ?? (data.given_name as string | undefined) ?? null)
-      .find((value) => Boolean(value)) ??
-    null;
+    for (const key of entityKeys) {
+      if (excludeFields.includes(key)) {
+        continue;
+      }
 
-  if (options?.preferDisplayName) {
-    return displayName ?? regularName;
+      if (includeFields && !includeFields.includes(key)) {
+        continue;
+      }
+
+      (dto as any)[key] = (entity as any)[key];
+    }
+
+    return dto;
   }
-  return regularName ?? displayName;
-};
 
-export const fromSupabaseUser = (supabaseUser: User, options?: SupabaseNameOptions): UserRecord => ({
-  id: supabaseUser.id,
-  email: supabaseUser.email ?? '',
-  name: resolveUserName(supabaseUser, options),
-  avatar_url:
-    (supabaseUser.user_metadata?.avatar_url as string | null) ??
-    getIdentityData(supabaseUser)
-      .map((data) => (data.avatar_url as string | undefined) ?? (data.picture as string | undefined) ?? (data.photo as string | undefined) ?? null)
-      .find((value) => Boolean(value)) ??
-    null,
-  username: supabaseUser.email?.split('@')[0] || supabaseUser.id,
-  password_hash: '',
-  role: 'user',
-  created_at: supabaseUser.created_at ? new Date(supabaseUser.created_at) : null,
-  updated_at: supabaseUser.updated_at ? new Date(supabaseUser.updated_at) : null,
-});
+  static mapToDtoArray<T, U>(
+    entities: T[],
+    dtoClass: new () => U,
+    options?: MapperOptions
+  ): U[] {
+    if (!entities || !Array.isArray(entities)) {
+      return [];
+    }
+
+    return entities.map(entity => this.mapToDto(entity, dtoClass, options));
+  }
+}
+
+// Supabase User to UserRecord mapper
+export function fromSupabaseUser(user: any): any {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    username: user.username,
+    avatar_url: user.avatar_url,
+    role: user.role,
+    created_at: user.created_at,
+    updated_at: user.updated_at,
+  };
+}
+
+// Profile response mapper
+export function toProfileResponse(user: any): any {
+  return {
+    id: user.id,
+    email: user.email,
+    nickname: user.nickname || user.name,
+    profileImageUrl: user.profileImageUrl || user.avatar_url,
+    role: user.role,
+    createdAt: user.createdAt || user.created_at,
+    updatedAt: user.updatedAt || user.updated_at,
+  };
+}
+
+export const mappers = {
+  BaseMapper,
+  fromSupabaseUser,
+  toProfileResponse,
+};

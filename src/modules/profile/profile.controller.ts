@@ -8,7 +8,6 @@ import {
   Patch,
   Req,
   UnauthorizedException,
-  BadRequestException,
   UseGuards,
   UploadedFile,
   UseInterceptors,
@@ -17,12 +16,13 @@ import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTa
 import { Express } from 'express';
 import 'multer';
 import { AuthGuard } from '../../common/guards/auth.guard';
-import { success } from '../../types/api';
-import { RequestWithUser } from '../../types/request';
-import { toProfileResponse } from '../../utils/mappers';
+import { UserRecord } from '../user/domain/types/user.types';
+import { success } from '../../types/api.types';
+import { updateProfileSchema } from './validators/profile.validators';
+import { RequestWithUser } from '../../types/request.types';
+import { toProfileResponse } from '../../shared/infrastructure/utils/mappers';
 import { ProfileResponseDto } from './dto/profile-response.dto';
-import { updateProfileSchema } from '../../validators/profileSchemas';
-import { ProfileService } from './profile.service';
+import { ProfileService } from './services';
 import { FileInterceptor } from '@nestjs/platform-express';
 
 const formatDate = (value: Date | string | null | undefined): string | null => {
@@ -51,10 +51,21 @@ export class ProfileController {
     }
 
     // 🚀 FAST: 프로필 빠른 조회 (캐시 우선)
-    const profile = await this.profileService.getProfileQuick(req.currentUser.id, req.currentUser);
+    const userRecord: UserRecord = {
+      id: req.currentUser.id,
+      email: req.currentUser.email,
+      name: req.currentUser.name ?? undefined,
+      avatar_url: (req.currentUser as any).avatar_url ?? undefined,
+      username: (req.currentUser as any).username ?? req.currentUser.email,
+      password_hash: (req.currentUser as any).password_hash || '',
+      role: req.currentUser.role || 'user',
+      created_at: (req.currentUser as any).created_at ?? new Date(),
+      updated_at: (req.currentUser as any).updated_at ?? new Date(),
+    };
+    const profile = await this.profileService.getProfileQuick(req.currentUser.id, userRecord);
 
     // 🚀 FAST: 캐시 우선, 짧은 타임아웃으로 첫 로딩 지원
-    let resolvedAvatar = profile.avatar_url ?? req.currentUser.avatar_url ?? null;
+    let resolvedAvatar = profile.avatar_url ?? (req.currentUser as any).avatar_url ?? null;
 
     // 아바타가 없을 때만 빠른 스토리지 조회 (100ms 초단축 타임아웃)
     if (!resolvedAvatar) {
@@ -68,7 +79,7 @@ export class ProfileController {
 
     return success({
       id: profile.id,
-      userId: profile.username || profile.email?.split('@')[0] || req.currentUser.username || 'user',
+      userId: profile.username || profile.email?.split('@')[0] || userRecord.username || 'user',
       email: profile.email || '',
       name: profile.name,
       avatarURL: resolvedAvatar, // 🚀 빠른 아바타 (캐시 우선)

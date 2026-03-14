@@ -2,8 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { createHash } from 'crypto';
 import { env } from '../../../config/env';
-import { LoginType } from '../../../types/auth';
-import { UserRecord, UserRole } from '../../../types/user';
+import { LoginType } from '../../auth/types/auth.types';
+import { UserRecord, UserRole } from '../../../types/user.types';
 import { CacheService } from '../../cache-shared/services/cacheService';
 
 export interface TokenPair {
@@ -66,7 +66,7 @@ export class OptimizedJwtTokenService {
       name: user.name ?? undefined,
       loginType,
       lastLoginAt: new Date().toISOString(),
-      role: user.role,
+      role: user.role as UserRole,
       sessionId,
     };
   }

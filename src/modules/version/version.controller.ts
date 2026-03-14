@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Post, Query } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { success } from '../../types/api';
-import { VersionService } from './version.service';
+import { success } from '../../types/api.types';
+import { VersionService } from './services';
 import { AppVersionDto } from './dto/app-version.dto';
 import { ManualAppVersionDto } from './dto/manual-app-version.dto';
 

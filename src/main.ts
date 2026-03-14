@@ -13,14 +13,14 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import * as Sentry from '@sentry/node';
 import { AppModule } from './app.module';
 import { env } from './config/env';
-import { logger } from './shared/infrastructure/utils/logger';
+import { logger } from './utils/logger';
 import { PinoNestLogger } from './common/logger/pino-logger';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
-import { MemoryOptimizer } from './shared/infrastructure/utils/memory-optimizer';
+import { MemoryOptimizer } from './utils/memory-optimizer';
 
 async function bootstrap() {
-  // 메모리 최적화 초기화
-  MemoryOptimizer.initialize();
+  // 메모리 최적화 준비 (현재는 스킵)
+  // MemoryOptimizer.initialize();
 
   if (env.sentryDsn) {
     const client = Sentry.init({
@@ -188,15 +188,15 @@ async function bootstrap() {
   });
 
   await app.listen(env.port);
-  logger.info('Server listening', { port: env.port, env: env.nodeEnv });
+  logger.log('Server listening');
 
   setTimeout(async () => {
     try {
-      const { MetaService } = await import('./modules/meta/meta.service');
+      const { MetaService } = await import('./modules/meta/services');
       const metaService = app.get(MetaService);
       await metaService.warmupCache();
     } catch (error) {
-      logger.error('Cache warmup failed', { error: error instanceof Error ? error.message : 'Unknown error' });
+      logger.error('Cache warmup failed', error instanceof Error ? error.stack : 'Unknown error');
     }
   }, 1000);
 }

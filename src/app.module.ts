@@ -1,43 +1,46 @@
 import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
-import { ObservabilityModule } from './modules/observability/observability.module';
-import { MetricsInterceptor } from './common/interceptors/metrics.interceptor';
-import { SentryInterceptor } from './common/interceptors/sentry.interceptor';
+// import { ObservabilityModule } from './modules/observability/observability.module'; // 임시 비활성화
 
 // 인프라 모듈 (전역, 순서 중요)
-import { CoreModule } from './modules/core/core.module';
-import { CacheSharedModule } from './modules/cache-shared/cache-shared.module';
-import { JwtSharedModule } from './modules/jwt-shared/jwt-shared.module';
-import { AuthSharedModule } from './modules/shared/auth-shared.module';
+// import { CoreModule } from './modules/core/core.module'; // 임시 비활성화
+// import { CacheSharedModule } from './modules/cache-shared/cache-shared.module'; // 임시 비활성화
+// import { JwtSharedModule } from './modules/jwt-shared/jwt-shared.module'; // 임시 비활성화
+// import { AuthSharedModule } from './modules/shared/auth-shared.module'; // 임시 비활성화
 import { DatabaseModule } from './modules/database/database.module';
 
 // 기능 모듈
+// import { AuthModule } from './modules/auth/auth.module'; // 임시 비활성화
+// import { OAuthModule } from './modules/oauth/oauth.module'; // 임시 비활성화
+// import { ProfileModule } from './modules/profile/profile.module'; // 임시 비활성화
+// import { SessionModule } from './modules/session/session.module'; // 임시 비활성화
+import { HealthModule } from './modules/health/health.module';
+// import { TravelModule } from './modules/travel/travel.module'; // 임시 비활성화
+// import { MetaModule } from './modules/meta/meta.module'; // 임시 비활성화
+// import { TravelExpenseModule } from './modules/travel-expense/travel-expense.module'; // 임시 비활성화
+// import { TravelSettlementModule } from './modules/travel-settlement/travel-settlement.module'; // 임시 비활성화
+// import { NotificationModule } from './modules/notification/notification.module'; // 임시 비활성화
+// import { DevModule } from './modules/dev/dev.module'; // 임시 비활성화
+// import { VersionModule } from './modules/version/version.module'; // 임시 비활성화
+// import { UniversalLinksModule } from './modules/universal-links/universal-links.module'; // 임시 비활성화
+// import { QueueModule } from './modules/queue/queue.module'; // 임시 비활성화
+import { UserModule } from './modules/user/user.module';
+// 핵심 모듈들 활성화
 import { AuthModule } from './modules/auth/auth.module';
 import { OAuthModule } from './modules/oauth/oauth.module';
 import { ProfileModule } from './modules/profile/profile.module';
-import { SessionModule } from './modules/session/session.module';
-import { HealthModule } from './modules/health/health.module';
-import { TravelModule } from './modules/travel/travel.module';
-import { MetaModule } from './modules/meta/meta.module';
-import { TravelExpenseModule } from './modules/travel-expense/travel-expense.module';
-import { TravelSettlementModule } from './modules/travel-settlement/travel-settlement.module';
 import { NotificationModule } from './modules/notification/notification.module';
-import { DevModule } from './modules/dev/dev.module';
-import { VersionModule } from './modules/version/version.module';
-import { UniversalLinksModule } from './modules/universal-links/universal-links.module';
-import { QueueModule } from './modules/queue/queue.module';
-import { UserModule } from './modules/user/user.module';
-import { GatewayModule } from './modules/gateway/gateway.module';
+// import { GatewayModule } from './modules/gateway/gateway.module'; // 임시 비활성화
 
-// 공통 인터셉터
-import { PerformanceInterceptor } from './common/interceptors/performance.interceptor';
-import { ResponseTransformInterceptor } from './common/filters/response-transform.filter';
-import { ApiOptimizationInterceptor } from './common/interceptors/api-optimization.interceptor';
-import { ResponseOptimizerInterceptor } from './common/interceptors/response-optimizer.interceptor';
+// 공통 인터셉터 - 임시 비활성화
+// import { PerformanceInterceptor } from './common/interceptors/performance.interceptor';
+// import { ResponseTransformInterceptor } from './common/filters/response-transform.filter';
+// import { ApiOptimizationInterceptor } from './common/interceptors/api-optimization.interceptor';
+// import { ResponseOptimizerInterceptor } from './common/interceptors/response-optimizer.interceptor';
 
-// 미들웨어
-import { RequestLoggerMiddleware } from './middleware/requestLogger';
-import { GatewayMiddleware } from './modules/gateway/gateway.middleware';
+// 미들웨어 - 임시 비활성화
+// import { RequestLoggerMiddleware } from './middleware/requestLogger';
+// import { GatewayMiddleware } from './modules/gateway/gateway.middleware';
 
 /**
  * AppModule
@@ -54,75 +57,51 @@ import { GatewayMiddleware } from './modules/gateway/gateway.middleware';
 @Module({
   imports: [
     // ── 전역 인프라 모듈 (순서 중요: 전역으로 등록되어 이후 모든 모듈에서 사용 가능) ──
-    CoreModule,           // EventEmitter, AnalyticsService, BackgroundJobService
-    CacheSharedModule,    // CacheService, SmartCacheService, RateLimitService
-    JwtSharedModule,      // JwtModule, JwtTokenService, EnhancedJwtService, JwtBlacklistService
+    // CoreModule,           // EventEmitter, AnalyticsService, BackgroundJobService - 임시 비활성화
+    // CacheSharedModule,    // CacheService, SmartCacheService, RateLimitService - 임시 비활성화
+    // JwtSharedModule,      // JwtModule, JwtTokenService, EnhancedJwtService, JwtBlacklistService - 임시 비활성화
     DatabaseModule,       // TypeORM, Repository들
-    ObservabilityModule,  // Prometheus 메트릭, /metrics 엔드포인트
+    // ObservabilityModule,  // Prometheus 메트릭, /metrics 엔드포인트 - 임시 비활성화
 
-    // ── 공유 서비스 모듈 (전역 아님, Feature Module이 필요 시 직접 import) ──
-    // AuthSharedModule은 Feature Module에서 개별 import함
-
-    // ── 기능 모듈 ──
-    AuthModule,           // 인증 (OAuthModule을 내부 import)
+    // ── 기능 모듈 (핵심만) ──
+    HealthModule,         // 헬스체크
+    UserModule,           // 사용자 관리 (TypeORM)
+    AuthModule,           // 인증 모듈
     OAuthModule,          // 소셜 로그인
     ProfileModule,        // 프로필 관리
-    HealthModule,         // 헬스체크
-    TravelModule,         // 여행 관리
-    MetaModule,           // 메타 정보 (통화, 카테고리)
-    TravelExpenseModule,  // 지출 관리
-    TravelSettlementModule, // 정산
-    NotificationModule,   // 푸시 알림 (PushNotificationService @OnEvent 리스너)
-    SessionModule,        // 세션 관리
-    DevModule,            // 개발 도구 (dev only)
-    VersionModule,        // 앱 버전 관리
-    UniversalLinksModule, // Universal Links
-    QueueModule,          // Redis Bull Queue
-    UserModule,           // 사용자 관리 (TypeORM)
-    GatewayModule,        // API Gateway (인증/인가 미들웨어)
+    NotificationModule,   // 알림 관리
   ],
   providers: [
-    // Sentry 인터셉터는 가장 먼저 실행되어야 에러를 올바르게 캡처함
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: SentryInterceptor,
-    },
-    // Prometheus HTTP 메트릭 수집
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: MetricsInterceptor,
-    },
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: PerformanceInterceptor,
-    },
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: ResponseTransformInterceptor,
-    },
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: ApiOptimizationInterceptor,
-    },
-    {
-      provide: APP_INTERCEPTOR,
-      useClass: ResponseOptimizerInterceptor,
-    },
+    // 임시로 인터셉터들 비활성화
+    // {
+    //   provide: APP_INTERCEPTOR,
+    //   useClass: SentryInterceptor,
+    // },
+    // {
+    //   provide: APP_INTERCEPTOR,
+    //   useClass: MetricsInterceptor,
+    // },
+    // {
+    //   provide: APP_INTERCEPTOR,
+    //   useClass: PerformanceInterceptor,
+    // },
+    // {
+    //   provide: APP_INTERCEPTOR,
+    //   useClass: ResponseTransformInterceptor,
+    // },
+    // {
+    //   provide: APP_INTERCEPTOR,
+    //   useClass: ApiOptimizationInterceptor,
+    // },
+    // {
+    //   provide: APP_INTERCEPTOR,
+    //   useClass: ResponseOptimizerInterceptor,
+    // },
   ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    // Gateway 미들웨어를 먼저 적용 (인증 및 인가)
-    consumer
-      .apply(GatewayMiddleware)
-      .exclude(
-        { path: 'api/v1/gateway/(.*)', method: RequestMethod.ALL },
-        { path: 'api/v1/health', method: RequestMethod.GET },
-        { path: 'favicon.ico', method: RequestMethod.GET },
-      )
-      .forRoutes('*');
-
-    // 요청 로깅 미들웨어는 Gateway 이후에 적용
-    consumer.apply(RequestLoggerMiddleware).forRoutes('*');
+    // 임시로 미들웨어 비활성화
+    // consumer.apply(RequestLoggerMiddleware).forRoutes('*');
   }
 }

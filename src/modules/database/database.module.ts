@@ -19,8 +19,7 @@ import { Profile } from '../../entities/profile.entity';
 import { UserSession } from '../../entities/user-session.entity';
 import { DeviceToken } from '../../entities/device-token.entity';
 
-// Notification entities
-import { DeviceTokenEntity } from '../notification/entities/device-token.entity';
+// Notification entities removed for now
 
 // Repositories
 import {
@@ -50,7 +49,6 @@ import {
       Profile,
       UserSession,
       DeviceToken,
-      DeviceTokenEntity,
     ]),
   ],
   providers: [

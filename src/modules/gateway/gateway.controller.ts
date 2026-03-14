@@ -1,7 +1,6 @@
 import { Controller, Post, Body, HttpException, HttpStatus, Logger, Req, Headers } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
-import { GatewayService, GatewayRequest, GatewayResponse } from './gateway.service';
-import { TypeOrmGatewayService, ValidationResult } from './services/typeorm-gateway.service';
+import { GatewayService, GatewayRequest, GatewayResponse, TypeOrmGatewayService, ValidationResult } from './services';
 import { Request } from 'express';
 
 export class GatewayValidateDto {

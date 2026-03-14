@@ -8,13 +8,12 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { AuthService } from './auth.service';
-import { OptimizedDeleteService } from './optimized-delete.service';
-import { success } from '../../shared/domain/types/api.types';
-import { loginSchema, refreshSchema, signupSchema, logoutSchema } from './application/validators/auth.validators';
+import { AuthService, OptimizedDeleteService } from './services';
+import { success } from '../../types/api.types';
+import { loginSchema, refreshSchema, signupSchema, logoutSchema } from './validators/auth.validators';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RateLimitGuard } from '../../common/guards/rate-limit.guard';
-import { RequestWithUser } from '../../shared/domain/types/request.types';
+import { RequestWithUser } from '../../types/request.types';
 import {
   DeleteAccountResponseDto,
   LoginResponseDto,
@@ -23,11 +22,11 @@ import {
 } from './dto/auth-response.dto';
 import { buildAuthSessionResponse } from './auth-response.util';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator';
-import { LoginType } from './domain/types/auth.types';
-import { DeviceTokenService } from '../notification/services/device-token.service';
+import { LoginType } from './types/auth.types';
+// import { DeviceTokenService } from '../notification/services/device-token.service'; // 삭제됨
 import { AnalyticsService } from '../core/services/analytics.service';
 import { JwtTokenService } from '../jwt-shared/services/jwtService';
-import { SessionService } from './services/sessionService';
+// import { SessionService } from './services/sessionService'; // 삭제됨
 import { EnhancedJwtService } from '../jwt-shared/services/enhanced-jwt.service';
 import { TypeOrmJwtBlacklistService } from './services/typeorm-jwt-blacklist.service';
 
@@ -39,10 +38,10 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly optimizedDeleteService: OptimizedDeleteService,
-    private readonly deviceTokenService: DeviceTokenService,
+    // private readonly deviceTokenService: DeviceTokenService, // 삭제됨
     private readonly analyticsService: AnalyticsService,
     private readonly jwtTokenService: JwtTokenService,
-    private readonly sessionService: SessionService,
+    // private readonly sessionService: SessionService, // 삭제됨
     private readonly enhancedJwtService: EnhancedJwtService,
     private readonly jwtBlacklistService: TypeOrmJwtBlacklistService,
   ) {}
@@ -81,13 +80,13 @@ export class AuthController {
     const result = await this.authService.signup(payload);
 
     // deviceToken이 제공되면 디바이스 토큰 저장
-    if (result.user?.id) {
-      await this.deviceTokenService.bindPendingTokensToUser(
-        result.user.id,
-        (payload as any).pendingKey,
-        payload.deviceToken,
-      ).catch(err => console.warn('Failed to bind device token:', err.message));
-    }
+    // if (result.user?.id) {
+    //   await this.deviceTokenService.bindPendingTokensToUser(
+    //     result.user.id,
+    //     (payload as any).pendingKey,
+    //     payload.deviceToken,
+    //   ).catch((err: any) => console.warn('Failed to bind device token:', err.message));
+    // } // DeviceTokenService 삭제됨
 
     // Analytics: 회원가입 성공
     if (result.user?.id) {
@@ -194,11 +193,11 @@ export class AuthController {
       });
 
       // deviceToken이 제공되면 디바이스 토큰 저장
-      if (payload.deviceToken && result.user?.id) {
-        await this.deviceTokenService.upsertDeviceToken(result.user?.id, payload.deviceToken).catch(err => {
-          console.warn('Failed to save device token:', err.message);
-        });
-      }
+      // if (payload.deviceToken && result.user?.id) {
+      //   await this.deviceTokenService.upsertDeviceToken(result.user?.id, payload.deviceToken).catch((err: any) => {
+      //     console.warn('Failed to save device token:', err.message);
+      //   });
+      // } // DeviceTokenService 삭제됨
 
       if (result.user?.id) {
         this.analyticsService.trackEvent(
@@ -213,15 +212,15 @@ export class AuthController {
     const result = await this.authService.login(payload);
 
     // deviceToken이 제공되면 디바이스 토큰 저장
-    if (result.user?.id) {
-      await this.deviceTokenService.bindPendingTokensToUser(
-        result.user.id,
-        (payload as any).pendingKey,
-        payload.deviceToken,
-      ).catch(err => {
-        console.warn('Failed to bind device token:', err.message);
-      });
-    }
+    // if (result.user?.id) {
+    //   await this.deviceTokenService.bindPendingTokensToUser(
+    //     result.user.id,
+    //     (payload as any).pendingKey,
+    //     payload.deviceToken,
+    //   ).catch((err: any) => {
+    //     console.warn('Failed to bind device token:', err.message);
+    //   });
+    // } // DeviceTokenService 삭제됨
 
     // Analytics: 로그인 성공
     if (result.user?.id) {
@@ -318,8 +317,21 @@ export class AuthController {
       throw new UnauthorizedException('Unauthorized');
     }
 
+    // Convert currentUser to UserRecord format
+    const userRecord = {
+      id: String(currentUser.id),
+      email: currentUser.email,
+      name: currentUser.name || null,
+      avatar_url: null,
+      username: currentUser.email, // Use email as username fallback
+      password_hash: '', // Not needed for delete operation
+      role: currentUser.role || 'user',
+      created_at: new Date(),
+      updated_at: new Date(),
+    };
+
     // 최적화된 삭제 서비스 사용
-    const result = await this.optimizedDeleteService.fastDeleteAccount(currentUser, req.loginType);
+    const result = await this.optimizedDeleteService.fastDeleteAccount(userRecord, req.loginType as LoginType | undefined);
     return success(
       {
         userID: currentUser.id,
@@ -357,7 +369,7 @@ export class AuthController {
       : undefined;
 
     const result = await this.authService.logout({
-      sessionId: payload.sessionId,
+      sessionId: payload.sessionId!,
       accessToken,
     });
 
@@ -614,14 +626,15 @@ export class AuthController {
 
     // 메인 작업은 백그라운드로 돌리고 최대 200ms만 대기해서 빠른 응답
     const workPromise = (async () => {
-      if (resolvedUserId) {
-        if (pendingKey) {
-          await this.deviceTokenService.bindPendingTokensToUser(resolvedUserId, pendingKey, deviceToken);
-        }
-        await this.deviceTokenService.upsertDeviceToken(resolvedUserId, deviceToken);
-      } else {
-        await this.deviceTokenService.upsertAnonymousToken(pendingKey as string, deviceToken);
-      }
+      // if (resolvedUserId) {
+      //   if (pendingKey) {
+      //     await this.deviceTokenService.bindPendingTokensToUser(resolvedUserId, pendingKey, deviceToken);
+      //   }
+      //   await this.deviceTokenService.upsertDeviceToken(resolvedUserId, deviceToken);
+      // } else {
+      //   await this.deviceTokenService.upsertAnonymousToken(pendingKey as string, deviceToken);
+      // } // DeviceTokenService 삭제됨
+      console.log('Device token registration disabled - service removed');
     })();
 
     const loggingPromise = workPromise
@@ -658,8 +671,8 @@ export class AuthController {
       if (!payload?.sub || !payload.sessionId) return null;
 
       // 세션이 유효한지 확인 (만료/취소된 세션이면 무시)
-      const session = await this.sessionService.getSession(payload.sessionId);
-      if (!session?.isActive) return null;
+      // const session = await this.sessionService.getSession(payload.sessionId); // SessionService 삭제됨
+      // if (!session?.isActive) return null;
 
       return payload.sub;
     } catch {

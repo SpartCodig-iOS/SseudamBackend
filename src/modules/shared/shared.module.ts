@@ -10,17 +10,17 @@ import { EnhancedJwtService } from '../jwt-shared/services/enhanced-jwt.service'
 import { TypeOrmJwtBlacklistService } from '../auth/services/typeorm-jwt-blacklist.service';
 import { SupabaseService } from '../core/services/supabaseService';
 import { OAuthTokenService } from '../oauth/services/oauth-token.service';
-import { SessionService } from '../auth/services/sessionService';
+// import { SessionService } from '../auth/services/sessionService'; // 삭제됨
 import { RateLimitService } from '../cache-shared/services/rateLimitService';
 import { SmartCacheService } from '../cache-shared/services/smart-cache.service';
 import { CacheService } from '../cache-shared/services/cacheService';
 import { BackgroundJobService } from '../core/services/background-job.service';
-import { OptimizedOAuthService } from '../oauth/optimized-oauth.service';
-import { OptimizedDeleteService } from '../auth/optimized-delete.service';
-import { SocialAuthService } from '../oauth/social-auth.service';
-import { AuthService } from '../auth/auth.service';
+import { OptimizedOAuthService } from '../oauth/services/optimized-oauth.service';
+import { OptimizedDeleteService } from '../auth/services/optimized-delete.service';
+import { SocialAuthService } from '../oauth/services/social-auth.service';
+import { AuthService } from '../auth/services/auth.service';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { DeviceTokenService } from '../notification/services/device-token.service';
+// import { DeviceTokenService } from '../notification/services/device-token.service'; // 삭제됨
 import { APNSService } from '../notification/services/apns.service';
 import { PushNotificationService } from '../notification/services/push-notification.service';
 import { AnalyticsService } from '../core/services/analytics.service';
@@ -53,10 +53,10 @@ import { DatabaseModule } from '../database/database.module';
     SocialAuthService,
     OptimizedOAuthService,
     OptimizedDeleteService,
-    SessionService,
+    // SessionService, // 삭제됨
     RateLimitService,
     BackgroundJobService,
-    DeviceTokenService,
+    // DeviceTokenService, // 삭제됨
     APNSService,
     PushNotificationService,
     AnalyticsService,
@@ -78,10 +78,10 @@ import { DatabaseModule } from '../database/database.module';
     SocialAuthService,
     OptimizedOAuthService,
     OptimizedDeleteService,
-    SessionService,
+    // SessionService, // 삭제됨
     RateLimitService,
     BackgroundJobService,
-    DeviceTokenService,
+    // DeviceTokenService, // 삭제됨
     APNSService,
     PushNotificationService,
     AnalyticsService,

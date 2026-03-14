@@ -8,7 +8,7 @@ import {
 import { Response } from 'express';
 import * as Sentry from '@sentry/node';
 import { ZodError, ZodIssue } from 'zod';
-import { logger } from '../../shared/infrastructure/utils/logger';
+import { logger } from '../../utils/logger';
 import { env } from '../../config/env';
 import { DatabaseError } from 'pg';
 import { RequestContext } from '../context/request-context';
@@ -43,7 +43,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     if (exception instanceof ZodError) {
       const issues = exception.issues.map(formatZodIssue);
-      logger.info('Validation failed', { issues, requestId });
+      logger.log('Validation failed');
       return response.status(HttpStatus.BAD_REQUEST).json({
         code: HttpStatus.BAD_REQUEST,
         message: '요청 데이터 형식이 올바르지 않습니다.',
@@ -65,10 +65,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const data = typeof res === 'object' && res && 'data' in res ? (res as any).data : [];
 
       if (status >= 500) {
-        logger.error('Unhandled exception', { message, stack: exception.stack, requestId });
+        logger.error('Unhandled exception', exception.stack);
         this.capture(exception);
       } else {
-        logger.info('Handled error response', { status, message, requestId });
+        logger.log('Handled error response');
       }
 
       return response.status(status).json({
@@ -93,7 +93,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         });
       }
     }
-    logger.error('Unhandled exception', { message, stack: (exception as Error)?.stack, requestId });
+    logger.error('Unhandled exception', (exception as Error)?.stack);
     this.capture(exception);
 
     return response.status(status).json({

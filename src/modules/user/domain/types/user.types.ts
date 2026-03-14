@@ -1,35 +1,56 @@
+export enum UserRole {
+  ADMIN = 'admin',
+  USER = 'user',
+  SUPER_ADMIN = 'super_admin',
+}
+
 export interface UserRecord {
   id: string;
+  memberId?: string;
   email: string;
-  password_hash: string;
-  name: string | null;
-  avatar_url: string | null;
-  username: string;
-  role: UserRole;
-  created_at: Date | null;
-  updated_at: Date | null;
+  nickname?: string;
+  profileImageUrl?: string;
+  role: UserRole | string;
+  isActive?: boolean;
+  lastLoginAt?: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
+  password_hash?: string;
+  name?: string;
+  avatar_url?: string;
+  username?: string;
+  created_at?: Date;
+  updated_at?: Date;
 }
 
 export interface UserResponseDto {
   id: string;
+  memberId: string;
   email: string;
-  name: string | null;
-  avatarURL: string | null;
+  nickname?: string;
+  profileImageUrl?: string;
   role: UserRole;
-  createdAt: string | null;
-  userId: string;
+  isActive: boolean;
+  lastLoginAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface UserProfileDto {
-  id: string;
-  userId: string;
-  email: string;
-  name: string | null;
-  avatarURL: string | null;
-  role: UserRole;
-  createdAt: string | null;
-  updatedAt: string | null;
+  nickname?: string;
+  profileImageUrl?: string;
 }
 
-export const USER_ROLE_VALUES = ['user', 'member', 'owner', 'admin', 'super_admin'] as const;
-export type UserRole = (typeof USER_ROLE_VALUES)[number];
+export interface CreateUserDto {
+  memberId: string;
+  email: string;
+  nickname?: string;
+  profileImageUrl?: string;
+  role?: UserRole;
+}
+
+export interface UpdateUserDto {
+  nickname?: string;
+  profileImageUrl?: string;
+  isActive?: boolean;
+}

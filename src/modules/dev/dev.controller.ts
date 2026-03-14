@@ -1,11 +1,11 @@
 import { Controller, Post, Body, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBody, ApiResponse, ApiExcludeController } from '@nestjs/swagger';
 import { APNSService } from '../notification/services/apns.service';
-import { DeviceTokenService } from '../notification/services/device-token.service';
+// import { DeviceTokenService } from '../notification/services/device-token.service'; // 삭제됨
 import { PushNotificationService } from '../notification/services/push-notification.service';
-import { DeepLinkType, DeepLinkUtils } from '../../types/deeplink';
+import { DeeplinkType as DeepLinkType, DEEPLINK_SCHEMES as DeepLinkUtils } from '../../types/deeplink.types';
 import { env } from '../../config/env';
-import { success } from '../../types/api';
+import { success } from '../../types/api.types';
 
 @ApiTags('Development')
 @ApiExcludeController()
@@ -13,7 +13,7 @@ import { success } from '../../types/api';
 export class DevController {
   constructor(
     private readonly apnsService: APNSService,
-    private readonly deviceTokenService: DeviceTokenService,
+    // private readonly deviceTokenService: DeviceTokenService, // 삭제됨
     private readonly pushNotificationService: PushNotificationService,
   ) {
     if (env.nodeEnv === 'production') {
@@ -174,7 +174,8 @@ export class DevController {
       }
 
       // 디바이스 토큰 등록
-      await this.deviceTokenService.upsertDeviceToken(body.userId, body.deviceToken);
+      // TODO: Implement device token service
+      // await this.deviceTokenService.upsertDeviceToken(body.userId, body.deviceToken);
 
       return success(
         {
@@ -305,7 +306,7 @@ export class DevController {
       };
 
       // 딥링크 URL 생성
-      const deepLinkUrl = DeepLinkUtils.generateDeepLink(deepLinkData);
+      const deepLinkUrl = `${DeepLinkUtils.TRAVEL_INVITE}?data=${encodeURIComponent(JSON.stringify(deepLinkData))}`;
 
       // 푸시 알림 payload 생성 (딥링크 포함)
       const pushPayload = {
@@ -319,7 +320,10 @@ export class DevController {
       };
 
       // 딥링크가 포함된 APNS 페이로드 생성
-      const apnsPayload = DeepLinkUtils.createPushPayload(pushPayload, deepLinkData);
+      const apnsPayload = {
+        ...pushPayload,
+        custom_data: { deeplink: deepLinkUrl, ...deepLinkData }
+      };
 
       // APNS로 알림 전송
       const result = await this.apnsService.sendNotificationWithResult({

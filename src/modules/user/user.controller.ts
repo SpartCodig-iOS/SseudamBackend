@@ -13,12 +13,12 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
-import { UserService, CreateUserDto, UpdateUserDto } from './user.service';
+import { UserService, CreateUserDto, UpdateUserDto } from './services';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { User } from './entities/user.entity';
-import { UserRole } from '../../types/user';
+import { UserRole } from '../../types/user.types';
 
 @ApiTags('Users')
 @Controller('users')
@@ -29,7 +29,7 @@ export class UserController {
 
   @Post()
   @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Create a new user' })
   @ApiResponse({ status: 201, description: 'User created successfully' })
   @ApiResponse({ status: 409, description: 'Email or username already exists' })
@@ -39,7 +39,7 @@ export class UserController {
 
   @Get()
   @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Get users list with pagination' })
   @ApiResponse({ status: 200, description: 'Users retrieved successfully' })
   async getUsers(
@@ -52,7 +52,8 @@ export class UserController {
     page: number;
     limit: number;
   }> {
-    return this.userService.findUsers(Number(page), Number(limit), search);
+    const [users, total] = await this.userService.findUsers(Number(page), Number(limit), search);
+    return { users, total, page: Number(page), limit: Number(limit) };
   }
 
   @Get('search')
@@ -67,7 +68,7 @@ export class UserController {
 
   @Get('stats/active-count')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Get active user count' })
   @ApiResponse({ status: 200, description: 'Active user count retrieved' })
   async getActiveUserCount(): Promise<{ count: number }> {
@@ -109,7 +110,7 @@ export class UserController {
 
   @Put(':id/role')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
   @ApiOperation({ summary: 'Update user role' })
   @ApiResponse({ status: 200, description: 'User role updated successfully' })
   @ApiResponse({ status: 404, description: 'User not found' })
@@ -134,7 +135,7 @@ export class UserController {
 
   @Delete(':id')
   @UseGuards(RolesGuard)
-  @Roles('admin', 'super_admin')
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete user' })
   @ApiResponse({ status: 204, description: 'User deleted successfully' })

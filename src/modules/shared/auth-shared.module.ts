@@ -1,5 +1,5 @@
 import { Global, Module } from '@nestjs/common';
-import { AuthSessionService } from './auth-session.service';
+import { AuthSessionService } from './services';
 
 /**
  * AuthSharedModule

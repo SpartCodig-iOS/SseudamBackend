@@ -299,7 +299,9 @@
       "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\n-- 새로운 여행 ID의 초대 코드 확인\nSELECT \n  t.id, \n  t.title, \n  t.invite_code as travels_invite_code,\n  ti.invite_code as travel_invites_invite_code,\n  ti.status\nFROM travels t \nLEFT JOIN travel_invites ti ON ti.travel_id = t.id \nWHERE t.id = '527235f7-b785-4ef6-b98b-29e700206e0f';\n\")",
       "Bash(PGPASSWORD=fkcYdXrKpFrFvItxolapcgpsscBHNhOv psql -h hopper.proxy.rlwy.net -U postgres -p 57138 -d railway -c \"\n-- 이 여행의 지출 데이터 확인\nSELECT \n  COUNT\\(*\\) as expense_count,\n  COALESCE\\(SUM\\(amount\\), 0\\) as total_amount,\n  STRING_AGG\\(DISTINCT currency, ', '\\) as currencies\nFROM travel_expenses \nWHERE travel_id = '527235f7-b785-4ef6-b98b-29e700206e0f';\n\n-- 여행 정보도 확인\nSELECT id, title, created_at, status\nFROM travels \nWHERE id = '527235f7-b785-4ef6-b98b-29e700206e0f';\n\")",
       "Bash(wc:*)",
-      "Skill(developer-kit-typescript:clean-architecture)"
+      "Skill(developer-kit-typescript:clean-architecture)",
+      "Bash(cd:*)",
+      "Bash(for module:*)"
     ],
     "deny": [],
     "ask": []

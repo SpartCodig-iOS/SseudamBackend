@@ -1,5 +1,5 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { UserRepository } from '../../../repositories/user.repository';
+import { UserRepository } from '../../user/repositories/user.repository';
 import { User } from '../../user/entities/user.entity';
 import * as bcrypt from 'bcryptjs';
 
@@ -134,7 +134,7 @@ export class TypeOrmAuthService {
    */
   async deleteUser(userId: string): Promise<boolean> {
     try {
-      return await this.userRepository.delete(userId);
+      return await this.userRepository.deleteAndCheck(userId);
     } catch (error) {
       this.logger.error(`Failed to delete user ${userId}:`, error);
       return false;
@@ -144,9 +144,9 @@ export class TypeOrmAuthService {
   /**
    * 사용자 검색 (TypeORM 버전)
    */
-  async searchUsers(searchTerm: string, limit: number = 10): Promise<User[]> {
+  async searchUsers(searchTerm: string): Promise<User[]> {
     try {
-      return await this.userRepository.searchUsers(searchTerm, limit);
+      return await this.userRepository.searchUsers(searchTerm);
     } catch (error) {
       this.logger.error(`Failed to search users with term ${searchTerm}:`, error);
       return [];

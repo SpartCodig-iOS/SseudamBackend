@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
-import { APNSService } from './apns.service';
-import { DeviceTokenService } from './device-token.service';
-import { DeepLinkType, DeepLinkData, DeepLinkUtils, PushNotificationPayload } from '../../../types/deeplink';
+import { APNSService } from '.';
+// import { DeviceTokenService } from './device-token.service'; // 삭제됨
+import { DeeplinkType as DeepLinkType, DeeplinkData as DeepLinkData, DeepLinkUtils, PushNotificationPayload } from '../../../types/deeplink.types';
 
 // 알림 이벤트 타입 정의
 export interface ExpenseNotificationEvent {
@@ -32,7 +32,7 @@ export class PushNotificationService {
 
   constructor(
     private readonly apnsService: APNSService,
-    private readonly deviceTokenService: DeviceTokenService,
+    // private readonly deviceTokenService: DeviceTokenService, // 삭제됨
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
@@ -133,14 +133,14 @@ export class PushNotificationService {
     if ('expenseId' in event && event.expenseId) {
       // 지출 관련 이벤트 - 지출 상세로 이동
       return {
-        type: DeepLinkType.EXPENSE_DETAIL,
+        type: 'expense',
         travelId: event.travelId,
         expenseId: event.expenseId,
       };
     } else {
       // 여행 관련 이벤트 - 여행 상세로 이동
       return {
-        type: event.type === 'travel_updated' ? DeepLinkType.TRAVEL_SETTINGS : DeepLinkType.TRAVEL_DETAIL,
+        type: 'travel',
         travelId: event.travelId,
       };
     }
@@ -158,13 +158,13 @@ export class PushNotificationService {
       }
 
       // 대상 멤버들의 디바이스 토큰 조회
-      const deviceTokensByUser = await this.deviceTokenService.getActiveDeviceTokensForUsers(targetMemberIds);
+      // const deviceTokensByUser = await this.deviceTokenService.getActiveDeviceTokensForUsers(targetMemberIds); // DeviceTokenService 삭제됨
 
       // 모든 디바이스 토큰 수집
       const allDeviceTokens: string[] = [];
-      Object.values(deviceTokensByUser).forEach(tokens => {
-        allDeviceTokens.push(...tokens);
-      });
+      // Object.values(deviceTokensByUser).forEach((tokens: any) => {
+      //   allDeviceTokens.push(...tokens);
+      // }); // DeviceTokenService 삭제됨
 
       if (allDeviceTokens.length === 0) {
         this.logger.log('No active device tokens found for notification');

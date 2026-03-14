@@ -1,7 +1,7 @@
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { env } from './env';
-import { resolveIPv4IfNeeded, shouldUseTLS } from '../shared/infrastructure/utils/network';
+import { resolveIPv4IfNeeded, shouldUseTLS } from '../utils/network';
 
 const parseDatabaseUrl = (url: string) => {
   const parsed = new URL(url);

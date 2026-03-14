@@ -2,11 +2,10 @@ import { Controller, Get, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { success } from '../../types/api';
+import { success } from '../../types/api.types';
 import { CacheService } from '../cache-shared/services/cacheService';
 import { getPoolStats } from '../../db/pool';
 import { HealthResponseDto } from './dto/health-response.dto';
-import { MemoryOptimizer } from '../../utils/memory-optimizer';
 import { SmartCacheService } from '../cache-shared/services/smart-cache.service';
 
 @ApiTags('Health')
@@ -148,7 +147,7 @@ export class HealthController {
     const startTime = process.hrtime.bigint();
 
     // 최적화된 메모리 통계
-    const memoryStats = MemoryOptimizer.getMemoryStats();
+    // const memoryStats = MemoryOptimizer.getMemoryStats(); // Service removed
     const memoryUsage = process.memoryUsage();
     const formatBytes = (bytes: number) => {
       const mb = bytes / 1024 / 1024;
@@ -191,7 +190,7 @@ export class HealthController {
           total: formatBytes(memoryUsage.heapTotal),
           external: formatBytes(memoryUsage.external),
           percentage: (memoryUsage.rss / memoryUsage.heapTotal) * 100,
-          optimized: memoryStats, // 최적화된 메모리 정보
+          // optimized: memoryStats, // 최적화된 메모리 정보 (service removed)
         },
         cpu: {
           usage: cpuUsage,

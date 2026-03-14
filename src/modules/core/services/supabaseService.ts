@@ -1,7 +1,7 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js';
-import { LoginType } from '../../../types/auth';
+import { LoginType } from '../../auth/types/auth.types';
 import { env } from '../../../config/env';
 import { getPool } from '../../../db/pool';
 import { OAuthTokenService } from '../../oauth/services/oauth-token.service';

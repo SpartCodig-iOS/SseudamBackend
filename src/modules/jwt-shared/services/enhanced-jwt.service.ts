@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { v4 as uuidv4 } from 'uuid';
-import { UserRecord } from '../../../types/user';
-import { LoginType } from '../../../types/auth';
-import { JwtBlacklistService } from './jwt-blacklist.service';
+import { UserRecord } from '../../../types/user.types';
+import { LoginType } from '../../auth/types/auth.types';
+import { JwtBlacklistService } from '../../auth/services/typeorm-jwt-blacklist.service';
 import { env } from '../../../config/env';
 
 export interface TokenPair {

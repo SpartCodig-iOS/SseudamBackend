@@ -1,4 +1,4 @@
-import { MigrationInterface, QueryRunner, Table, Index } from 'typeorm';
+import { MigrationInterface, QueryRunner, Table, TableIndex } from 'typeorm';
 
 export class CreateOAuthTokenTable1741570000000 implements MigrationInterface {
   name = 'CreateOAuthTokenTable1741570000000';
@@ -56,12 +56,18 @@ export class CreateOAuthTokenTable1741570000000 implements MigrationInterface {
 
     await queryRunner.createIndex(
       'oauth_refresh_tokens',
-      new Index('IDX_oauth_refresh_tokens_user_id', ['user_id']),
+      new TableIndex({
+        name: 'IDX_oauth_refresh_tokens_user_id',
+        columnNames: ['user_id']
+      })
     );
 
     await queryRunner.createIndex(
       'oauth_refresh_tokens',
-      new Index('IDX_oauth_refresh_tokens_provider', ['provider']),
+      new TableIndex({
+        name: 'IDX_oauth_refresh_tokens_provider',
+        columnNames: ['provider']
+      })
     );
   }
 
