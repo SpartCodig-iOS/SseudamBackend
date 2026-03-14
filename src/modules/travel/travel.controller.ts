@@ -23,6 +23,7 @@ import {
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RequestWithUser } from '../../types/request.types';
 import { success } from '../../types/api.types';
+import { CreateTravelDto, UpdateTravelDto, InviteMemberDto } from './dto/create-travel.dto';
 
 // Use Cases
 import {
@@ -51,7 +52,7 @@ export class TravelController {
   @ApiOperation({ summary: 'Create new travel' })
   @ApiOkResponse({ description: 'Travel created successfully' })
   async createTravel(
-    @Body() body: any,
+    @Body() body: CreateTravelDto,
     @Req() req: RequestWithUser,
   ) {
     try {

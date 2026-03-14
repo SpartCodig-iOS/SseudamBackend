@@ -47,6 +47,10 @@ export const createDatabaseConfig = async (): Promise<TypeOrmModuleOptions> => {
       __dirname + '/../modules/profile/entities/*.entity{.ts,.js}',
       __dirname + '/../modules/notification/entities/*.entity{.ts,.js}',
       __dirname + '/../modules/meta/entities/*.entity{.ts,.js}',
+      // Travel 관련 엔티티들
+      __dirname + '/../modules/travel/entities/*.entity{.ts,.js}',
+      __dirname + '/../modules/travel-expense/entities/*.entity{.ts,.js}',
+      __dirname + '/../modules/travel-settlement/entities/*.entity{.ts,.js}',
     ],
     migrations: [__dirname + '/../migrations/*{.ts,.js}'],
     synchronize: false, // 마이그레이션으로 관리
@@ -95,6 +99,10 @@ export const createDataSourceConfig = async (): Promise<DataSourceOptions> => {
       __dirname + '/../modules/profile/entities/*.entity{.ts,.js}',
       __dirname + '/../modules/notification/entities/*.entity{.ts,.js}',
       __dirname + '/../modules/meta/entities/*.entity{.ts,.js}',
+      // Travel 관련 엔티티들
+      __dirname + '/../modules/travel/entities/*.entity{.ts,.js}',
+      __dirname + '/../modules/travel-expense/entities/*.entity{.ts,.js}',
+      __dirname + '/../modules/travel-settlement/entities/*.entity{.ts,.js}',
     ],
     migrations: [__dirname + '/../migrations/*{.ts,.js}'],
     synchronize: false,
@@ -126,6 +134,10 @@ export const AppDataSource = new DataSource({
     __dirname + '/../modules/profile/entities/*.entity{.ts,.js}',
     __dirname + '/../modules/notification/entities/*.entity{.ts,.js}',
     __dirname + '/../modules/meta/entities/*.entity{.ts,.js}',
+    // Travel 관련 엔티티들
+    __dirname + '/../modules/travel/entities/*.entity{.ts,.js}',
+    __dirname + '/../modules/travel-expense/entities/*.entity{.ts,.js}',
+    __dirname + '/../modules/travel-settlement/entities/*.entity{.ts,.js}',
   ],
   migrations: [__dirname + '/../migrations/*{.ts,.js}'],
   synchronize: false,

@@ -15,10 +15,10 @@ import { DatabaseModule } from './modules/database/database.module';
 // import { ProfileModule } from './modules/profile/profile.module'; // 임시 비활성화
 // import { SessionModule } from './modules/session/session.module'; // 임시 비활성화
 import { HealthModule } from './modules/health/health.module';
-// import { TravelModule } from './modules/travel/travel.module'; // 임시 비활성화
+import { TravelModule } from './modules/travel/travel.module';
 // import { MetaModule } from './modules/meta/meta.module'; // 임시 비활성화
-// import { TravelExpenseModule } from './modules/travel-expense/travel-expense.module'; // 임시 비활성화
-// import { TravelSettlementModule } from './modules/travel-settlement/travel-settlement.module'; // 임시 비활성화
+import { TravelExpenseModule } from './modules/travel-expense/travel-expense.module';
+import { TravelSettlementModule } from './modules/travel-settlement/travel-settlement.module';
 // import { NotificationModule } from './modules/notification/notification.module'; // 임시 비활성화
 // import { DevModule } from './modules/dev/dev.module'; // 임시 비활성화
 // import { VersionModule } from './modules/version/version.module'; // 임시 비활성화
@@ -70,6 +70,11 @@ import { NotificationModule } from './modules/notification/notification.module';
     OAuthModule,          // 소셜 로그인
     ProfileModule,        // 프로필 관리
     NotificationModule,   // 알림 관리
+
+    // ── Travel 관련 모듈 ──
+    TravelModule,         // 여행 관리
+    TravelExpenseModule,  // 여행 경비 관리
+    TravelSettlementModule, // 여행 정산 관리
   ],
   providers: [
     // 임시로 인터셉터들 비활성화
