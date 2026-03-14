@@ -24,6 +24,7 @@ import { AuthGuard } from '../../common/guards/auth.guard';
 import { RequestWithUser } from '../../types/request.types';
 import { success } from '../../types/api.types';
 import { CreateTravelDto, UpdateTravelDto, InviteMemberDto } from './dto/create-travel.dto';
+import { TravelExpenseService } from '../travel-expense/services/travel-expense.service';
 
 // Use Cases
 import {
@@ -47,6 +48,7 @@ export class TravelController {
     private readonly updateTravelUseCase: UpdateTravelUseCase,
     private readonly deleteTravelUseCase: DeleteTravelUseCase,
     private readonly getTravelListUseCase: GetTravelListUseCase,
+    private readonly travelExpenseService: TravelExpenseService,
   ) {}
 
   @Get()
@@ -127,8 +129,10 @@ export class TravelController {
     @Req() req: RequestWithUser,
   ) {
     try {
-      // TODO: TravelExpenseService에서 경비 목록 조회 구현
-      const result: any[] = [];
+      const result = await this.travelExpenseService.listExpenses(
+        travelId,
+        req.currentUser!.id
+      );
 
       return success(result, 'Travel expenses retrieved successfully');
     } catch (error) {

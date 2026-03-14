@@ -7,6 +7,7 @@ import { ProfileModule } from '../profile/profile.module';
 import { NotificationModule } from '../notification/notification.module';
 import { QueueModule } from '../queue/queue.module';
 import { DatabaseModule } from '../database/database.module';
+import { TravelExpenseModule } from '../travel-expense/travel-expense.module';
 import { OptimizedTravelRepository } from './repositories/optimized-travel.repository';
 import { Travel } from './entities/travel.entity';
 import { TravelMember } from './entities/travel-member.entity';
@@ -27,6 +28,7 @@ import {
     ProfileModule,
     NotificationModule,
     QueueModule,
+    TravelExpenseModule,
     TypeOrmModule.forFeature([Travel, TravelMember]),
   ],
   controllers: [TravelController],
