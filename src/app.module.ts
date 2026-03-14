@@ -17,7 +17,7 @@ import { GlobalLoggingInterceptor } from './common/interceptors/logging.intercep
 // import { SessionModule } from './modules/session/session.module'; // 임시 비활성화
 import { HealthModule } from './modules/health/health.module';
 import { TravelModule } from './modules/travel/travel.module';
-// import { MetaModule } from './modules/meta/meta.module'; // 임시 비활성화
+import { MetaModule } from './modules/meta/meta.module';
 import { TravelExpenseModule } from './modules/travel-expense/travel-expense.module';
 import { TravelSettlementModule } from './modules/travel-settlement/travel-settlement.module';
 // import { NotificationModule } from './modules/notification/notification.module'; // 임시 비활성화
@@ -73,6 +73,7 @@ import { NotificationModule } from './modules/notification/notification.module';
     ProfileModule,        // 프로필 관리
     NotificationModule,   // 알림 관리
     VersionModule,        // 앱 버전 관리
+    MetaModule,           // 국가/통화 메타 데이터
 
     // ── Travel 관련 모듈 ──
     TravelModule,         // 여행 관리
