@@ -42,28 +42,22 @@ export class ApiOptimizationInterceptor implements NestInterceptor {
 
     return next.handle().pipe(
       tap((data) => {
-        // 헤더가 이미 전송된 후에는 헤더 설정을 시도하지 않음
         if (response.headersSent) {
           return;
         }
-
         const endTime = process.hrtime.bigint();
         const responseTime = Number(endTime - startTime) / 1000000; // ms
         const handlerTime = response.get('X-Handler-Time');
         const dbTime = response.get('X-DB-Time');
         const cacheTime = response.get('X-Cache-Time');
 
-        // 응답 시간 헤더는 Performance Interceptor에서 이미 설정하므로 제거
-        // 중복 헤더 설정 방지
+        // 응답 시간 헤더 추가
+        response.set('X-Response-Time', `${responseTime.toFixed(2)}ms`);
 
-        // 캐시 히트 정보만 설정 (다른 곳에서 설정하지 않는 경우에만)
+        // 캐시 히트 정보
         const cacheHit = response.get('X-Cache-Hit') === 'true';
-        if (cacheHit && !response.get('X-Cache')) {
-          try {
-            response.set('X-Cache', 'HIT');
-          } catch (error) {
-            // 헤더 설정 실패 시 무시 (이미 전송된 경우)
-          }
+        if (cacheHit) {
+          response.set('X-Cache', 'HIT');
         }
 
         // 메트릭 수집

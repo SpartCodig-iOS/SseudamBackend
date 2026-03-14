@@ -1,0 +1,1 @@
+export { DeviceTokenEntity } from './device-token.entity';

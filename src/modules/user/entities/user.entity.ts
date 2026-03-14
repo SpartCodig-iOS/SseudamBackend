@@ -7,8 +7,8 @@ import {
   OneToMany,
   Index,
 } from 'typeorm';
-import { UserRole, USER_ROLE_VALUES } from '../types/user.types';
-import { LoginType } from '../../auth/types/auth.types';
+import { UserRole, USER_ROLE_VALUES } from '../domain/types/user.types';
+import { LoginType } from '../../auth/domain/types/auth.types';
 // Forward references to avoid circular dependencies
 
 /**
@@ -25,48 +25,56 @@ export class User {
   @PrimaryColumn({ type: 'uuid' })
   id!: string;
 
-  // DB 스키마: text 타입
-  @Column({ type: 'text', unique: true })
+  @Column({ type: 'varchar', length: 255, unique: true })
   email!: string;
 
-  @Column({ type: 'text', nullable: true })
+  /**
+   * 이메일/비밀번호 로그인 시 bcrypt 해시값. 소셜 로그인 전용 계정은 null 가능.
+   */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  password_hash!: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
   name!: string | null;
 
   @Column({ type: 'text', nullable: true })
   avatar_url!: string | null;
 
-  // DB 스키마: text, nullable
-  @Column({ type: 'text', unique: true, nullable: true })
-  username!: string | null;
+  @Column({ type: 'varchar', length: 50, unique: true, nullable: true })
+  username!: string;
 
   @Column({
-    type: 'text',
+    type: 'varchar',
+    length: 20,
     nullable: true,
     name: 'login_type',
   })
   login_type!: LoginType | null;
 
-  // DB 스키마: text (enum 아님)
-  @Column({ type: 'text', default: 'user' })
+  @Column({
+    type: 'enum',
+    enum: USER_ROLE_VALUES,
+    default: 'user',
+  })
   role!: UserRole;
 
-  @CreateDateColumn({ type: 'timestamp with time zone', nullable: true, name: 'created_at' })
-  created_at!: Date;
-
-  @UpdateDateColumn({ type: 'timestamp with time zone', nullable: true, name: 'updated_at' })
-  updated_at!: Date;
+  /**
+   * Apple 소셜 로그인 refresh token (계정 탈퇴 시 연결 해제에 사용)
+   */
+  @Column({ type: 'text', nullable: true, name: 'apple_refresh_token' })
+  apple_refresh_token!: string | null;
 
   /**
-   * DB에 없는 가상 필드 — 코드 호환성을 위해 유지 (항상 null).
-   * 비밀번호는 Supabase Auth에만 저장되며 profiles 테이블에는 없음.
+   * Google 소셜 로그인 refresh token (계정 탈퇴 시 연결 해제에 사용)
    */
-  password_hash: string | null = null;
+  @Column({ type: 'text', nullable: true, name: 'google_refresh_token' })
+  google_refresh_token!: string | null;
 
-  /** DB에 없는 가상 필드 — 코드 호환성 유지 */
-  apple_refresh_token: string | null = null;
+  @CreateDateColumn({ type: 'timestamp with time zone', name: 'created_at' })
+  created_at!: Date;
 
-  /** DB에 없는 가상 필드 — 코드 호환성 유지 */
-  google_refresh_token: string | null = null;
+  @UpdateDateColumn({ type: 'timestamp with time zone', name: 'updated_at' })
+  updated_at!: Date;
 
   // Relations - Using forward references to avoid circular dependencies
   @OneToMany('Travel', 'user')

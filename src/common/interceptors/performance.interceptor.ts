@@ -30,7 +30,7 @@ export class PerformanceInterceptor implements NestInterceptor {
     const url = request.url;
     const userAgent = request.get('user-agent') || '';
 
-    // Keep-Alive 및 보안 헤더 설정 (요청 시작 시)
+    // Keep-Alive 및 캐싱 헤더 설정
     if (!response.headersSent) {
       response.set({
         'Connection': 'keep-alive',
@@ -39,9 +39,6 @@ export class PerformanceInterceptor implements NestInterceptor {
         'X-Content-Type-Options': 'nosniff',
         'X-Frame-Options': 'DENY',
         'X-XSS-Protection': '1; mode=block',
-        'X-Request-ID': RequestContext.getRequestId() !== 'unknown'
-          ? RequestContext.getRequestId()
-          : `req_${startTime}`,
       });
     }
 
@@ -80,8 +77,15 @@ export class PerformanceInterceptor implements NestInterceptor {
         const endTime = process.hrtime.bigint();
         const duration = Number(endTime - startTime) / 1000000; // ms
 
-        // 응답 헤더 설정을 응답 완료 전으로 이동했으므로 여기서는 제거
-        // X-Response-Time과 X-Request-ID는 요청 시작 시에만 설정
+        if (!response.headersSent) {
+          response.set({
+            'X-Response-Time': `${duration.toFixed(2)}ms`,
+            // 미들웨어에서 설정한 requestId 재사용 (없으면 폴백)
+            'X-Request-ID': RequestContext.getRequestId() !== 'unknown'
+              ? RequestContext.getRequestId()
+              : `req_${startTime}`,
+          });
+        }
 
         const shouldLog = Math.random() <= this.logSampleRate;
 

@@ -1,2 +1,1 @@
-export * from './app-version.entity';
-export * from './app-version-history.entity';
+export { AppVersion } from './app-version.entity';

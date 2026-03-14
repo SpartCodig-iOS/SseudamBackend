@@ -1,6 +1,6 @@
 import {
   Entity,
-  PrimaryGeneratedColumn,
+  PrimaryColumn,
   Column,
   CreateDateColumn,
   UpdateDateColumn,
@@ -8,10 +8,7 @@ import {
 
 @Entity('app_versions')
 export class AppVersion {
-  @PrimaryGeneratedColumn('uuid')
-  id!: string;
-
-  @Column({ type: 'text', name: 'bundle_id', unique: true })
+  @PrimaryColumn({ type: 'text', name: 'bundle_id' })
   bundleId!: string;
 
   @Column({ type: 'text', name: 'latest_version' })

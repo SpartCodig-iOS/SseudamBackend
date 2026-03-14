@@ -1,9 +1,9 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { SocialAuthService, OAuthTokenOptions, SocialLookupResult } from './social-auth.service';
-import { LoginType } from '../auth/types/auth.types';
+import { LoginType } from '../../types/auth';
 import { AuthSessionPayload } from '../auth/auth.service';
-import { CacheService } from '../../common/services/cache.service';
-import { SupabaseService } from '../../common/services/supabase.service';
+import { CacheService } from '../cache-shared/services/cacheService';
+import { SupabaseService } from '../core/services/supabaseService';
 import { createHash } from 'crypto';
 
 @Injectable()

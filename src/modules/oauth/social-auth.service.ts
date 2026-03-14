@@ -1,17 +1,17 @@
 import { createHash } from 'node:crypto';
-import { Injectable, ServiceUnavailableException, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException, UnauthorizedException, BadRequestException, Inject, forwardRef, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import jwt from 'jsonwebtoken';
-import { LoginType } from '../auth/types/auth.types';
-import { UserRecord } from '../user/types/user.types';
-import { SupabaseService } from '../../common/services/supabase.service';
-import { OAuthTokenService } from './services/oauth-token.service';
-import { CacheService } from '../../common/services/cache.service';
-import { AuthSessionService, AuthSessionPayload } from '../shared/auth-session.service';
-import { fromSupabaseUser } from '../../common/utils/mappers';
+import { LoginType } from '../../types/auth';
+import { UserRecord } from '../../types/user';
+import { SupabaseService } from '../core/services/supabaseService';
+import { OAuthTokenService } from '../oauth/services/oauth-token.service';
+import { CacheService } from '../cache-shared/services/cacheService';
+import { AuthService, AuthSessionPayload } from '../auth/auth.service';
+import { fromSupabaseUser } from '../../utils/mappers';
 import { env } from '../../config/env';
-import { BackgroundJobService } from '../../common/services/background-job.service';
+import { BackgroundJobService } from '../core/services/background-job.service';
 
 export interface SocialLookupResult {
   registered: boolean;
@@ -64,8 +64,8 @@ export class SocialAuthService {
     private readonly supabaseService: SupabaseService,
     private readonly oauthTokenService: OAuthTokenService,
     private readonly cacheService: CacheService,
-    // forwardRef 제거: AuthService 대신 AuthSessionService(단방향 의존)를 사용
-    private readonly authSessionService: AuthSessionService,
+    @Inject(forwardRef(() => AuthService))
+    private readonly authService: AuthService,
     private readonly backgroundJobService: BackgroundJobService,
   ) {}
 
@@ -286,13 +286,11 @@ export class SocialAuthService {
     }
 
     try {
-      // TypeORM count를 사용한 효율적인 존재 확인
-      const profileRepository = this.dataSource.getRepository('User');
-      const count = await profileRepository.count({
-        where: { id: userId },
-        take: 1 // 성능 최적화
-      });
-      const exists = count > 0;
+      const rows = await this.dataSource.query(
+        `SELECT 1 FROM profiles WHERE id = $1 LIMIT 1`,
+        [userId],
+      );
+      const exists = Boolean(rows[0]);
       this.profileExistenceCache.set(userId, {
         exists,
         expiresAt: Date.now() + this.PROFILE_EXISTS_TTL,
@@ -442,8 +440,7 @@ export class SocialAuthService {
 
     this.dbWarmupPromise = (async () => {
       try {
-        // TypeORM 방식으로 DB 연결 확인
-        await this.dataSource.manager.createQueryBuilder().select('1').getRawOne();
+        await this.dataSource.query('SELECT 1');
         return true;
       } catch (error) {
         this.logger.warn('DB warmup skipped due to error', error as Error);
@@ -600,7 +597,7 @@ export class SocialAuthService {
         await this.oauthTokenService.saveToken(userRecord.id, 'kakao', kakaoRefreshToken);
       }
 
-      const session = await this.authSessionService.createAuthSession(userRecord, 'kakao');
+      const session = await this.authService.createAuthSession(userRecord, 'kakao');
       return { ...session, registered: profileExists };
     }
 
@@ -674,10 +671,13 @@ export class SocialAuthService {
           });
       }
 
-      const authSession = await this.authSessionService.createAuthSession(userForSession, resolvedLoginType);
+      const authSession = await this.authService.createAuthSession(userForSession, resolvedLoginType);
       mark('cache-hit-complete');
 
-      // warmAuthCaches는 AuthService 내부 인메모리 캐시 전용 (OAuth 경로는 Redis 캐시 활용)
+      // 백그라운드에서 캐시 워밍 (응답에 영향 없음)
+      setImmediate(() => {
+        this.authService.warmAuthCaches(userForSession);
+      });
 
       const duration = Date.now() - startTime;
       if (duration > 1200) {
@@ -719,10 +719,10 @@ export class SocialAuthService {
           }
 
           // 세션 즉시 생성
-          const authSession = await this.authSessionService.createAuthSession(userRecord, detectedLoginType);
+          const authSession = await this.authService.createAuthSession(userRecord, detectedLoginType);
           void this.setCachedOAuthUser(accessToken, userRecord);
           mark('offline-session');
-          // warmAuthCaches는 AuthService 내부 인메모리 캐시 전용 (OAuth 경로는 Redis 캐시 활용)
+          void this.authService.warmAuthCaches(userRecord);
 
           // 느린 작업(프로필 보강/리프레시 토큰 저장)은 백그라운드로 실행
           setImmediate(async () => {
@@ -810,10 +810,10 @@ export class SocialAuthService {
     const userRecord = fromSupabaseUser(user, { preferDisplayName });
 
     // 6단계: 세션 생성과 캐시 저장을 병렬로 처리
-    // warmAuthCaches는 AuthService 내부 인메모리 캐시 전용이므로 OAuth 경로에서는 제외
     const [authSession] = await Promise.all([
-      this.authSessionService.createAuthSession(userRecord, resolvedLoginType),
+      this.authService.createAuthSession(userRecord, resolvedLoginType),
       this.setCachedOAuthUser(accessToken, userRecord),
+      this.authService.warmAuthCaches(userRecord)
     ]);
     mark('session-created');
 
@@ -837,8 +837,8 @@ export class SocialAuthService {
       });
     }
 
-    // markLastLogin은 DB updated_at 갱신 (선택적, 순환 참조 방지를 위해 제거)
-    // AuthService가 직접 처리하는 경우에만 호출됨
+    // 나머지 부가 작업은 백그라운드로 실행
+    void this.authService.markLastLogin(userRecord.id);
 
     const duration = Date.now() - startTime;
     if (duration > 1200) {
@@ -1295,13 +1295,13 @@ export class SocialAuthService {
         return cached;
       }
 
-      // 2. TypeORM으로 빠른 확인
-      const profileRepository = this.dataSource.getRepository('User');
-      const count = await profileRepository.count({
-        where: { id: userId }
-      });
+      // 2. DB에서 빠른 확인 (EXISTS 쿼리)
+      const rows = await this.dataSource.query(
+        'SELECT EXISTS(SELECT 1 FROM profiles WHERE id = $1) as exists',
+        [userId],
+      );
 
-      const exists = count > 0;
+      const exists = Boolean(rows[0]?.exists);
 
       // 3. Redis에 캐싱 (30분 TTL)
       await this.cacheService.set(cacheKey, exists, { ttl: 1800 });

@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { APNSService } from './apns.service';
-import { DeviceTokenService } from '../../oauth/services/device-token.service';
-import { DeepLinkType, DeepLinkData, DeepLinkUtils, PushNotificationPayload } from '../types/deeplink.types';
+import { DeviceTokenService } from './device-token.service';
+import { DeepLinkType, DeepLinkData, DeepLinkUtils, PushNotificationPayload } from '../../../types/deeplink';
 
 // 알림 이벤트 타입 정의
 export interface ExpenseNotificationEvent {

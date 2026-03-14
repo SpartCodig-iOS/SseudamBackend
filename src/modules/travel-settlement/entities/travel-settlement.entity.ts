@@ -8,7 +8,7 @@ import {
   Index,
   JoinColumn,
 } from 'typeorm';
-import { Travel } from '../../travel/entities/travel.entity';
+import { Travel } from '../../travel/domain/entities/travel.entity';
 import { User } from '../../user/entities/user.entity';
 
 export enum SettlementStatus {
@@ -21,12 +21,6 @@ export enum SettlementStatus {
 @Index(['fromMember'])
 @Index(['toMember'])
 @Index(['status'])
-// 복합 인덱스: 여행별 상태 필터링 (정산 목록 조회 핵심 패턴)
-@Index(['travelId', 'status'])
-// 복합 인덱스: 특정 멤버가 보내야 하는 정산 조회
-@Index(['travelId', 'fromMember'])
-// 복합 인덱스: 특정 멤버가 받아야 하는 정산 조회
-@Index(['travelId', 'toMember'])
 export class TravelSettlement {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -44,13 +38,11 @@ export class TravelSettlement {
   amount!: number;
 
   @Column({
-    type: 'text',
+    type: 'varchar',
+    length: 20,
     default: SettlementStatus.PENDING,
   })
   status!: SettlementStatus;
-
-  @Column({ type: 'text', nullable: true })
-  note!: string | null;
 
   @Column({ type: 'timestamp with time zone', nullable: true, name: 'completed_at' })
   completedAt!: Date | null;

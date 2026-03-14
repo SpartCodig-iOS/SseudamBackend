@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, HttpCode, HttpStatus, Logger, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, HttpStatus, Logger, Post, Query, Req, UnauthorizedException, UseGuards, InternalServerErrorException } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -10,11 +10,11 @@ import {
 } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { OptimizedDeleteService } from './optimized-delete.service';
-import { success } from '../../common/types/api.types';
-import { loginSchema, refreshSchema, signupSchema, logoutSchema } from './schemas/auth.schemas';
+import { success } from '../../shared/domain/types/api.types';
+import { loginSchema, refreshSchema, signupSchema, logoutSchema } from './application/validators/auth.validators';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RateLimitGuard } from '../../common/guards/rate-limit.guard';
-import { RequestWithUser } from '../../common/types/request.types';
+import { RequestWithUser } from '../../shared/domain/types/request.types';
 import {
   DeleteAccountResponseDto,
   LoginResponseDto,
@@ -23,13 +23,13 @@ import {
 } from './dto/auth-response.dto';
 import { buildAuthSessionResponse } from './auth-response.util';
 import { RateLimit } from '../../common/decorators/rate-limit.decorator';
-import { LoginType } from './types/auth.types';
-import { DeviceTokenService } from '../oauth/services/device-token.service';
-import { AnalyticsService } from '../../common/services/analytics.service';
-import { JwtTokenService } from './services/jwt.service';
-import { SessionService } from './services/session.service';
-import { EnhancedJwtService } from './services/enhanced-jwt.service';
-import { JwtBlacklistService } from './services/jwt-blacklist.service';
+import { LoginType } from './domain/types/auth.types';
+import { DeviceTokenService } from '../notification/services/device-token.service';
+import { AnalyticsService } from '../core/services/analytics.service';
+import { JwtTokenService } from '../jwt-shared/services/jwtService';
+import { SessionService } from './services/sessionService';
+import { EnhancedJwtService } from '../jwt-shared/services/enhanced-jwt.service';
+import { TypeOrmJwtBlacklistService } from './services/typeorm-jwt-blacklist.service';
 
 @ApiTags('Auth')
 @Controller('api/v1/auth')
@@ -44,7 +44,7 @@ export class AuthController {
     private readonly jwtTokenService: JwtTokenService,
     private readonly sessionService: SessionService,
     private readonly enhancedJwtService: EnhancedJwtService,
-    private readonly jwtBlacklistService: JwtBlacklistService,
+    private readonly jwtBlacklistService: TypeOrmJwtBlacklistService,
   ) {}
 
   @Post('signup')
@@ -276,6 +276,10 @@ export class AuthController {
     const payload = refreshSchema.parse(body);
     this.logger.debug(`🔄 Token refresh attempt - refreshToken: ${payload.refreshToken?.substring(0, 20)}...`);
     const result = await this.authService.refresh(payload.refreshToken);
+
+    if (!result.tokenPair || !result.session) {
+      throw new InternalServerErrorException('Invalid refresh result');
+    }
 
     return success(
       {
@@ -639,7 +643,7 @@ export class AuthController {
   }
 
   /**
-   * Authorization 헤더의 Bearer 토큰이 있으면 검증하여 userId를 반환 (Enhanced + Legacy JWT 지원)
+   * Authorization 헤더의 Bearer 토큰이 있으면 검증하여 userId를 반환
    */
   private async resolveUserIdFromHeader(req: RequestWithUser): Promise<string | null> {
     const authHeader = req.headers?.authorization ?? '';
@@ -650,8 +654,7 @@ export class AuthController {
     if (!token) return null;
 
     try {
-      // Enhanced JWT Service 사용 (Legacy JWT 지원 포함)
-      const payload = await this.enhancedJwtService.verifyAccessToken(token);
+      const payload = this.jwtTokenService.verifyAccessToken(token);
       if (!payload?.sub || !payload.sessionId) return null;
 
       // 세션이 유효한지 확인 (만료/취소된 세션이면 무시)

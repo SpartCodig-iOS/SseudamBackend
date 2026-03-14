@@ -1,2 +1,1 @@
-export * from './oauth-token.repository';
-export * from './device-token.repository';
+export { OAuthTokenRepository } from './oauth-token.repository';

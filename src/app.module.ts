@@ -59,7 +59,9 @@ import { GatewayMiddleware } from './modules/gateway/gateway.middleware';
     JwtSharedModule,      // JwtModule, JwtTokenService, EnhancedJwtService, JwtBlacklistService
     DatabaseModule,       // TypeORM, Repository들
     ObservabilityModule,  // Prometheus 메트릭, /metrics 엔드포인트
-    AuthSharedModule,     // SupabaseService, SessionService 등 (AuthGuard 의존성 전역 제공)
+
+    // ── 공유 서비스 모듈 (전역 아님, Feature Module이 필요 시 직접 import) ──
+    // AuthSharedModule은 Feature Module에서 개별 import함
 
     // ── 기능 모듈 ──
     AuthModule,           // 인증 (OAuthModule을 내부 import)
@@ -116,12 +118,6 @@ export class AppModule implements NestModule {
       .exclude(
         { path: 'api/v1/gateway/(.*)', method: RequestMethod.ALL },
         { path: 'api/v1/health', method: RequestMethod.GET },
-        { path: 'health', method: RequestMethod.GET },
-        { path: 'health/metrics', method: RequestMethod.GET },
-        { path: 'health/cache/clear/(.*)', method: RequestMethod.POST },
-        { path: 'metrics', method: RequestMethod.GET },
-        { path: 'api-docs/(.*)', method: RequestMethod.ALL },
-        { path: 'api-docs', method: RequestMethod.ALL },
         { path: 'favicon.ico', method: RequestMethod.GET },
       )
       .forRoutes('*');

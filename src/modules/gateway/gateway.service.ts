@@ -1,8 +1,8 @@
 import { Injectable, Logger, UnauthorizedException, ForbiddenException, HttpException, HttpStatus } from '@nestjs/common';
-import { EnhancedJwtService } from '../auth/services/enhanced-jwt.service';
-import { RateLimitService } from '../../common/services/rate-limit.service';
-import { CacheService } from '../../common/services/cache.service';
-import { UserRole } from '../user/types/user.types';
+import { EnhancedJwtService } from '../jwt-shared/services/enhanced-jwt.service';
+import { RateLimitService } from '../cache-shared/services/rateLimitService';
+import { CacheService } from '../cache-shared/services/cacheService';
+import { UserRole } from '../../types/user';
 
 export interface GatewayRequest {
   method: string;
@@ -154,11 +154,11 @@ export class GatewayService {
 
     try {
       // 1. 라우트 설정 찾기
-      // routeConfigs에 없는 라우트는 기본적으로 허용 (NestJS 컨트롤러 가드에서 별도 처리)
       const routeConfig = this.findRouteConfig(request.path, request.method);
       if (!routeConfig) {
         return {
-          allowed: true,
+          allowed: false,
+          reason: 'Route not found or method not allowed'
         };
       }
 
@@ -435,7 +435,7 @@ export class GatewayService {
       const fiveMinutesAgo = now - 5 * 60 * 1000;
 
       // 5분간 요청 기록 필터링
-      const recentValidRequests = recentRequests.filter(timestamp =>
+      const recentValidRequests = recentRequests.filter((timestamp: any) =>
         parseInt(timestamp) > fiveMinutesAgo
       );
 

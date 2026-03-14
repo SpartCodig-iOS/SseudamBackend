@@ -17,11 +17,11 @@ import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTa
 import { Express } from 'express';
 import 'multer';
 import { AuthGuard } from '../../common/guards/auth.guard';
-import { success } from '../../common/types/api.types';
-import { RequestWithUser } from '../../common/types/request.types';
-import { toProfileResponse } from '../../common/utils/mappers';
+import { success } from '../../types/api';
+import { RequestWithUser } from '../../types/request';
+import { toProfileResponse } from '../../utils/mappers';
 import { ProfileResponseDto } from './dto/profile-response.dto';
-import { updateProfileSchema } from './schemas/profile.schemas';
+import { updateProfileSchema } from '../../validators/profileSchemas';
 import { ProfileService } from './profile.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 
@@ -69,8 +69,8 @@ export class ProfileController {
     return success({
       id: profile.id,
       userId: profile.username || profile.email?.split('@')[0] || req.currentUser.username || 'user',
-      email: profile.email || null, // 빈 문자열 대신 null 반환
-      name: profile.name || null,   // 빈 문자열 대신 null 반환
+      email: profile.email || '',
+      name: profile.name,
       avatarURL: resolvedAvatar, // 🚀 빠른 아바타 (캐시 우선)
       role: profile.role || req.currentUser.role || 'user',
       createdAt: formatDate(profile.created_at),

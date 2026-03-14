@@ -1,16 +1,16 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
-import { UpdateProfileInput } from './schemas/profile.schemas';
-import { UserRecord } from '../user/types/user.types';
-import { User } from '../user/entities/user.entity';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { UpdateProfileInput } from '../user/application/validators/profile.validators';
+import { UserRecord } from '../user/domain/types/user.types';
 import { createClient } from '@supabase/supabase-js';
 import { env } from '../../config/env';
 import { randomUUID } from 'crypto';
 import { Express } from 'express';
-import { CacheService } from '../../common/services/cache.service';
-import { SupabaseService } from '../../common/services/supabase.service';
-import { ImageProcessor, ImageVariant } from '../../common/utils/image-processor';
+import { CacheService } from '../cache-shared/services/cacheService';
+import { SupabaseService } from '../core/services/supabaseService';
+import { ImageProcessor, ImageVariant } from '../../shared/infrastructure/utils/imageProcessor';
+import { User as Profile } from '../user/entities/user.entity';
 import 'multer';
 
 @Injectable()
@@ -28,8 +28,8 @@ export class ProfileService {
   private readonly AVATAR_FETCH_TIMEOUT_MS = 1200; // 아바타 동기 조회 타임아웃 (초기 조회 실패 방지)
 
   constructor(
-    @InjectDataSource()
-    private readonly dataSource: DataSource,
+    @InjectRepository(Profile)
+    private readonly profileRepository: Repository<Profile>,
     private readonly cacheService: CacheService,
     private readonly supabaseService: SupabaseService,
   ) {}
@@ -241,11 +241,11 @@ export class ProfileService {
       return fallbackUser;
     }
 
-    // 5. 최후의 수단: 기본 프로필 생성 (신규 사용자)
+    // 5. 최후의 수단: 기본 프로필 생성
     return {
       id: userId,
       email: '',
-      name: '',  // null 대신 빈 문자열
+      name: null,
       avatar_url: null,
       username: userId,
       password_hash: '',
@@ -314,33 +314,17 @@ export class ProfileService {
   }
 
   private async getProfileFromDB(userId: string): Promise<UserRecord | null> {
-    const profileRepository = this.dataSource.getRepository('User');
-
-    this.logger.debug(`🔍 Querying profiles table for user: ${userId}`);
-
-    const profile = await profileRepository.findOne({
+    const profile = await this.profileRepository.findOne({
       where: { id: userId },
       select: ['id', 'email', 'name', 'avatar_url', 'username', 'role', 'created_at', 'updated_at']
     });
 
-    if (!profile) {
-      this.logger.warn(`❌ User not found in profiles table: ${userId}`);
-      return null;
-    }
+    if (!profile) return null;
 
-    // 실제 DB 데이터 로깅 (디버깅용)
-    this.logger.log(`✅ Profile found: ${userId}`, {
-      email: profile.email ? 'present' : 'missing',
-      name: profile.name ? 'present' : 'missing',
-      username: profile.username ? 'present' : 'missing',
-      role: profile.role
-    });
-
-    // raw SQL 결과와 같은 형태로 변환
     return {
       id: profile.id,
-      email: profile.email || null, // 빈 문자열 방지
-      name: profile.name || null,   // null 처리
+      email: profile.email,
+      name: profile.name,
       avatar_url: profile.avatar_url,
       username: profile.username,
       role: profile.role ?? 'user',
@@ -381,32 +365,32 @@ export class ProfileService {
       avatarURL = await this.uploadToSupabase(userId, file);
     }
 
-    const profileRepository = this.dataSource.getRepository(User);
-
-    // TypeORM으로 업데이트 실행
-    const updateData: any = { updated_at: new Date() };
-    if (payload.name !== undefined) updateData.name = payload.name;
-    if (avatarURL !== undefined) updateData.avatar_url = avatarURL;
-
-    await profileRepository.update({ id: userId }, updateData);
+    // TypeORM을 사용한 업데이트
+    await this.profileRepository.update(
+      { id: userId },
+      {
+        ...(payload.name !== undefined && { name: payload.name }),
+        ...(avatarURL !== null && { avatar_url: avatarURL }),
+        updated_at: new Date(),
+      }
+    );
 
     // 업데이트된 프로필 조회
-    const updatedProfile = await profileRepository.findOne({
+    const updatedProfile = await this.profileRepository.findOne({
       where: { id: userId },
       select: ['id', 'email', 'name', 'avatar_url', 'username', 'role', 'created_at', 'updated_at']
     });
 
     if (!updatedProfile) {
-      throw new Error('Profile update failed');
+      throw new BadRequestException('프로필 업데이트 후 조회에 실패했습니다.');
     }
 
-    // raw SQL 결과와 같은 형태로 변환
     const updated: UserRecord = {
       id: updatedProfile.id,
       email: updatedProfile.email,
       name: updatedProfile.name,
       avatar_url: updatedProfile.avatar_url,
-      username: updatedProfile.username ?? '',
+      username: updatedProfile.username,
       role: updatedProfile.role ?? 'user',
       created_at: updatedProfile.created_at,
       updated_at: updatedProfile.updated_at,
@@ -606,13 +590,12 @@ export class ProfileService {
       }
 
       // 4. DB에서 avatar_url만 조회 (최소한의 쿼리)
-      const profileRepository = this.dataSource.getRepository(User);
-      const profile = await profileRepository.findOne({
+      const profile = await this.profileRepository.findOne({
         where: { id: userId },
         select: ['avatar_url']
       });
 
-      const dbAvatar = profile?.avatar_url as string | null | undefined;
+      const dbAvatar = profile?.avatar_url;
       if (dbAvatar) {
         // Redis/메모리에 캐시해 다음 호출 가속화
         this.setCachedStorageAvatar(userId, dbAvatar);
@@ -665,8 +648,7 @@ export class ProfileService {
       this.setCachedStorageAvatar(userId, storageAvatar);
 
       // DB에도 저장 (실패 시 무시)
-      const profileRepository = this.dataSource.getRepository(User);
-      profileRepository.update(
+      this.profileRepository.update(
         { id: userId },
         { avatar_url: storageAvatar, updated_at: new Date() }
       ).catch((err: Error) => this.logger.warn(`[warmAvatarFromStorage] Persist failed for ${userId}: ${err.message}`));
@@ -723,5 +705,4 @@ export class ProfileService {
       return null;
     }
   }
-
 }

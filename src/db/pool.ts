@@ -1,6 +1,6 @@
 import { Pool, PoolConfig } from 'pg';
 import { env } from '../config/env';
-import { resolveIPv4IfNeeded, shouldUseTLS } from '../common/utils/network';
+import { resolveIPv4IfNeeded, shouldUseTLS } from '../shared/infrastructure/utils/network';
 
 let pool: Pool | null = null;
 

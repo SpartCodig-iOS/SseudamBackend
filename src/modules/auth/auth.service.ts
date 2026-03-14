@@ -7,21 +7,21 @@ import {
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import bcrypt from 'bcryptjs';
-import { LoginType } from './types/auth.types';
-import { UserRecord } from '../user/types/user.types';
-import { LoginInput, SignupInput } from './schemas/auth.schemas';
-import { JwtTokenService } from './services/jwt.service';
-import { SessionService } from './services/session.service';
-import { SupabaseService } from '../../common/services/supabase.service';
+import { LoginType } from './domain/types/auth.types';
+import { UserRecord } from '../user/domain/types/user.types';
+import { LoginInput, SignupInput } from './application/validators/auth.validators';
+import { JwtTokenService } from '../jwt-shared/services/jwtService';
+import { SessionService } from './services/sessionService';
+import { SupabaseService } from '../core/services/supabaseService';
 import { OAuthTokenService } from '../oauth/services/oauth-token.service';
 import { OptimizedOAuthService } from '../oauth/optimized-oauth.service';
-import { CacheService } from '../../common/services/cache.service';
-import { fromSupabaseUser } from '../../common/utils/mappers';
+import { CacheService } from '../cache-shared/services/cacheService';
+import { fromSupabaseUser } from '../../shared/infrastructure/utils/mappers';
 import { OAuthTokenOptions, SocialAuthService } from '../oauth/social-auth.service';
-import { UserRepository } from '../user/repositories/user.repository';
+import { UserRepository } from '../../repositories/user.repository';
 import { User } from '../user/entities/user.entity';
 import { AuthSessionService } from '../shared/auth-session.service';
-import { EnhancedJwtService } from './services/enhanced-jwt.service';
+import { EnhancedJwtService } from '../jwt-shared/services/enhanced-jwt.service';
 // AuthSessionPayload는 AuthSessionService에서 정의 (공유 타입)
 export { AuthSessionPayload } from '../shared/auth-session.service';
 import { AuthSessionPayload } from '../shared/auth-session.service';
@@ -169,7 +169,7 @@ export class AuthService {
       id: user.id,
       email: user.email.toLowerCase(),
       name: user.name,
-      username: user.username ?? '',
+      username: user.username,
       avatar_url: user.avatar_url,
       created_at: user.created_at,
       updated_at: user.updated_at,
@@ -252,7 +252,35 @@ export class AuthService {
   async createAuthSession(user: UserRecord, loginType: LoginType): Promise<AuthSessionPayload> {
     // 공유 로직은 AuthSessionService에 위임
     // SocialAuthService도 동일한 AuthSessionService를 사용하므로 중복 없음
-    return this.authSessionService.createAuthSession(user, loginType);
+    const sessionId = await this.authSessionService.createAuthSession(user.id, {
+      role: user.role,
+      metadata: { loginType }
+    });
+
+    // 세션 정보 조회
+    const session = await this.sessionService.getSession(sessionId);
+    if (!session) {
+      throw new InternalServerErrorException('Session creation failed');
+    }
+
+    // JWT 토큰 생성
+    const tokenPair = this.jwtTokenService.generateTokenPair(user, loginType, sessionId);
+
+    return {
+      userId: user.id,
+      sessionId,
+      role: user.role,
+      loginType,
+      email: user.email,
+      user,
+      tokenPair: {
+        accessToken: tokenPair.accessToken,
+        refreshToken: tokenPair.refreshToken,
+        accessTokenExpiresAt: tokenPair.accessTokenExpiresAt,
+        refreshTokenExpiresAt: tokenPair.refreshTokenExpiresAt,
+      },
+      session,
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -383,9 +411,8 @@ export class AuthService {
   // ---------------------------------------------------------------------------
 
   async refresh(refreshToken: string): Promise<RefreshPayload> {
-    // Enhanced JWT Service 사용 (Legacy JWT 지원 포함)
-    const payload = await this.enhancedJwtService.verifyRefreshToken(refreshToken);
-    if (!payload || !payload.sub || !payload.sessionId) {
+    const payload = this.jwtTokenService.verifyRefreshToken(refreshToken);
+    if (!payload.sub || !payload.sessionId) {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
@@ -434,12 +461,7 @@ export class AuthService {
 
     const resolvedLoginType = (currentSession.loginType as LoginType | undefined) ?? 'email';
     const sessionPayload = await this.createAuthSession(user, resolvedLoginType);
-    return {
-      user,
-      tokenPair: sessionPayload.tokenPair,
-      loginType: sessionPayload.loginType,
-      session: sessionPayload.session,
-    };
+    return sessionPayload;
   }
 
   // ---------------------------------------------------------------------------

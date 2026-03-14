@@ -1,1 +1,1 @@
-export * from './travel-settlement.entity';
+export { TravelSettlement, SettlementStatus } from './travel-settlement.entity';

@@ -1,43 +1,74 @@
-/**
- * AuthModule
- *
- * 이메일/비밀번호 기반 인증, 토큰 갱신, 로그아웃, 회원탈퇴를 담당한다.
- *
- * 의존 관계 (forwardRef 완전 제거):
- *   AuthModule -> JwtSharedModule  (전역, JwtTokenService/EnhancedJwtService)
- *   AuthModule -> CacheSharedModule (전역, CacheService)
- *   AuthModule -> AuthSharedModule  (SupabaseService, SessionService 등)
- *   AuthModule -> OAuthModule       (SocialAuthService, OptimizedOAuthService)
- *
- * OAuthModule은 AuthModule을 import하지 않는다.
- * 과거의 순환(Auth <-> OAuth)은 AuthSharedModule 분리로 해소되었다.
- */
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
+import { JwtModule } from '@nestjs/jwt';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { OptimizedDeleteService } from './optimized-delete.service';
 import { OAuthModule } from '../oauth/oauth.module';
 import { DatabaseModule } from '../database/database.module';
-import { AuthSharedModule } from '../shared/auth-shared.module';
-import { NotificationModule } from '../notification/notification.module';
+import { CacheService } from '../cache-shared/services/cacheService';
+import { EnhancedJwtService } from '../jwt-shared/services/enhanced-jwt.service';
+import { OptimizedDeleteService } from './optimized-delete.service';
+import { SessionService } from './services/sessionService';
+
+// TypeORM 기반 새로운 서비스들
+import { JwtBlacklist } from './entities/jwt-blacklist.entity';
+import { JwtBlacklistRepository } from './repositories/jwt-blacklist.repository';
+import { TypeOrmJwtBlacklistService } from './services/typeorm-jwt-blacklist.service';
+
+// 새로운 Entities
+import { User as Profile } from '../user/entities/user.entity';
+// UserSession은 JWT로 대체됨
+
+import { env } from '../../config/env';
 
 @Module({
   imports: [
+    // DatabaseModule이 TypeORM forRoot + forFeature(User) + UserRepository를 모두 제공합니다.
     DatabaseModule,
-    AuthSharedModule,
-    NotificationModule,  // DeviceTokenService 주입
-    // OAuthModule은 SocialAuthService, OptimizedOAuthService를 export한다.
-    // OAuthModule은 AuthModule을 import하지 않으므로 순환 참조 없음.
-    OAuthModule,
+
+    // JWT 블랙리스트 엔티티 등록
+    TypeOrmModule.forFeature([JwtBlacklist, Profile, UserSession]),
+
+    forwardRef(() => OAuthModule),
+
+    // JWT 모듈 등록 (Enhanced JWT 서비스용)
+    JwtModule.register({
+      secret: env.jwtSecret,
+      signOptions: {
+        expiresIn: `${env.accessTokenTTL}s`,
+        issuer: 'sseudam-backend',
+        audience: 'sseudam-app',
+      },
+    }),
   ],
-  controllers: [AuthController],
+  controllers: [
+    AuthController,
+  ],
   providers: [
     AuthService,
+    CacheService,
     OptimizedDeleteService,
+    SessionService,
+
+    // 기존 JWT Blacklist System (캐시 기반)
+    EnhancedJwtService,
+
+    // 새로운 TypeORM 기반 JWT Blacklist System
+    JwtBlacklistRepository,
+    TypeOrmJwtBlacklistService,
   ],
   exports: [
     AuthService,
+    CacheService,
     OptimizedDeleteService,
+    SessionService,
+
+    // Enhanced JWT 서비스들도 export하여 다른 모듈에서 사용 가능
+    EnhancedJwtService,
+
+    // TypeORM 기반 새로운 서비스들 export
+    TypeOrmJwtBlacklistService,
+    JwtBlacklistRepository,
   ],
 })
 export class AuthModule {}

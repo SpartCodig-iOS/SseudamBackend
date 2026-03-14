@@ -8,7 +8,7 @@ import {
 import { Response } from 'express';
 import * as Sentry from '@sentry/node';
 import { ZodError, ZodIssue } from 'zod';
-import { logger } from '../utils/logger';
+import { logger } from '../../shared/infrastructure/utils/logger';
 import { env } from '../../config/env';
 import { DatabaseError } from 'pg';
 import { RequestContext } from '../context/request-context';
@@ -32,12 +32,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const requestId = RequestContext.getRequestId();
-
-    // 헤더 중복 전송 방지: 이미 응답이 시작된 경우 처리 중단
-    if (response.headersSent) {
-      logger.warn('Response headers already sent, skipping exception handler', { requestId });
-      return;
-    }
     const normalizeDbError = (err: DatabaseError) => {
       const code = err.code;
       // PostgreSQL 에러코드 매핑 (https://www.postgresql.org/docs/current/errcodes-appendix.html)
@@ -50,10 +44,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (exception instanceof ZodError) {
       const issues = exception.issues.map(formatZodIssue);
       logger.info('Validation failed', { issues, requestId });
-      if (response.headersSent) {
-        logger.warn('Cannot send ZodError response, headers already sent', { requestId });
-        return;
-      }
       return response.status(HttpStatus.BAD_REQUEST).json({
         code: HttpStatus.BAD_REQUEST,
         message: '요청 데이터 형식이 올바르지 않습니다.',
@@ -81,11 +71,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
         logger.info('Handled error response', { status, message, requestId });
       }
 
-      if (response.headersSent) {
-        logger.warn('Cannot send HttpException response, headers already sent', { requestId, status });
-        return;
-      }
-
       return response.status(status).json({
         code: status,
         data,
@@ -100,10 +85,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if ((exception as any)?.code && (exception as any)?.severity) {
       const mapped = normalizeDbError(exception as DatabaseError);
       if (mapped) {
-        if (response.headersSent) {
-          logger.warn('Cannot send DB error response, headers already sent', { requestId, code: mapped.status });
-          return;
-        }
         return response.status(mapped.status).json({
           code: mapped.status,
           data: [],
@@ -114,11 +95,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
     logger.error('Unhandled exception', { message, stack: (exception as Error)?.stack, requestId });
     this.capture(exception);
-
-    if (response.headersSent) {
-      logger.warn('Cannot send general error response, headers already sent', { requestId, status });
-      return;
-    }
 
     return response.status(status).json({
       code: status,

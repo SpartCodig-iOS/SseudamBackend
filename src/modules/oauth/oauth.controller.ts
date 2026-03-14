@@ -9,15 +9,15 @@ import {
 } from '@nestjs/swagger';
 import { SocialAuthService } from './social-auth.service';
 import { OptimizedOAuthService } from './optimized-oauth.service';
-import { appleRevokeSchema, oauthTokenSchema } from '../auth/schemas/auth.schemas';
-import { success } from '../../common/types/api.types';
+import { appleRevokeSchema, oauthTokenSchema } from '../../validators/authSchemas';
+import { success } from '../../types/api';
 import { LoginResponseDto } from '../auth/dto/auth-response.dto';
 import { SocialLookupResponseDto } from './dto/oauth-response.dto';
 import { buildAuthSessionResponse, buildLightweightAuthResponse } from '../auth/auth-response.util';
 import { AuthGuard } from '../../common/guards/auth.guard';
-import { RequestWithUser } from '../../common/types/request.types';
-import { CacheService } from '../../common/services/cache.service';
-import { DeviceTokenService } from './services/device-token.service';
+import { RequestWithUser } from '../../types/request';
+import { CacheService } from '../cache-shared/services/cacheService';
+import { DeviceTokenService } from '../notification/services/device-token.service';
 import { randomBytes } from 'crypto';
 
 @ApiTags('OAuth')

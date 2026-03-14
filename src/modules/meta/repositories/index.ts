@@ -1,1 +1,1 @@
-export * from './app-version.repository';
+export { AppVersionRepository } from './app-version.repository';

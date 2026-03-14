@@ -1,15 +1,24 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserController } from './user.controller';
 import { UserService } from './user.service';
 import { DatabaseModule } from '../database/database.module';
-import { AuthSharedModule } from '../shared/auth-shared.module';
-import { AuthGuard } from '../../common/guards/auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
+import { UserRepository } from './repositories/user.repository';
+import { User } from './entities/user.entity';
 
 @Module({
-  imports: [DatabaseModule, AuthSharedModule],  // AuthGuard 의존성 (SupabaseService 등)
+  imports: [
+    DatabaseModule,
+    TypeOrmModule.forFeature([User]),
+  ],
   controllers: [UserController],
-  providers: [UserService, AuthGuard, RolesGuard],
-  exports: [UserService],
+  providers: [
+    UserService,
+    UserRepository,
+  ],
+  exports: [
+    UserService,
+    UserRepository,
+  ],
 })
 export class UserModule {}

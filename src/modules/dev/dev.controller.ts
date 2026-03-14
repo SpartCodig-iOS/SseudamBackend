@@ -1,12 +1,11 @@
-import { Controller, Post, Body, BadRequestException, Delete, Param } from '@nestjs/common';
+import { Controller, Post, Body, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBody, ApiResponse, ApiExcludeController } from '@nestjs/swagger';
 import { APNSService } from '../notification/services/apns.service';
-import { DeviceTokenService } from '../oauth/services/device-token.service';
+import { DeviceTokenService } from '../notification/services/device-token.service';
 import { PushNotificationService } from '../notification/services/push-notification.service';
-import { DeepLinkType, DeepLinkUtils } from '../notification/types/deeplink.types';
-import { CacheService } from '../../common/services/cache.service';
+import { DeepLinkType, DeepLinkUtils } from '../../types/deeplink';
 import { env } from '../../config/env';
-import { success } from '../../common/types/api.types';
+import { success } from '../../types/api';
 
 @ApiTags('Development')
 @ApiExcludeController()
@@ -16,7 +15,6 @@ export class DevController {
     private readonly apnsService: APNSService,
     private readonly deviceTokenService: DeviceTokenService,
     private readonly pushNotificationService: PushNotificationService,
-    private readonly cacheService: CacheService,
   ) {
     if (env.nodeEnv === 'production') {
       throw new Error('DevController must not be loaded in production environment');
@@ -363,145 +361,6 @@ export class DevController {
           timestamp: new Date().toISOString()
         },
         'Deep link push notification test failed'
-      );
-    }
-  }
-
-  @Delete('cache/travel/:travelId')
-  @ApiOperation({
-    summary: '여행별 캐시 삭제 (개발 전용)',
-    description: '특정 여행 ID의 모든 캐시를 삭제합니다. expense, settlement, travel 캐시를 포함합니다.'
-  })
-  async clearTravelCache(@Param('travelId') travelId: string) {
-    try {
-      if (!travelId || !travelId.match(/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i)) {
-        throw new BadRequestException('Invalid travel ID format');
-      }
-
-      // Clear all travel-related caches
-      const patterns = [
-        `travel:${travelId}`,
-        `travel:${travelId}:*`,
-        `expense:list:${travelId}:*`,
-        `expense:detail:${travelId}:*`,
-        `expense:context:${travelId}`,
-        `settlement:${travelId}:*`,
-        `members:${travelId}`,
-      ];
-
-      let totalDeleted = 0;
-      const results = [];
-
-      for (const pattern of patterns) {
-        const deleted = await this.cacheService.delPattern(pattern);
-        totalDeleted += deleted;
-        results.push({ pattern, deleted });
-      }
-
-      return success(
-        {
-          travelId,
-          totalDeleted,
-          patterns: results,
-          timestamp: new Date().toISOString()
-        },
-        `Cleared ${totalDeleted} cache entries for travel ${travelId}`
-      );
-
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-
-      return success(
-        {
-          travelId,
-          success: false,
-          error: errorMessage,
-          timestamp: new Date().toISOString()
-        },
-        'Failed to clear travel cache'
-      );
-    }
-  }
-
-  @Delete('cache/expense/:travelId')
-  @ApiOperation({
-    summary: '여행 경비 캐시 삭제 (개발 전용)',
-    description: '특정 여행의 경비 관련 캐시만 삭제합니다.'
-  })
-  async clearExpenseCache(@Param('travelId') travelId: string) {
-    try {
-      if (!travelId || !travelId.match(/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i)) {
-        throw new BadRequestException('Invalid travel ID format');
-      }
-
-      // Clear only expense-related caches
-      const patterns = [
-        `expense:list:${travelId}:*`,
-        `expense:detail:${travelId}:*`,
-        `expense:context:${travelId}`,
-      ];
-
-      let totalDeleted = 0;
-      const results = [];
-
-      for (const pattern of patterns) {
-        const deleted = await this.cacheService.delPattern(pattern);
-        totalDeleted += deleted;
-        results.push({ pattern, deleted });
-      }
-
-      return success(
-        {
-          travelId,
-          totalDeleted,
-          patterns: results,
-          timestamp: new Date().toISOString()
-        },
-        `Cleared ${totalDeleted} expense cache entries for travel ${travelId}`
-      );
-
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-
-      return success(
-        {
-          travelId,
-          success: false,
-          error: errorMessage,
-          timestamp: new Date().toISOString()
-        },
-        'Failed to clear expense cache'
-      );
-    }
-  }
-
-  @Delete('cache/all')
-  @ApiOperation({
-    summary: '전체 캐시 삭제 (개발 전용)',
-    description: '모든 캐시를 삭제합니다. Redis와 fallback 메모리 캐시 모두 삭제됩니다.'
-  })
-  async clearAllCache() {
-    try {
-      await this.cacheService.flush();
-
-      return success(
-        {
-          cleared: true,
-          timestamp: new Date().toISOString()
-        },
-        'All caches cleared successfully'
-      );
-
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-
-      return success(
-        {
-          cleared: false,
-          error: errorMessage,
-          timestamp: new Date().toISOString()
-        },
-        'Failed to clear all caches'
       );
     }
   }

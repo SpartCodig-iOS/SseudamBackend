@@ -1,10 +1,20 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { MetaController } from './meta.controller';
 import { MetaService } from './meta.service';
+import { AppVersionRepository } from './repositories/app-version.repository';
+import { AppVersion } from './entities/app-version.entity';
 
 @Module({
+  imports: [TypeOrmModule.forFeature([AppVersion])],
   controllers: [MetaController],
-  providers: [MetaService],
-  exports: [MetaService],
+  providers: [
+    MetaService,
+    AppVersionRepository,
+  ],
+  exports: [
+    MetaService,
+    AppVersionRepository,
+  ],
 })
 export class MetaModule {}

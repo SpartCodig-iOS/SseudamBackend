@@ -1,29 +1,28 @@
+import { Global, Module } from '@nestjs/common';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { AnalyticsService } from './services/analytics.service';
+import { BackgroundJobService } from './services/background-job.service';
+
 /**
  * CoreModule
  *
- * 진정으로 애플리케이션 전역에서 필요한 인프라성 기능만 담당한다.
- * - EventEmitterModule: 도메인 이벤트 버스
- * - AnalyticsService: GA 이벤트 트래킹
- * - BackgroundJobService: 경량 인메모리 잡 큐
- *
- * 규칙:
- *  1. 비즈니스 로직이 없는 인프라 서비스만 포함한다.
- *  2. 다른 Feature Module에 의존하면 안 된다.
- *  3. @Global()로 선언해 AppModule에서 한 번만 import한다.
+ * 애플리케이션의 핵심 인프라 서비스들을 제공하는 전역 모듈
+ * - EventEmitter: 애플리케이션 전체 이벤트 시스템
+ * - AnalyticsService: 이벤트 추적 및 분석
+ * - BackgroundJobService: 백그라운드 작업 관리
  */
-import { Global, Module } from '@nestjs/common';
-import { EventEmitterModule } from '@nestjs/event-emitter';
-import { AnalyticsService } from '../../common/services/analytics.service';
-import { BackgroundJobService } from '../../common/services/background-job.service';
-
 @Global()
 @Module({
   imports: [
     EventEmitterModule.forRoot({
-      // 와일드카드 이벤트 리스너 허용 ('expense.*' 등)
+      // 이벤트 리스너에서 에러 발생 시 애플리케이션이 중단되지 않도록 설정
+      ignoreErrors: false,
+      // 와일드카드 이벤트 지원
       wildcard: false,
-      // 동일 리스너 최대 등록 수
+      // 최대 리스너 수 (메모리 누수 방지)
       maxListeners: 20,
+      // 새 리스너 경고 임계값
+      newListener: false,
     }),
   ],
   providers: [

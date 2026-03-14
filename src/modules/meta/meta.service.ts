@@ -1,5 +1,4 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { AdaptiveCacheService } from '../../common/services/adaptive-cache.service';
 
 export interface CountryMeta {
   code: string;
@@ -35,18 +34,12 @@ interface CachedRate {
 export class MetaService {
   private countriesCache: { data: CountryMeta[]; expiresAt: number } | null = null;
   private readonly cacheTTL = 1000 * 60 * 60 * 24; // 24시간 (국가 데이터는 자주 안바뀜)
-
-  /**
-   * 환율 캐시: 기존 Map → AdaptiveCacheService LRU 기반으로 교체.
-   * 핫 통화쌍은 TTL이 자동으로 늘어나고, 메모리 압박 시 LRU 정책으로 자동 제거됩니다.
-   * AdaptiveCacheService가 주입되지 않은 환경(테스트 등)을 위해 fallback Map도 유지합니다.
-   */
   private readonly rateCache = new Map<string, { data: CachedRate; expiresAt: number }>();
-  private readonly rateCacheTTL = 1000 * 60 * 10; // 10분 (기본 TTL, adaptive로 최대 40분까지 확장)
+  private readonly rateCacheTTL = 1000 * 60 * 10; // 10분
   private countriesFetchPromise: Promise<CountryMeta[]> | null = null;
   private readonly ratePromiseCache = new Map<string, Promise<CachedRate>>();
   private readonly networkTimeout = 3000; // 외부 환율 API 응답 대기 최대 3초 (지연 허용 범위 확대)
-  private readonly maxCacheSize = 1000; // fallback Map 최대 캐시 크기
+  private readonly maxCacheSize = 1000; // 최대 캐시 크기
   private readonly fallbackRates: Record<string, Record<string, number>> = {
     KRW: { USD: 0.00075, JPY: 0.107, EUR: 0.00069, CNY: 0.0052 },
     USD: { KRW: 1340, JPY: 143, EUR: 0.91, CNY: 7.1, GYD: 209, GHS: 11.5, XAF: 559, BMD: 1, BSD: 1, PAB: 1 },
@@ -62,8 +55,6 @@ export class MetaService {
   // 앱 시작 시 워밍을 위한 플래그
   private isWarming = false;
   private fallbackWarned = false;
-
-  constructor(private readonly adaptiveCacheService: AdaptiveCacheService) {}
 
   // 앱 시작 시 캐시 워밍
   async warmupCache(): Promise<void> {
@@ -215,70 +206,62 @@ export class MetaService {
     const normalizedBase = baseCurrency.toUpperCase();
     const normalizedQuote = quoteCurrency.toUpperCase();
     const normalizedAmount = baseAmount > 0 ? baseAmount : 1;
-    const cacheKey = `exchange_rate:${normalizedBase}-${normalizedQuote}`;
-
+    const cacheKey = `${normalizedBase}-${normalizedQuote}`;
+    const cached = this.rateCache.get(cacheKey);
     const computeResult = (rateData: CachedRate): ExchangeRateMeta => ({
       ...rateData,
       baseAmount: normalizedAmount,
       quoteAmount: rateData.rate * normalizedAmount,
     });
 
-    /**
-     * 같은 통화쌍은 rate=1로 즉시 반환 (캐시 불필요)
-     */
-    if (normalizedBase === normalizedQuote) {
-      return computeResult({
-        baseCurrency: normalizedBase,
-        quoteCurrency: normalizedQuote,
-        rate: 1,
-        date: new Date().toISOString().slice(0, 10),
-      });
-    }
-
-    /**
-     * AdaptiveCacheService를 사용해 LRU + 동적 TTL 캐싱을 적용합니다.
-     * - 기본 TTL: 10분
-     * - 핫 통화쌍(자주 조회): 최대 40분까지 자동 연장
-     * - 메모리 압박 시 LRU 정책으로 자동 제거
-     */
-    return this.adaptiveCacheService.getExchangeRate(cacheKey, async () => {
-      try {
-        // fallback 데이터가 있으면 즉시 반환 후 백그라운드 갱신
-        const fallbackRate = this.fallbackRates[normalizedBase]?.[normalizedQuote];
-
-        // 실제 환율 API 호출 (기존 로직 유지)
-        const legacyCacheKey = `${normalizedBase}-${normalizedQuote}`;
-        const legacyCached = this.rateCache.get(legacyCacheKey);
-
-        if (legacyCached && legacyCached.expiresAt > Date.now()) {
-          return computeResult(legacyCached.data);
+    try {
+      if (cached) {
+        if (cached.expiresAt > Date.now()) {
+          return computeResult(cached.data);
         }
+        // Use stale data immediately but refresh in the background.
+        this.getOrCreateRatePromise(cacheKey, normalizedBase, normalizedQuote).catch(() => {});
+        return computeResult(cached.data);
+      }
 
-        if (fallbackRate) {
-          const fallback: CachedRate = {
-            baseCurrency: normalizedBase,
-            quoteCurrency: normalizedQuote,
-            rate: fallbackRate,
-            date: new Date().toISOString().slice(0, 10),
-          };
-          // 백그라운드 실제 환율 갱신
-          this.getOrCreateRatePromise(legacyCacheKey, normalizedBase, normalizedQuote).catch(() => {});
-          return computeResult(fallback);
-        }
+      if (normalizedBase === normalizedQuote) {
+        const same = {
+          baseCurrency: normalizedBase,
+          quoteCurrency: normalizedQuote,
+          rate: 1,
+          date: new Date().toISOString().slice(0, 10),
+        };
+        this.rateCache.set(cacheKey, { data: same, expiresAt: Date.now() + this.rateCacheTTL });
+        return computeResult(same);
+      }
 
-        const rate = await this.getOrCreateRatePromise(legacyCacheKey, normalizedBase, normalizedQuote);
-        return computeResult(rate);
-      } catch {
-        // 최후 폴백
+      const fallbackRate = this.fallbackRates[normalizedBase]?.[normalizedQuote];
+      if (!cached && fallbackRate) {
         const fallback: CachedRate = {
           baseCurrency: normalizedBase,
           quoteCurrency: normalizedQuote,
-          rate: this.fallbackRates[normalizedBase]?.[normalizedQuote] ?? 1,
+          rate: fallbackRate,
           date: new Date().toISOString().slice(0, 10),
         };
+        this.rateCache.set(cacheKey, { data: fallback, expiresAt: Date.now() + this.rateCacheTTL / 2 });
+        // Trigger background refresh without blocking the response
+        this.getOrCreateRatePromise(cacheKey, normalizedBase, normalizedQuote).catch(() => {});
         return computeResult(fallback);
       }
-    });
+
+      const rate = await this.getOrCreateRatePromise(cacheKey, normalizedBase, normalizedQuote);
+      return computeResult(rate);
+    } catch (error) {
+      // 최후 폴백: 정의되지 않은 통화쌍도 1:1로 반환하고 캐시에 저장
+      const fallback: CachedRate = {
+        baseCurrency: normalizedBase,
+        quoteCurrency: normalizedQuote,
+        rate: this.fallbackRates[normalizedBase]?.[normalizedQuote] ?? 1,
+        date: new Date().toISOString().slice(0, 10),
+      };
+      this.rateCache.set(cacheKey, { data: fallback, expiresAt: Date.now() + this.rateCacheTTL / 2 });
+      return computeResult(fallback);
+    }
   }
 
   // 여러 환율을 병렬로 조회 (성능 최적화)

@@ -7,46 +7,77 @@ import { AppVersion } from '../entities/app-version.entity';
 export class AppVersionRepository {
   constructor(
     @InjectRepository(AppVersion)
-    private readonly repository: Repository<AppVersion>,
+    private readonly appVersionRepository: Repository<AppVersion>,
   ) {}
 
   async findByBundleId(bundleId: string): Promise<AppVersion | null> {
-    return this.repository.findOne({ where: { bundleId } });
+    return this.appVersionRepository.findOne({
+      where: { bundleId },
+    });
   }
 
-  async upsert(data: {
+  async upsertVersion(data: {
     bundleId: string;
     latestVersion: string;
     minSupportedVersion?: string | null;
     forceUpdate?: boolean;
     releaseNotes?: string | null;
-    updatedAt?: Date;
-  }): Promise<void> {
-    await this.repository
-      .createQueryBuilder()
-      .insert()
-      .into(AppVersion)
-      .values({
+  }): Promise<AppVersion> {
+    const existing = await this.findByBundleId(data.bundleId);
+
+    if (existing) {
+      // Update existing record
+      await this.appVersionRepository.update(
+        { bundleId: data.bundleId },
+        {
+          latestVersion: data.latestVersion,
+          minSupportedVersion: data.minSupportedVersion,
+          forceUpdate: data.forceUpdate ?? false,
+          releaseNotes: data.releaseNotes,
+          updatedAt: new Date(),
+        },
+      );
+
+      return this.findByBundleId(data.bundleId) as Promise<AppVersion>;
+    } else {
+      // Create new record
+      const newVersion = this.appVersionRepository.create({
         bundleId: data.bundleId,
         latestVersion: data.latestVersion,
-        minSupportedVersion: data.minSupportedVersion ?? null,
+        minSupportedVersion: data.minSupportedVersion,
         forceUpdate: data.forceUpdate ?? false,
-        releaseNotes: data.releaseNotes ?? null,
-        updatedAt: data.updatedAt ?? new Date(),
-      })
-      .orUpdate(
-        ['latest_version', 'min_supported_version', 'force_update', 'release_notes', 'updated_at'],
-        ['bundle_id'],
-      )
-      .execute();
+        releaseNotes: data.releaseNotes,
+      });
+
+      return this.appVersionRepository.save(newVersion);
+    }
   }
 
-  async ensureTableExists(): Promise<void> {
-    // TypeORM이 엔티티 기반으로 테이블을 관리하므로 별도 DDL 불필요.
-    // synchronize: true 또는 마이그레이션으로 처리됩니다.
+  async findAll(): Promise<AppVersion[]> {
+    return this.appVersionRepository.find({
+      order: { updatedAt: 'DESC' },
+    });
   }
 
-  getRepository(): Repository<AppVersion> {
-    return this.repository;
+  async deleteByBundleId(bundleId: string): Promise<void> {
+    await this.appVersionRepository.delete({ bundleId });
+  }
+
+  /**
+   * Legacy method for emergency version override
+   */
+  async setEmergencyVersion(bundleId: string): Promise<void> {
+    const latestVersion = '999.999.999';
+    const minSupported = '17.0';
+    const forceUpdate = true;
+    const releaseNotes = `긴급 업데이트: ${bundleId} 앱에 중요한 보안 업데이트가 있습니다. 즉시 업데이트해 주세요.`;
+
+    await this.upsertVersion({
+      bundleId,
+      latestVersion,
+      minSupportedVersion: minSupported,
+      forceUpdate,
+      releaseNotes,
+    });
   }
 }

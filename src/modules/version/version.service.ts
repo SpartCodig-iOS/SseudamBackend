@@ -2,6 +2,7 @@ import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common'
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { env } from '../../config/env';
+import { AppVersionRepository } from '../meta/repositories/app-version.repository';
 
 export interface AppVersionMeta {
   bundleId: string;
@@ -24,11 +25,11 @@ export class VersionService {
   private readonly networkTimeout = 5000;
   private readonly appVersionCache = new Map<string, { data: AppVersionMeta; expiresAt: number }>();
   private readonly appVersionCacheTTL = 1000 * 60 * 5; // 5분
-  private appVersionTableReady = false;
 
   constructor(
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    private readonly appVersionRepository: AppVersionRepository,
   ) {}
 
   private toIsoString(input: any): string | null {
@@ -38,40 +39,18 @@ export class VersionService {
     return d.toISOString();
   }
 
-  private async ensureAppVersionTable(): Promise<void> {
-    if (this.appVersionTableReady) return;
-
-    // TypeORM 방식으로 테이블 존재 여부 확인
-    const appVersionRepository = this.dataSource.getRepository('AppVersion');
-    try {
-      await appVersionRepository.findOne({ where: {} });
-      this.appVersionTableReady = true;
-    } catch (error) {
-      // 테이블이 없다면 migration을 통해 생성되어야 함
-      this.logger.warn('AppVersion entity not found. Please ensure migration is run.');
-      throw new Error('AppVersion table not initialized. Please run migrations.');
-    }
-  }
-
   private async fetchDbVersion(bundleId: string) {
     try {
-      await this.ensureAppVersionTable();
-      const appVersionRepository = this.dataSource.getRepository('AppVersion');
-      const appVersion = await appVersionRepository.findOne({
-        where: { bundleId },
-        select: ['bundleId', 'latestVersion', 'minSupportedVersion', 'forceUpdate', 'releaseNotes', 'updatedAt']
-      });
-
+      const appVersion = await this.appVersionRepository.findByBundleId(bundleId);
       if (!appVersion) return null;
 
-      // raw SQL 결과와 같은 형태로 변환
       return {
         bundle_id: appVersion.bundleId,
         latest_version: appVersion.latestVersion,
         min_supported_version: appVersion.minSupportedVersion,
         force_update: appVersion.forceUpdate,
         release_notes: appVersion.releaseNotes,
-        updated_at: appVersion.updated_at,
+        updated_at: appVersion.updatedAt,
       };
     } catch (error) {
       // DB 문제 시 App Store 결과만으로 동작 (로그는 최소화)
@@ -216,20 +195,13 @@ export class VersionService {
   }
 
   private async upsertDbVersion(data: AppVersionMeta): Promise<void> {
-    await this.ensureAppVersionTable();
-    const appVersionRepository = this.dataSource.getRepository('AppVersion');
-
-    await appVersionRepository.upsert(
-      {
-        bundleId: data.bundleId,
-        latestVersion: data.latestVersion,
-        minSupportedVersion: data.minSupportedVersion,
-        forceUpdate: data.forceUpdate,
-        releaseNotes: data.releaseNotes,
-        updatedAt: new Date(),
-      },
-      ['bundleId'] // conflict target
-    );
+    await this.appVersionRepository.upsertVersion({
+      bundleId: data.bundleId,
+      latestVersion: data.latestVersion,
+      minSupportedVersion: data.minSupportedVersion,
+      forceUpdate: data.forceUpdate,
+      releaseNotes: data.releaseNotes,
+    });
   }
 
   async setAppVersionManual(payload: {
@@ -237,27 +209,16 @@ export class VersionService {
     releaseNotes?: string | null;
   }): Promise<void> {
     const bundleId = 'io.sseudam.co';
-    await this.ensureAppVersionTable();
-    const lastUpdated = new Date();
     const minSupported = '17.0';
     const forceUpdate = true;
 
-    const appVersionRepository = this.dataSource.getRepository('AppVersion');
-
-    // TypeORM upsert with conditional update (COALESCE 로직 포함)
-    const existingRecord = await appVersionRepository.findOne({ where: { bundleId } });
-
-    await appVersionRepository.upsert(
-      {
-        bundleId,
-        latestVersion: payload.latestVersion,
-        minSupportedVersion: existingRecord?.minSupportedVersion ?? minSupported,
-        forceUpdate,
-        releaseNotes: payload.releaseNotes ?? null,
-        updatedAt: lastUpdated,
-      },
-      ['bundleId'] // conflict target
-    );
+    await this.appVersionRepository.upsertVersion({
+      bundleId,
+      latestVersion: payload.latestVersion,
+      minSupportedVersion: minSupported,
+      forceUpdate,
+      releaseNotes: payload.releaseNotes ?? null,
+    });
 
     // Clear cache for this bundle
     for (const key of Array.from(this.appVersionCache.keys())) {

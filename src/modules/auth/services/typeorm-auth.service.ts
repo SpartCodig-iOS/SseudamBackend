@@ -1,5 +1,5 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { UserRepository } from '../../user/repositories/user.repository';
+import { UserRepository } from '../../../repositories/user.repository';
 import { User } from '../../user/entities/user.entity';
 import * as bcrypt from 'bcryptjs';
 
@@ -34,11 +34,7 @@ export class TypeOrmAuthService {
         return null;
       }
 
-      // 비밀번호 확인 (소셜 로그인 전용 계정은 password_hash가 null일 수 있음)
-      if (!user.password_hash) {
-        this.logger.debug(`User has no password hash: ${identifier}`);
-        return null;
-      }
+      // 비밀번호 확인
       const isValidPassword = await bcrypt.compare(password, user.password_hash);
 
       if (!isValidPassword) {
