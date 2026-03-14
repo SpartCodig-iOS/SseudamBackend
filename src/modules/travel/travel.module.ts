@@ -17,6 +17,7 @@ import {
   InviteMemberUseCase,
   UpdateTravelUseCase,
   DeleteTravelUseCase,
+  GetTravelListUseCase,
 } from './use-cases';
 
 @Module({
@@ -38,6 +39,7 @@ import {
     InviteMemberUseCase,
     UpdateTravelUseCase,
     DeleteTravelUseCase,
+    GetTravelListUseCase,
   ],
   exports: [TravelService, OptimizedTravelService],
 })

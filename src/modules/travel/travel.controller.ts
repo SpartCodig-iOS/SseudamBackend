@@ -31,6 +31,7 @@ import {
   InviteMemberUseCase,
   UpdateTravelUseCase,
   DeleteTravelUseCase,
+  GetTravelListUseCase,
 } from './use-cases';
 
 @ApiTags('Travel')
@@ -45,6 +46,7 @@ export class TravelController {
     private readonly inviteMemberUseCase: InviteMemberUseCase,
     private readonly updateTravelUseCase: UpdateTravelUseCase,
     private readonly deleteTravelUseCase: DeleteTravelUseCase,
+    private readonly getTravelListUseCase: GetTravelListUseCase,
   ) {}
 
   @Get()
@@ -61,16 +63,15 @@ export class TravelController {
       // 기본값 설정
       const pageNum = page ? parseInt(page) : 1;
       const limitNum = limit ? parseInt(limit) : 20;
+      const statusFilter = status === 'active' || status === 'archived' ? status : undefined;
 
-      // TravelService에서 사용자의 여행 목록 조회
-      const result = {
-        travels: [],
-        pagination: {
-          page: pageNum,
-          limit: limitNum,
-          total: 0,
-        },
-      };
+      // GetTravelListUseCase를 사용해서 실제 여행 목록 조회
+      const result = await this.getTravelListUseCase.execute({
+        userId: (req.user as any).id,
+        page: pageNum,
+        limit: limitNum,
+        status: statusFilter,
+      });
 
       return success(result, 'Travel list retrieved successfully');
     } catch (error) {
