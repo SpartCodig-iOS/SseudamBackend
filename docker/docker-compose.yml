@@ -37,6 +37,8 @@ services:
       - "3001:3001"
     environment:
       - PORT=3001
+      - HOST=localhost
+      - PROTOCOL=http
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=

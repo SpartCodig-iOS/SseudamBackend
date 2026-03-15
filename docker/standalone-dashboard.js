@@ -7,6 +7,8 @@ const Queue = require('bull');
 // Express 앱 생성
 const app = express();
 const port = process.env.PORT || 3001;
+const host = process.env.HOST || 'localhost';
+const protocol = process.env.PROTOCOL || 'http';
 
 // Express 기본 설정
 app.set('trust proxy', true);
@@ -157,8 +159,8 @@ app.listen(port, '0.0.0.0', () => {
 ${queues.map(q => `  - ${q.displayName} (${q.name})`).join('\n')}
 
 📋 접속 가능한 경로:
-  - Dashboard: http://localhost:${port}/
-  - Health Check: http://localhost:${port}/health
+  - Dashboard: ${protocol}://${host}:${port}/
+  - Health Check: ${protocol}://${host}:${port}/health
   `);
 });
 
