@@ -1,87 +1,38 @@
 version: '3.8'
 
+# ================================
+# 📊 BullMQ Dashboard Only Setup
+# ================================
+
 services:
-  # ================================
-  # 🚀 SseudamBackend API Server
-  # ================================
-  sseudam-api:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    container_name: sseudam-api
-    ports:
-      - "3000:3000"
-    environment:
-      # Database
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/sseudam_db
-
-      # Redis
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=
-
-      # JWT
-      - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
-
-      # Supabase (Replace with your actual values)
-      - SUPABASE_URL=your-supabase-url
-      - SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
-
-      # Node Environment
-      - NODE_ENV=development
-    depends_on:
-      - postgres
-      - redis
-    volumes:
-      - ../src:/app/src
-      - ../package.json:/app/package.json
-    restart: unless-stopped
-    networks:
-      - sseudam-network
-
-  # ================================
-  # 🐘 PostgreSQL Database
-  # ================================
-  postgres:
-    image: postgres:15-alpine
-    container_name: sseudam-postgres
-    ports:
-      - "5432:5432"
-    environment:
-      - POSTGRES_DB=sseudam_db
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - PGDATA=/var/lib/postgresql/data/pgdata
-    volumes:
-      - postgres_data:/var/lib/postgresql/data/pgdata
-      - ./init-scripts:/docker-entrypoint-initdb.d
-    restart: unless-stopped
-    networks:
-      - sseudam-network
-
   # ================================
   # 🔴 Redis Cache & Queue
   # ================================
   redis:
     image: redis:7-alpine
-    container_name: sseudam-redis
+    container_name: sseudam-redis-dashboard
     ports:
       - "6379:6379"
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
-      - redis_data:/data
+      - redis_dashboard_data:/data
     restart: unless-stopped
     networks:
-      - sseudam-network
+      - dashboard-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   # ================================
-  # 📊 BullMQ Dashboard (Standalone)
+  # 📊 BullMQ Dashboard
   # ================================
   bull-dashboard:
     build:
       context: .
-      dockerfile: Dockerfile.dashboard
-    container_name: sseudam-bull-dashboard
+      dockerfile: Dockerfile
+    container_name: sseudam-bull-dashboard-standalone
     ports:
       - "3001:3001"
     environment:
@@ -91,57 +42,47 @@ services:
       - REDIS_PASSWORD=
       - NODE_ENV=development
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     networks:
-      - sseudam-network
+      - dashboard-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   # ================================
   # 📊 Redis Commander (Optional)
   # ================================
   redis-commander:
     image: rediscommander/redis-commander:latest
-    container_name: sseudam-redis-commander
+    container_name: sseudam-redis-commander-dashboard
     ports:
       - "8081:8081"
     environment:
-      - REDIS_HOSTS=local:redis:6379
+      - REDIS_HOSTS=dashboard:redis:6379
+      - HTTP_USER=admin
+      - HTTP_PASSWORD=admin123
     depends_on:
       - redis
     restart: unless-stopped
     networks:
-      - sseudam-network
-
-  # ================================
-  # 📊 pgAdmin (Optional)
-  # ================================
-  pgadmin:
-    image: dpage/pgadmin4:latest
-    container_name: sseudam-pgadmin
-    ports:
-      - "8080:80"
-    environment:
-      - PGADMIN_DEFAULT_EMAIL=admin@sseudam.com
-      - PGADMIN_DEFAULT_PASSWORD=admin123
-      - PGADMIN_DISABLE_POSTFIX=true
-    depends_on:
-      - postgres
-    restart: unless-stopped
-    networks:
-      - sseudam-network
+      - dashboard-network
 
 # ================================
 # 💾 Volumes
 # ================================
 volumes:
-  postgres_data:
-    driver: local
-  redis_data:
+  redis_dashboard_data:
     driver: local
 
 # ================================
 # 🌐 Networks
 # ================================
 networks:
-  sseudam-network:
+  dashboard-network:
     driver: bridge
+    name: sseudam-dashboard-network

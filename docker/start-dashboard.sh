@@ -19,7 +19,7 @@ docker network create sseudam-dashboard-network 2>/dev/null || true
 
 # Start BullMQ Dashboard services
 echo "🐳 Starting BullMQ Dashboard services..."
-docker-compose -f docker/docker-compose.dashboard.yml up -d
+docker-compose -f docker/docker-compose.yml up -d
 
 echo "⏳ Waiting for services to be ready..."
 
@@ -47,5 +47,5 @@ echo "  Host: localhost"
 echo "  Port: 6379"
 echo "  Password: (none)"
 echo ""
-echo "🎯 To stop services: docker-compose -f docker/docker-compose.dashboard.yml down"
-echo "🎯 To view logs: docker-compose -f docker/docker-compose.dashboard.yml logs -f"
+echo "🎯 To stop services: docker-compose -f docker/docker-compose.yml down"
+echo "🎯 To view logs: docker-compose -f docker/docker-compose.yml logs -f"

@@ -25,7 +25,7 @@ fi
 
 # Start services
 echo "🐳 Starting Docker services..."
-docker-compose -f docker/docker-compose.yml up -d
+docker-compose -f docker/docker-compose.full.yml up -d
 
 echo "⏳ Waiting for services to be ready..."
 
@@ -57,4 +57,4 @@ echo "  Database: sseudam_db"
 echo "  Username: postgres"
 echo "  Password: postgres"
 echo ""
-echo "🎯 To stop services: docker-compose -f docker/docker-compose.yml down"
+echo "🎯 To stop services: docker-compose -f docker/docker-compose.full.yml down"
