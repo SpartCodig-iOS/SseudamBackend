@@ -1,4 +1,4 @@
-version: '3.8'
+# SandFox 스타일로 개선된 Compose 파일
 
 # ================================
 # 📊 BullMQ Dashboard Only Setup
@@ -11,12 +11,12 @@ services:
   redis:
     image: redis:7-alpine
     container_name: sseudam-redis-dashboard
+    restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "6382:6379"
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     volumes:
       - redis_dashboard_data:/data
-    restart: unless-stopped
     networks:
       - dashboard-network
     healthcheck:
@@ -33,19 +33,22 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: sseudam-bull-dashboard-standalone
+    restart: unless-stopped
     ports:
-      - "3001:3001"
+      - "9001:3001"
     environment:
       - PORT=3001
-      - HOST=localhost
-      - PROTOCOL=http
+      - HOST=${DASHBOARD_HOST:-localhost}
+      - PROTOCOL=${DASHBOARD_PROTOCOL:-http}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=
-      - NODE_ENV=development
+      - NODE_ENV=${NODE_ENV:-development}
     depends_on:
       redis:
         condition: service_healthy
+    volumes:
+      - ../src:/app/src:ro  # 읽기 전용 소스 마운트 (개발용)
     restart: unless-stopped
     networks:
       - dashboard-network
@@ -62,15 +65,15 @@ services:
   redis-commander:
     image: rediscommander/redis-commander:latest
     container_name: sseudam-redis-commander-dashboard
+    restart: unless-stopped
     ports:
-      - "8081:8081"
+      - "9002:8081"
     environment:
       - REDIS_HOSTS=dashboard:redis:6379
-      - HTTP_USER=admin
-      - HTTP_PASSWORD=admin123
+      - HTTP_USER=${REDIS_COMMANDER_USER:-admin}
+      - HTTP_PASSWORD=${REDIS_COMMANDER_PASSWORD:-admin123}
     depends_on:
       - redis
-    restart: unless-stopped
     networks:
       - dashboard-network
 
