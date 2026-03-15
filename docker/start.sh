@@ -6,7 +6,7 @@
 
 set -e
 
-echo "🚀 Starting SseudamBackend Development Environment..."
+echo "📊 Starting BullMQ Dashboard Environment..."
 
 # Check if Docker is running
 if ! docker info &> /dev/null; then
@@ -25,7 +25,7 @@ fi
 
 # Start services
 echo "🐳 Starting Docker services..."
-docker-compose -f docker/docker-compose.full.yml up -d
+docker-compose -f docker/docker-compose.yml up -d
 
 echo "⏳ Waiting for services to be ready..."
 
@@ -44,17 +44,13 @@ done
 echo "✅ All services are ready!"
 echo ""
 echo "📊 Service URLs:"
-echo "  🚀 API Server:      http://localhost:3000"
-echo "  📊 Queue Dashboard: http://localhost:3000/admin/queues"
-echo "  🔴 Redis Commander: http://localhost:8081"
-echo "  🐘 pgAdmin:         http://localhost:8080"
-echo "  📋 Health Check:    http://localhost:3000/health"
+echo "  📊 BullMQ Dashboard: http://localhost:3001"
+echo "  🔴 Redis Commander: http://localhost:8081 (admin/admin123)"
+echo "  📋 Health Check:    http://localhost:3001/health"
 echo ""
-echo "📋 Database Connection:"
+echo "📋 Redis Connection:"
 echo "  Host: localhost"
-echo "  Port: 5432"
-echo "  Database: sseudam_db"
-echo "  Username: postgres"
-echo "  Password: postgres"
+echo "  Port: 6379"
+echo "  Password: (none)"
 echo ""
-echo "🎯 To stop services: docker-compose -f docker/docker-compose.full.yml down"
+echo "🎯 To stop services: docker-compose -f docker/docker-compose.yml down"
