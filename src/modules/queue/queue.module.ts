@@ -4,6 +4,7 @@ import { QUEUES } from '../../common/constants/queue.constants';
 import { NotificationProcessor } from './processors/notification.processor';
 import { SettlementProcessor } from './processors/settlement.processor';
 import { QueueEventService } from './services/queue-event.service';
+import { BullBoardController } from './bull-board.controller';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { QueueEventService } from './services/queue-event.service';
       { name: QUEUES.ANALYTICS }
     ),
   ],
+  controllers: [BullBoardController],
   providers: [
     NotificationProcessor,
     SettlementProcessor,

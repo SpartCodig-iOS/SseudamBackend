@@ -24,7 +24,7 @@ import { TravelSettlementModule } from './modules/travel-settlement/travel-settl
 // import { DevModule } from './modules/dev/dev.module'; // 임시 비활성화
 import { VersionModule } from './modules/version/version.module';
 // import { UniversalLinksModule } from './modules/universal-links/universal-links.module'; // 임시 비활성화
-// import { QueueModule } from './modules/queue/queue.module'; // 임시 비활성화
+import { QueueModule } from './modules/queue/queue.module';
 import { UserModule } from './modules/user/user.module';
 // 핵심 모듈들 활성화
 import { AuthModule } from './modules/auth/auth.module';
@@ -79,6 +79,9 @@ import { NotificationModule } from './modules/notification/notification.module';
     TravelModule,         // 여행 관리
     TravelExpenseModule,  // 여행 경비 관리
     TravelSettlementModule, // 여행 정산 관리
+
+    // ── Queue 및 Dashboard ──
+    QueueModule,          // Bull Queue + Dashboard
   ],
   providers: [
     // 전역 로깅 인터셉터 추가

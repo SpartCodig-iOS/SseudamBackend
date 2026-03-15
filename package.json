@@ -20,6 +20,8 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@bull-board/api": "^6.20.5",
+    "@bull-board/express": "^6.20.5",
     "@nestjs/bull": "^11.0.4",
     "@nestjs/common": "^10.3.9",
     "@nestjs/core": "^10.3.9",
