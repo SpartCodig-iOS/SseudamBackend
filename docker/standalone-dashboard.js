@@ -113,6 +113,9 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// Bull Board 정적 파일 서빙
+app.use('/static', express.static('/app/node_modules/@bull-board/ui/dist/static'));
+
 // Bull Board 라우터 연결
 app.use('/', serverAdapter.getRouter());
 
@@ -132,7 +135,7 @@ app.use('*', (req, res) => {
 });
 
 // 에러 처리 미들웨어
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   console.error('Dashboard Error:', err);
   res.status(500).json({
     success: false,

@@ -49,7 +49,6 @@ services:
         condition: service_healthy
     volumes:
       - ../src:/app/src:ro  # 읽기 전용 소스 마운트 (개발용)
-    restart: unless-stopped
     networks:
       - dashboard-network
     healthcheck:
